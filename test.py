@@ -665,6 +665,222 @@ def test():
             "code": "var x := 5;",
             "expected_error": "No 'main' function defined"
         },
+    # Test cases for OOP parse errors
+    {
+        "name": "Struct with no fields",
+        "code": """
+            struct EmptyStruct do
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Unexpected token type"
+    },
+    {
+        "name": "Method without self",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def Point.bad(): int do
+                return x;  // Missing self.x
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Variable 'x' is not declared"
+    },
+    {
+        "name": "Undefined method call",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def main() do
+                var p := Point(5);
+                p.nonexistent();
+            end
+        """,
+        "expected_error": "Method 'nonexistent' not found in struct 'Point'"
+    },
+    {
+        "name": "Undefined field access",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def main() do
+                var p := Point(5);
+                print p.y;
+            end
+        """,
+        "expected_error": "Field 'y' not found in struct 'Point'"
+    },
+    {
+        "name": "Method with incorrect return type",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def Point.get_x(): string do
+                return self.x;  // int returned from string function
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Type mismatch"
+    },
+    {
+        "name": "Invalid constructor parameter count",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def Point.init(x: int, y: int) do
+                self.x = x;
+            end
+            
+            def main() do
+                var p := Point(5);  // Missing second parameter
+            end
+        """,
+        "expected_error": "Constructor for 'Point' expects 2 arguments, got 1"
+    },
+    {
+        "name": "Non-struct method definition",
+        "code": """
+            def NotAStruct.method() do
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Struct 'NotAStruct' is not defined"
+    },
+    {
+        "name": "Invalid parent struct",
+        "code": """
+            struct Child(NonExistentParent) do
+                x: int
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Parent struct 'NonExistentParent' is not defined"
+    },
+    {
+        "name": "Constructor with non-void return type",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def Point.init(): int do
+                self.x = 5;
+                return 0;
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Constructor 'init' must have void return type"
+    },
+    {
+        "name": "Destructor with parameters",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def Point.fini(flag: int) do
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Destructor 'fini' cannot have parameters"
+    },
+    {
+        "name": "Del on stack object",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def main() do
+                var p := Point(5);
+                del p;  // Cannot delete stack object
+            end
+        """,
+        "expected_error": "'del' can only be used with reference types"
+    },
+    {
+        "name": "Missing constructor arguments",
+        "code": """
+            struct Point do
+                x: int
+                y: int
+            end
+            
+            def Point.init(x: int, y: int) do
+                self.x = x;
+                self.y = y;
+            end
+            
+            def main() do
+                var p := Point();  // No arguments provided
+            end
+        """,
+        "expected_error": "Constructor for 'Point' expects 2 arguments, got 0"
+    },
+    {
+        "name": "New operator on non-struct",
+        "code": """
+            def main() do
+                var x := new int(10);
+            end
+        """,
+        "expected_error": "Struct 'int' is not defined"
+    },
+    {
+        "name": "Self parameter redefinition",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def Point.init(self: int) do
+                self.x = 5;
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Cannot use 'self' as a parameter name"
+    },
+    {
+        "name": "Missing parentheses after new",
+        "code": """
+            struct Counter do
+                count: int
+            end
+            
+            def main() do
+                var c := new Counter;  // Missing parentheses
+            end
+        """,
+        "expected_error": "constructor invocation requires parenthesis"
+    }
+
     ]
 
     # List to track failing tests
