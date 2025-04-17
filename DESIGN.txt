@@ -1,0 +1,244 @@
+# Toy Language Design Document
+
+## Overview
+
+The language is a statically-typed imperative language with primitive types, variables and constants, control flow statements, and expressions with operator precedence.
+
+## 1. Lexical Elements
+
+### 1.1 Identifiers
+- Begin with a letter or underscore
+- Can contain letters, digits, and underscores
+- Case-sensitive
+
+### 1.2 Keywords
+The language reserves the following keywords:
+- 'var': Variable declaration
+- 'let': Constant declaration
+- 'if', 'else', 'end': Conditional statements
+- 'while', 'do': Looping construct
+- 'break', 'continue': Loop control
+- 'and', 'or', 'xor': Logical operators
+- 'bitnot': Unary bitwise NOT
+- 'shl', 'shr': Shift operators
+- 'print': Output statement
+- 'int', 'float', 'uint', 'long', 'ulong': Type specifiers
+
+### 1.3 Literals
+- Integer literals: Sequence of digits (e.g., '123')
+- Integer literals can have the following suffixes:
+  - 'u' or 'U' for unsigned integers (e.g., '123u')
+  - 'l' or 'L' for long integers (e.g., '123l')
+  - 'ul', 'lu', 'UL', or 'LU' for unsigned long integers (e.g., '123ul')
+- Float literals: Digits with decimal point (e.g., '3.14')
+- Float literals must have at least one digit after the decimal point ('5.' is invalid, must be '5.0')
+
+### 1.4 Comments
+- C++-style single-line comments beginning with '//'
+
+## 2. Types
+
+### 2.1 Type System
+The language has a static, manifest typing system with the following primitive types:
+- 'int': Signed integer values
+- 'float': Floating-point values
+- 'uint': Unsigned integer values
+- 'long': Long (64-bit) signed integer values
+- 'ulong': Long (64-bit) unsigned integer values
+
+### 2.2 Type Compatibility
+- Type checking is strict - only same types can be assigned to each other
+- Implicit conversions are not allowed
+- Type promotion follows this precedence: float > ulong > long > uint > int
+- Integer literals can be promoted to any type during declaration
+
+### 2.3 Type Inference
+- Types can be inferred from initializers using the ':=' operator
+
+## 3. Declarations
+
+### 3.1 Variable Declarations
+Variables must be declared before use with an initializer:
+
+EXAMPLE:
+var <identifier> [: <type>] := <expression>;  // Type inferred
+var <identifier> : <type> = <expression>;     // Type explicitly specified
+
+Examples:
+var x := 5;            // Type inferred as int
+var y : float = 3.14;  // Type explicitly specified
+var z := 42u;          // Type inferred as uint
+var w : long = 42l;    // Type explicitly as long
+
+### 3.2 Constant Declarations
+Constants are declared with 'let' and must have an initializer:
+
+EXAMPLE:
+let <identifier> [: <type>] := <expression>;  // Type inferred
+let <identifier> : <type> = <expression>;     // Type explicitly specified
+
+Constants cannot be reassigned after declaration.
+
+## 4. Statements
+
+### 4.1 Expression Statements
+Any expression can be used as a statement. Additionally, assignments can be used as expressions within control flow conditions:
+
+EXAMPLE:
+while (x = y * 3) > 0 do
+    print x;
+    x = x - 1;
+end
+
+### 4.2 Conditional Statements
+Each 'if' statement requires a scope block ('do ... end') after the condition expression:
+
+EXAMPLE:
+if <expression> do
+    <statements>
+end
+
+if <expression> do
+    <statements>
+end else do
+    <statements>
+end
+
+if <expression> do
+    <statements>
+end else if <expression> do
+    <statements>
+end
+
+Note: Each 'if' block must be closed with 'end' before an 'else' clause.
+The 'end' keyword closes the block scope that was started with 'do', not the conditional statement itself.
+
+### 4.3 Loop Statements
+Loops use 'while' with a 'do' keyword and must end with 'end':
+
+EXAMPLE:
+while <expression> do
+    <statements>
+end
+
+### 4.4 Loop Control
+Loops can be controlled with:
+- 'break': Exit the innermost loop
+- 'continue': Skip to the next iteration of the innermost loop
+
+### 4.5 Print Statement
+Output is done with the 'print' keyword:
+
+EXAMPLE:
+print <expression>;
+
+### 4.6 Empty Statement
+A lone semicolon represents an empty statement:
+
+EXAMPLE:
+;
+
+## 5. Expressions
+
+### 5.1 Arithmetic Operators
+- Addition: '+'
+- Subtraction: '-'
+- Multiplication: '*'
+- Division: '/' (integer division for int operands, float division otherwise)
+- Modulo: '%'
+
+### 5.2 Compound Assignment Operators
+- '+=': Add and assign
+- '-=': Subtract and assign
+- '*=': Multiply and assign
+- '/=': Divide and assign
+- '%=': Modulo and assign
+
+### 5.3 Comparison Operators
+- Equal: '=='
+- Not equal: '!='
+- Greater than: '>'
+- Less than: '<'
+- Greater than or equal: '>='
+- Less than or equal: '<='
+
+### 5.4 Logical Operators
+- AND: 'and'
+- OR: 'or'
+- NOT: '!'
+
+### 5.5 Bitwise Operators
+- AND: '&'
+- OR: '|'
+- XOR: 'xor'
+- NOT: 'bitnot'
+- Shift left: 'shl'
+- Shift right: 'shr'
+
+### 5.6 Operator Precedence
+From lowest to highest:
+1. Assignment operators ('=', '+=', '-=', etc.)
+2. Logical OR ('or')
+3. Logical AND ('and')
+4. Comparison operators ('==', '!=', '>=', '>', '<=', '<')
+5. Bitwise OR ('|')
+6. Bitwise XOR ('xor')
+7. Bitwise AND ('&')
+8. Addition and subtraction ('+', '-')
+9. Multiplication, division, modulo, and shifts ('*', '/', '%', 'shl', 'shr')
+10. Unary operators (unary '-', '!', 'bitnot')
+
+## 6. Evaluation Rules
+
+### 6.1 Boolean Context
+- Boolean expressions in conditions result in 1 (true) or 0 (false)
+- Any non-zero value is considered true in conditions
+
+### 6.2 Type Rules
+- Binary operations between two values of the same type result in that type
+- No implicit type promotions are allowed between different types
+- Comparison and logical operations always return an 'int' (0 or 1)
+- Bitwise operations require integer operands and return an 'int'
+- Type precedence for promotion: float > ulong > long > uint > int
+
+### 6.3 Division
+- Division between two 'int' values performs integer division (truncation)
+- Division with at least one 'float' operand performs floating-point division
+- Division between signed integers follows C rules for truncation toward zero
+- Division between unsigned integers performs unsigned division
+
+## 7. Scope Rules
+
+- Variables must be declared before use
+- Variables cannot be redeclared in the same scope
+- The 'do ... end' blocks create new block scopes
+
+## 8. Error Handling
+
+### 8.1 Statement Termination
+- Multiple statements on the same line must be separated by semicolons
+- If a statement is not terminated by a newline, a semicolon is required
+
+EXAMPLE:
+var x := 5; var y := 10; // Multiple statements on one line require semicolons
+var z := 15               // No semicolon needed if followed by a newline
+
+The language reports various errors:
+- Type mismatch errors
+- Undeclared variable errors
+- Syntax errors
+- Assignment to constants
+- Missing semicolons between statements on the same line
+
+## 9. Semantics Highlights
+
+- **Static Typing**: All variables have a determined type at compile time
+- **Type Inference**: Types can be inferred from initializers
+- **No Implicit Conversions**: Strict type checking with no automatic type promotions
+- **Boolean Representation**: Boolean values are represented as integers (0=false, non-zero=true)
+- **Mandatory Initialization**: All variables must be initialized at declaration
+- **Statement Termination**: Statements on the same line must be separated by semicolons
+- **Control Flow Nesting**: Proper nesting of control structures with explicit 'do ... end' blocks
+- **Extended Type System**: Support for unsigned integers and long integers
+- **C-Style Type Semantics**: Division, comparison, and other operations follow C language rules
+- **Comments**: C++-style single-line comments starting with '//'
