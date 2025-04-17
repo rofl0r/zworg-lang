@@ -8,6 +8,116 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "test struct 1",
+           "code": """
+    struct Point do
+        x: int
+        y: int
+    end
+
+    def Point.init(x_val: int, y_val: int) do
+        self.x = x_val
+        self.y = y_val
+    end
+
+    def Point.magnitude(): int do
+        return self.x * self.x + self.y * self.y;
+    end
+
+    def main() do
+        var p := Point(3, 4);
+        var x := p.x;      // 3
+        var y := p.y;      // 4
+        var m := p.magnitude();  // 25
+        p.x = 5;
+        var z := p.x      // 5
+    end
+           """,
+           "expected_env": {"x": 3, "y": 4, "m": 25, "z":5}
+        },
+        {
+           "name": "test struct inheritance",
+           "code": """
+    struct Shape do
+        name: string;
+    end
+
+    def Shape.init(n: string) do
+        self.name = n;
+    end
+
+    def Shape.describe(): string do
+        return self.name;
+    end
+
+    struct Circle(Shape) do
+        radius: float;
+    end
+
+    def Circle.init(n: string, r: float) do
+        self.name = n;
+        self.radius = r;
+    end
+
+    def Circle.area(): float do
+        return 3.14 * self.radius * self.radius;
+    end
+
+    def main() do
+        var c := Circle("My Circle", 2.5);
+        print c.name;        // My Circle (inherited field)
+        print c.describe();  // My Circle (inherited method)
+        print c.radius;      // 2.5
+        print c.area();      // ~19.625
+    end
+           """,
+           "expected_env": {"x": 3, "y": 4, "m": 25, "z":5}
+        },
+        {
+           "name": "test struct inheritance",
+           "code": """
+    struct Counter do
+        count: int;
+    end
+
+    def Counter.init() do
+        self.count = 0;
+        print "Counter created";
+    end
+
+    def Counter.fini() do
+        print "Counter destroyed, final count:";
+        print self.count;
+    end
+
+    def Counter.increment() do
+        self.count = self.count + 1;
+    end
+
+    def main() do
+        // Stack allocation
+        var stackCounter := Counter();
+        stackCounter.increment();
+        stackCounter.increment();
+        print stackCounter.count;  // 2
+
+        // Heap allocation
+        var heapCounter := new Counter();
+        heapCounter.increment();
+        heapCounter.increment();
+        heapCounter.increment();
+        print heapCounter.count;   // 3
+
+        // Explicitly destroy heap-allocated object
+        del heapCounter;           // Calls fini() method
+
+        // Stack allocated objects are automatically cleaned up
+    end
+           """,
+           "expected_env": {"x": 3, "y": 4, "m": 25, "z":5}
+        },
+
+        {
            "name": "test funccall, type promotion",
            "code": """
                 def add(a:long, b:int):long do return a + b; end

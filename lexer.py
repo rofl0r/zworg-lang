@@ -23,6 +23,7 @@ class Lexer:
             ';': TT_SEMI,
             '(': TT_LPAREN,
             ')': TT_RPAREN,
+            '.': TT_DOT,
             # FIXME: do we need those? we have bitand/bitor keywords
             '&': TT_BITAND,
             '|': TT_BITOR,

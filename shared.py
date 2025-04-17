@@ -63,6 +63,14 @@ TT_DEF = 56
 TT_RETURN = 57
 TT_COMMA = 58
 TT_NEWLINE = 59
+# Struct system additions
+TT_STRUCT = 60      # 'struct' keyword
+TT_DOT = 61         # '.' for member access
+TT_NEW = 62         # 'new' keyword for heap allocation
+TT_DEL = 63         # 'del' keyword for heap deallocation
+TT_LBRACE = 64      # '{' for future use
+TT_RBRACE = 65      # '}' for future use
+TT_SELF = 66        # 'self' keyword for method self-reference
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -87,6 +95,14 @@ AST_NODE_FUNCTION_DECL = 19
 AST_NODE_FUNCTION_CALL = 20
 AST_NODE_RETURN = 21
 AST_NODE_PARAM = 22
+# Struct system additions
+AST_NODE_STRUCT_DEF = 23    # struct definition
+AST_NODE_STRUCT_INIT = 24   # struct initialization
+AST_NODE_METHOD_DEF = 25    # method definition
+AST_NODE_MEMBER_ACCESS = 26 # field/method access
+AST_NODE_METHOD_CALL = 27   # method call
+AST_NODE_NEW = 28           # heap allocation with 'new'
+AST_NODE_DEL = 29           # heap deallocation with 'del'
 
 # Variable types
 TYPE_UNKNOWN = 0
@@ -97,6 +113,10 @@ TYPE_LONG = 4
 TYPE_ULONG = 5
 TYPE_STRING = 6
 TYPE_VOID = 7
+
+# Type system constants
+TYPE_STRUCT_BASE = 100      # Base for struct types
+REF_TYPE_FLAG = 0x80000000  # Bit 32 set for reference types
 
 # Order of type precedence (highest to lowest)
 TYPE_PRECEDENCE = [TYPE_STRING, TYPE_FLOAT, TYPE_ULONG, TYPE_LONG, TYPE_UINT, TYPE_INT]
@@ -182,6 +202,11 @@ KEYWORDS = {
     'string': TT_TYPE_STRING,  # String type
     'def': TT_DEF,          # Function definition
     'return': TT_RETURN,    # Return statement
+    # Struct system additions
+    'struct': TT_STRUCT,
+    'new': TT_NEW,
+    'del': TT_DEL,
+    'self': TT_SELF,
 }
 
 # Global precedence table for binary operators
@@ -206,13 +231,45 @@ BINARY_PRECEDENCE = {
     TT_SHL: 90,      # Python: shift has same precedence as multiplication
     TT_SHR: 90,
     TT_LPAREN: 100,  # needed for function calls only
+    # Member access has highest precedence
+    TT_DOT: 110,     # Member access
 }
 
 # Unary operator precedence (higher than binary operators)
-UNARY_PRECEDENCE = 110
+UNARY_PRECEDENCE = 120
+
+# Type helpers for struct and reference types
+def is_struct_type(type_):
+    """Check if a type is a struct type"""
+    return type_ >= TYPE_STRUCT_BASE and (type_ & REF_TYPE_FLAG) == 0
+
+def is_ref_type(type_):
+    """Check if a type is a reference type"""
+    return (type_ & REF_TYPE_FLAG) != 0
+
+def get_base_type(type_):
+    """Get the base type of a reference type"""
+    if is_ref_type(type_):
+        return type_ & ~REF_TYPE_FLAG
+    return type_
+
+def make_ref_type(type_):
+    """Convert a type to its reference equivalent"""
+    if is_ref_type(type_):
+        return type_  # Already a reference
+    return type_ | REF_TYPE_FLAG
 
 def var_type_to_string(var_type):
     """Convert a variable type constant to a string for error messages using the map"""
+    if is_ref_type(var_type):
+        base_type = get_base_type(var_type)
+        base_type_name = var_type_to_string(base_type)
+        return "ref to " + base_type_name
+    elif is_struct_type(var_type):
+        # Import here to avoid circular imports
+        from type_registry import get_struct_name
+        struct_name = get_struct_name(var_type)
+        return struct_name if struct_name else "unknown struct"
     return TYPE_TO_STRING_MAP.get(var_type, "unknown")
 
 def ast_node_type_to_string(node_type):
@@ -239,7 +296,15 @@ def ast_node_type_to_string(node_type):
         AST_NODE_FUNCTION_DECL: "FUNCTION_DECL",
         AST_NODE_FUNCTION_CALL: "FUNCTION_CALL",
         AST_NODE_RETURN: "RETURN",
-        AST_NODE_PARAM: "PARAM"
+        AST_NODE_PARAM: "PARAM",
+        # Struct system additions
+        AST_NODE_STRUCT_DEF: "STRUCT_DEF",
+        AST_NODE_STRUCT_INIT: "STRUCT_INIT",
+        AST_NODE_METHOD_DEF: "METHOD_DEF",
+        AST_NODE_MEMBER_ACCESS: "MEMBER_ACCESS",
+        AST_NODE_METHOD_CALL: "METHOD_CALL",
+        AST_NODE_NEW: "NEW",
+        AST_NODE_DEL: "DEL",
     }
     return type_names.get(node_type, "UNKNOWN")
 
@@ -313,6 +378,14 @@ TOKEN_NAMES = {
     TT_RETURN: "TT_RETURN",
     TT_COMMA: "TT_COMMA",
     TT_NEWLINE: "TT_NEWLINE",
+    # Struct system additions
+    TT_STRUCT: "TT_STRUCT",
+    TT_DOT: "TT_DOT",
+    TT_NEW: "TT_NEW",
+    TT_DEL: "TT_DEL",
+    TT_LBRACE: "TT_LBRACE",
+    TT_RBRACE: "TT_RBRACE",
+    TT_SELF: "TT_SELF",
 }
 
 def token_name(token_type):
