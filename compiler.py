@@ -613,8 +613,12 @@ class Parser:
             self.current_struct = struct_name
             # Add implicit 'self' parameter of struct type
             struct_id = type_registry.get_struct_id(struct_name)
+            # Create and register the method node with empty body first
+            # so type checking inside the body can find it
+            temp_method = MethodDefNode(struct_name, method_name, params, return_type, [])
+            type_registry.add_method(struct_name, method_name, temp_method)
             self.declare_variable("self", struct_id)
-            
+
         # Add parameters to scope
         for param_name, param_type in params:
             self.declare_variable(param_name, param_type)
@@ -629,9 +633,8 @@ class Parser:
         
         # Create and return the appropriate node
         if is_method:
-            method_node = MethodDefNode(struct_name, method_name, params, return_type, body)
-            type_registry.add_method(struct_name, method_name, method_node)
-            return method_node
+            temp_method.body = body
+            return temp_method
         else:
             return FunctionDeclNode(name, params, return_type, body)
 
@@ -696,7 +699,7 @@ class Parser:
             self.consume(TT_RPAREN)
         
         # Register the struct
-        struct_id = type_registry.register_struct(struct_name, parent_name)
+        struct_id = type_registry.register_struct(struct_name, parent_name, self.token)
         
         # Parse struct body
         self.skip_separators()
@@ -726,7 +729,7 @@ class Parser:
             field_type = self.parse_type_reference()
             
             # Register field
-            type_registry.add_field(struct_name, field_name, field_type)
+            type_registry.add_field(struct_name, field_name, field_type, self.token)
             fields.append((field_name, field_type))
             
             # If on the same line, require a semicolon
@@ -852,7 +855,7 @@ class Parser:
             struct_init = StructInitNode(struct_name, struct_id, args)
             return NewNode(struct_init)
 
-        raise CompilerException('Unexpected token type %d' % t.type)
+        raise CompilerException('Unexpected token type %d' % t.type, t)
 
     def led(self, t, left):
         # Handle dot operator for member access
@@ -944,7 +947,7 @@ class Parser:
             # Bit operations are performed on integers and return integers
             return BitOpNode(t.value, left, right)
 
-        raise CompilerException('Unexpected token type %d' % t.type)
+        raise CompilerException('Unexpected token type %d' % t.type, t)
 
     def parse_type(self):
         """Parse a type annotation or return None if not present"""
@@ -1047,7 +1050,7 @@ class Parser:
             self.advance()
 
             # Return with no value
-            if self.token.type in [TT_SEMI, TT_EOF] or (self.prev_token and self.token.line > self.prev_token.line):
+            if self.token.type in [TT_SEMI, TT_NEWLINE, TT_EOF] or (self.prev_token and self.token.line > self.prev_token.line):
                 self.check_statement_end()
                 return ReturnNode(None)
 
@@ -1068,6 +1071,11 @@ class Parser:
                 
             if func_return_type == TYPE_VOID:
                 self.error("Void function '%s' cannot return a value" % self.current_function)
+
+            # Check that return expression type matches function return type
+            if not can_promote(expr.expr_type, func_return_type):
+                self.error("Type mismatch in return: cannot return %s from function returning %s" % 
+                          (var_type_to_string(expr.expr_type), var_type_to_string(func_return_type)))
 
             self.check_statement_end()
             return ReturnNode(expr)

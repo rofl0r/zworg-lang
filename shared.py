@@ -392,4 +392,6 @@ def token_name(token_type):
 # Base class for all compiler-defined exceptions
 class CompilerException(Exception):
     """Base class for all exceptions raised by the compiler"""
-    pass
+    def __init__(self, message, token=None):
+        if token: message += " (line %d, column %d)"%(token.line, token.column)
+        super(CompilerException, self).__init__(message)

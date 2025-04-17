@@ -255,6 +255,80 @@ class Interpreter(object):
             AST_NODE_DEL: self.visit_del
         }
 
+    def reset(self):
+        type_registry.reset_registry()
+        if self.environment: self.environment.reset()
+
+    def run(self, text):
+        from lexer import Lexer
+        from compiler import Parser
+
+        lexer = Lexer(text)
+        parser = Parser(lexer)
+        try:
+            # Parse the program
+            program = parser.parse()
+            ast = program
+            interpreter = self
+
+            # First process struct definitions
+            for node in program:
+                if node.node_type == AST_NODE_STRUCT_DEF:
+                    interpreter.evaluate(node)
+
+            # Then process method definitions
+            for node in program:
+                if node.node_type == AST_NODE_METHOD_DEF:
+                    interpreter.evaluate(node)
+
+            # Execute global variable declarations
+            for node in program:
+                if node.node_type == AST_NODE_VAR_DECL:
+                    interpreter.evaluate(node)
+
+            # Register functions in the function map (but don't execute them)
+            for node in program:
+                if node.node_type == AST_NODE_FUNCTION_DECL:
+                    interpreter.environment.register_function(node.name, node)
+
+            # Check if main function exists
+            if not interpreter.environment.has_function("main"):
+                return {'success': False, 'error': "No 'main' function defined", 'ast': ast}
+
+            # Get main function
+            main_func = interpreter.environment.get_function("main")
+
+            # Make sure main has no parameters
+            if len(main_func.params) > 0:
+                return {'success': False, 'error': "Function 'main' cannot have parameters", 'ast': ast}
+
+            # Create a new scope for main function
+            interpreter.environment.enter_scope()
+
+            try:
+                # Execute main function
+                for stmt in main_func.body:
+                    interpreter.evaluate(stmt)
+
+                # Return both global and main's environment
+                return {
+                    'success': True,
+                    'global_env': interpreter.environment.stack[0],
+                    'main_env': interpreter.environment.stack[1],
+                    'ast': ast
+                }
+            except ReturnException as ret:
+                # If main returns a value, include it in the result
+                return {
+                    'success': True,
+                    'result': ret.value,
+                    'global_env': interpreter.environment.stack[0],
+                    'main_env': interpreter.environment.stack[1],
+                    'ast': ast
+                }
+        except CompilerException as e:
+            return {'success': False, 'error': str(e), 'ast': None}
+
     def evaluate(self, node):
         """Main entry point to evaluate an AST node"""
         if node is None:
@@ -744,78 +818,6 @@ class Interpreter(object):
         # In a real implementation, this would free memory
         return None
 
-def run(text):
-    from lexer import Lexer
-    from compiler import Parser
-
-    lexer = Lexer(text)
-    parser = Parser(lexer)
-    try:
-        # Parse the program
-        program = parser.parse()
-        ast = program
-
-        # Create a new interpreter
-        interpreter = Interpreter()
-        
-        # First process struct definitions
-        for node in program:
-            if node.node_type == AST_NODE_STRUCT_DEF:
-                interpreter.evaluate(node)
-                
-        # Then process method definitions
-        for node in program:
-            if node.node_type == AST_NODE_METHOD_DEF:
-                interpreter.evaluate(node)
-
-        # Execute global variable declarations
-        for node in program:
-            if node.node_type == AST_NODE_VAR_DECL:
-                interpreter.evaluate(node)
-
-        # Register functions in the function map (but don't execute them)
-        for node in program:
-            if node.node_type == AST_NODE_FUNCTION_DECL:
-                interpreter.environment.register_function(node.name, node)
-
-        # Check if main function exists
-        if not interpreter.environment.has_function("main"):
-            return {'success': False, 'error': "No 'main' function defined", 'ast': ast}
-
-        # Get main function
-        main_func = interpreter.environment.get_function("main")
-
-        # Make sure main has no parameters
-        if len(main_func.params) > 0:
-            return {'success': False, 'error': "Function 'main' cannot have parameters", 'ast': ast}
-
-        # Create a new scope for main function
-        interpreter.environment.enter_scope()
-
-        try:
-            # Execute main function
-            for stmt in main_func.body:
-                interpreter.evaluate(stmt)
-
-            # Return both global and main's environment
-            return {
-                'success': True,
-                'global_env': interpreter.environment.stack[0],
-                'main_env': interpreter.environment.stack[1],
-                'ast': ast
-            }
-        except ReturnException as ret:
-            # If main returns a value, include it in the result
-            return {
-                'success': True,
-                'result': ret.value,
-                'global_env': interpreter.environment.stack[0],
-                'main_env': interpreter.environment.stack[1],
-                'ast': ast
-            }
-    except CompilerException as e:
-        return {'success': False, 'error': str(e), 'ast': None}
-
 # Custom exceptions for control flow
 class BreakException(Exception):
     """Raised when a break statement is encountered"""
@@ -832,10 +834,13 @@ class ContinueException(Exception):
 
 class EnvironmentStack:
     """Stack-based environment implementation with support for scopes"""
-    def __init__(self):
+    def reset(self):
         self.stack = [{}]  # Start with global scope at index 0
         self.stackptr = 0
         self.function_map = {}  # Map of function names to function nodes
+
+    def __init__(self):
+        self.reset()
 
     def enter_scope(self):
         """Enter a new scope - reuse existing or create new one"""

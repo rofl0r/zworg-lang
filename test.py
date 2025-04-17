@@ -1,12 +1,44 @@
 # Test framework for compiler.py
-from interpreter import run
-import os
+from interpreter import Interpreter
+import os, sys
+
+def printc(color, text, file=sys.stdout):
+	cols = {
+		"default": 98,
+		"white" : 97,
+		"cyan" : 96,
+		"magenta" : 95,
+		"blue" : 94,
+		"yellow" : 93,
+		"green" : 92,
+		"red" : 91,
+		"gray" : 90,
+		"end" : 0
+	}
+	colstr = "\033[%dm"
+	file.write( "%s%s%s" % (colstr%cols[color], text, colstr%cols['end']) )
 
 def test():
     # Test cases with expected final env state
     test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
+    {
+        "name": "Method with incorrect return type",
+        "code": """
+            struct Point do
+                x: int
+            end
+            
+            def Point.get_x(): string do
+                return self.x;  // int returned from string function
+            end
+            
+            def main() do
+            end
+        """,
+        "expected_error": "Type mismatch"
+    },
         {
            "name": "test struct 1",
            "code": """
@@ -722,22 +754,6 @@ def test():
         "expected_error": "Field 'y' not found in struct 'Point'"
     },
     {
-        "name": "Method with incorrect return type",
-        "code": """
-            struct Point do
-                x: int
-            end
-            
-            def Point.get_x(): string do
-                return self.x;  // int returned from string function
-            end
-            
-            def main() do
-            end
-        """,
-        "expected_error": "Type mismatch"
-    },
-    {
         "name": "Invalid constructor parameter count",
         "code": """
             struct Point do
@@ -843,13 +859,22 @@ def test():
         "expected_error": "Constructor for 'Point' expects 2 arguments, got 0"
     },
     {
-        "name": "New operator on non-struct",
+        "name": "New operator on built-in non-struct type",
         "code": """
             def main() do
                 var x := new int(10);
             end
         """,
-        "expected_error": "Struct 'int' is not defined"
+        "expected_error": "Expected struct name after 'new'"
+    },
+    {
+        "name": "New operator on non-struct",
+        "code": """
+            def main() do
+                var x := new Foo(10);
+            end
+        """,
+        "expected_error": "Struct 'Foo' is not defined"
     },
     {
         "name": "Self parameter redefinition",
@@ -884,15 +909,18 @@ def test():
     ]
 
     # List to track failing tests
+    interpreter = Interpreter()
     failed_tests = []
 
     # Run all test cases
     for i, test_case in enumerate(test_cases):
+        interpreter.reset()
+
         test_num = i + 1
         print("\nTest %d:" % test_num)
         print("Input: %s" % test_case["code"])
         
-        result = run(test_case["code"])
+        result = interpreter.run(test_case["code"])
         
         # Check if this test is expected to fail
         if "expected_error" in test_case:
@@ -900,7 +928,7 @@ def test():
             if not result['success'] and test_case["expected_error"] in result['error']:
                 print("Success! Failed with expected error: %s" % result['error'])
             else:
-                print("Test didn't fail as expected! Result: %s" % result)
+                printc("red", "Test didn't fail as expected! Result: %s" % result)
                 failed_tests.append(test_num)
                 # Add AST dump for unexpected failures
                 if result.get('ast'):
@@ -933,7 +961,7 @@ def test():
                     print("  Actual env: %s" % env)
                     failed_tests.append(test_num)
             else:
-                print("Failed! Error: %s" % result['error'])
+                printc("red", "Failed! Error: %s" % result['error'])
                 if os.getenv("DEBUG"):
                     import time
                     time.sleep(10000)

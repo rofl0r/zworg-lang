@@ -5,12 +5,18 @@ from shared import *
 _struct_registry = {}  # name -> (type_id, parent_id, fields, methods)
 _next_struct_id = TYPE_STRUCT_BASE
 
-def register_struct(name, parent_name=None):
+def reset_registry():
+    """Reset the type registry to initial state"""
+    global _struct_registry, _next_struct_id
+    _struct_registry.clear()
+    _next_struct_id = TYPE_STRUCT_BASE
+
+def register_struct(name, parent_name=None, token=None):
     """Register a new struct type, return its ID"""
     global _next_struct_id
     
     if name in _struct_registry:
-        raise CompilerException("Struct '%s' is already defined" % name)
+        raise CompilerException("Struct '%s' is already defined" % name, token)
         
     type_id = _next_struct_id
     _next_struct_id += 1
@@ -18,37 +24,37 @@ def register_struct(name, parent_name=None):
     parent_id = None
     if parent_name:
         if parent_name not in _struct_registry:
-            raise CompilerException("Parent struct '%s' is not defined" % parent_name)
+            raise CompilerException("Parent struct '%s' is not defined" % parent_name, token)
         parent_id = _struct_registry[parent_name][0]  # Get parent's type_id
         
     # (type_id, parent_id, fields, methods)
     _struct_registry[name] = (type_id, parent_id, [], {})
     return type_id
 
-def add_field(struct_name, field_name, field_type):
+def add_field(struct_name, field_name, field_type, token=None):
     """Add a field to a struct definition"""
     if struct_name not in _struct_registry:
-        raise CompilerException("Struct '%s' is not defined" % struct_name)
+        raise CompilerException("Struct '%s' is not defined" % struct_name, token)
         
     _, _, fields, _ = _struct_registry[struct_name]
     
     # Check for duplicate field
     for name, _ in fields:
         if name == field_name:
-            raise CompilerException("Field '%s' is already defined in struct '%s'" % (field_name, struct_name))
+            raise CompilerException("Field '%s' is already defined in struct '%s'" % (field_name, struct_name), token)
     
     fields.append((field_name, field_type))
 
-def add_method(struct_name, method_name, method_node):
+def add_method(struct_name, method_name, method_node, token=None):
     """Add a method to a struct definition"""
     if struct_name not in _struct_registry:
-        raise CompilerException("Struct '%s' is not defined" % struct_name)
+        raise CompilerException("Struct '%s' is not defined" % struct_name, token)
         
     _, _, _, methods = _struct_registry[struct_name]
     
     # Check for duplicate method
     if method_name in methods:
-        raise CompilerException("Method '%s' is already defined in struct '%s'" % (method_name, struct_name))
+        raise CompilerException("Method '%s' is already defined in struct '%s'" % (method_name, struct_name), token)
         
     methods[method_name] = method_node
 
