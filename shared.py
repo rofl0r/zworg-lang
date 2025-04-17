@@ -70,7 +70,6 @@ TT_NEW = 62         # 'new' keyword for heap allocation
 TT_DEL = 63         # 'del' keyword for heap deallocation
 TT_LBRACE = 64      # '{' for future use
 TT_RBRACE = 65      # '}' for future use
-TT_SELF = 66        # 'self' keyword for method self-reference
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -206,7 +205,6 @@ KEYWORDS = {
     'struct': TT_STRUCT,
     'new': TT_NEW,
     'del': TT_DEL,
-    'self': TT_SELF,
 }
 
 # Global precedence table for binary operators
@@ -385,7 +383,6 @@ TOKEN_NAMES = {
     TT_DEL: "TT_DEL",
     TT_LBRACE: "TT_LBRACE",
     TT_RBRACE: "TT_RBRACE",
-    TT_SELF: "TT_SELF",
 }
 
 def token_name(token_type):

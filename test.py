@@ -65,13 +65,13 @@ def test():
 
     def main() do
         var c := Circle("My Circle", 2.5);
-        print c.name;        // My Circle (inherited field)
-        print c.describe();  // My Circle (inherited method)
-        print c.radius;      // 2.5
-        print c.area();      // ~19.625
+        var i:= c.name;        // My Circle (inherited field)
+        var j:= c.describe();  // My Circle (inherited method)
+        var k:= c.radius      // 2.5
+        var l:= c.area();      // ~19.625
     end
            """,
-           "expected_env": {"x": 3, "y": 4, "m": 25, "z":5}
+           "expected_env": {"i": "My Circle", "j": "My Circle", "k": 2.5, "l":19.625}
         },
         {
            "name": "test struct inheritance",
@@ -99,14 +99,14 @@ def test():
         var stackCounter := Counter();
         stackCounter.increment();
         stackCounter.increment();
-        print stackCounter.count;  // 2
+        var x:= stackCounter.count;  // 2
 
         // Heap allocation
         var heapCounter := new Counter();
         heapCounter.increment();
         heapCounter.increment();
         heapCounter.increment();
-        print heapCounter.count;   // 3
+        var y:= heapCounter.count   // 3
 
         // Explicitly destroy heap-allocated object
         del heapCounter;           // Calls fini() method
@@ -114,7 +114,7 @@ def test():
         // Stack allocated objects are automatically cleaned up
     end
            """,
-           "expected_env": {"x": 3, "y": 4, "m": 25, "z":5}
+           "expected_env": {"x": 2, "y": 3}
         },
 
         {

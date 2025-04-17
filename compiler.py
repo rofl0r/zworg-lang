@@ -457,6 +457,68 @@ class Parser:
             self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
                        (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
 
+    def parse_member_access(self, obj_node):
+        """
+        Parse member access for an object (obj.member)
+        Handles both field access and method calls
+        Returns a MemberAccessNode or MethodCallNode
+        """
+        # Get object type
+        obj_type = obj_node.expr_type
+        base_type = get_base_type(obj_type)  # Unwrap reference if needed
+        
+        if not is_struct_type(base_type):
+            self.error("Left side of '.' is not a struct type")
+            
+        struct_name = type_registry.get_struct_name(base_type)
+        
+        # Parse member name
+        if self.token.type != TT_IDENT:
+            self.error("Expected member name after '.'")
+            
+        member_name = self.token.value
+        self.advance()
+        
+        # Check if it's a method call or field access
+        if self.token.type == TT_LPAREN:
+            # Method call
+            self.advance()  # Skip '('
+            
+            # Get method details
+            method = type_registry.get_method(struct_name, member_name)
+            if not method:
+                self.error("Method '%s' not found in struct '%s'" % (member_name, struct_name))
+                
+            # Parse arguments
+            args = []
+            if self.token.type != TT_RPAREN:
+                args.append(self.expression(0))
+                
+                while self.token.type == TT_COMMA:
+                    self.advance()  # Skip ','
+                    args.append(self.expression(0))
+                    
+            self.consume(TT_RPAREN)
+            
+            # Type check arguments
+            if len(args) != len(method.params):
+                self.error("Method '%s' expects %d arguments, got %d" % 
+                          (member_name, len(method.params), len(args)))
+                
+            for i, ((param_name, param_type), arg) in enumerate(zip(method.params, args)):
+                if not can_promote(arg.expr_type, param_type):
+                    self.error("Type mismatch for argument %d of method '%s': expected %s, got %s" % 
+                              (i+1, member_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
+                    
+            return MethodCallNode(obj_node, member_name, args, method.return_type)
+        else:
+            # Field access
+            field_type = type_registry.get_field_type(struct_name, member_name)
+            if field_type is None:
+                self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
+                
+            return MemberAccessNode(obj_node, member_name, field_type)
+
     def function_declaration(self):
         """Parse a function declaration or method definition"""
         self.advance()  # Skip 'def'
@@ -694,33 +756,6 @@ class Parser:
         if t.type == TT_IDENT:
             var_name = t.value
 
-            # Check for 'new' keyword for heap allocation
-            if var_name == "new" and self.token.type == TT_IDENT:
-                struct_name = self.token.value
-                
-                if not type_registry.struct_exists(struct_name):
-                    self.error("Unknown struct type '%s'" % struct_name)
-                    
-                struct_id = type_registry.get_struct_id(struct_name)
-                self.advance()
-                
-                # Parse constructor args
-                self.consume(TT_LPAREN)
-                
-                args = []
-                if self.token.type != TT_RPAREN:
-                    args.append(self.expression(0))
-                    
-                    while self.token.type == TT_COMMA:
-                        self.advance()  # Skip ','
-                        args.append(self.expression(0))
-                        
-                self.consume(TT_RPAREN)
-                
-                # Create heap allocated struct
-                struct_init = StructInitNode(struct_name, struct_id, args)
-                return NewNode(struct_init)
-            
             # Check if it's a struct type name (for initialization)
             if type_registry.struct_exists(var_name):
                 struct_id = type_registry.get_struct_id(var_name)
@@ -766,66 +801,63 @@ class Parser:
             self.consume(TT_RPAREN)
             return expr
 
+        if t.type == TT_NEW:
+            # Parse the struct name after 'new'
+            if self.token.type != TT_IDENT:
+                self.error("Expected struct name after 'new'")
+                
+            struct_name = self.token.value
+            self.advance()
+            
+            # Verify struct exists
+            if not type_registry.struct_exists(struct_name):
+                self.error("Struct '%s' is not defined" % struct_name)
+                
+            # Get the struct type ID
+            struct_id = type_registry.get_struct_id(struct_name)
+            
+            # Check for constructor call
+            args = []
+
+            if self.token.type != TT_LPAREN:
+                self.error("constructor invocation requires parenthesis")
+
+            # Parse constructor arguments
+            self.advance()  # Skip '('
+            
+            if self.token.type != TT_RPAREN:
+                args.append(self.expression(0))
+
+                while self.token.type == TT_COMMA:
+                    self.advance()  # Skip ','
+                    args.append(self.expression(0))
+
+            self.consume(TT_RPAREN)
+            
+            # Check if init method exists for the struct
+            init_method = type_registry.get_method(struct_name, "init")
+            if init_method:
+                # Check argument count
+                if len(args) != len(init_method.params):
+                    self.error("Constructor for '%s' expects %d arguments, got %d" % 
+                              (struct_name, len(init_method.params), len(args)))
+
+                # Type check arguments
+                for i, ((param_name, param_type), arg) in enumerate(zip(init_method.params, args)):
+                    if not can_promote(arg.expr_type, param_type):
+                        self.error("Type mismatch for argument %d of constructor: expected %s, got %s" % 
+                                  (i+1, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
+
+            # Create heap allocated struct
+            struct_init = StructInitNode(struct_name, struct_id, args)
+            return NewNode(struct_init)
+
         raise CompilerException('Unexpected token type %d' % t.type)
 
     def led(self, t, left):
         # Handle dot operator for member access
         if t.type == TT_DOT:
-            # Member access
-            obj_type = left.expr_type
-            base_type = get_base_type(obj_type)  # Unwrap reference if needed
-            
-            if not is_struct_type(base_type):
-                self.error("Left side of '.' is not a struct type")
-                
-            struct_name = type_registry.get_struct_name(base_type)
-            
-            # Parse member name
-            if self.token.type != TT_IDENT:
-                self.error("Expected member name after '.'")
-                
-            member_name = self.token.value
-            self.advance()
-            
-            # Check if it's a method call or field access
-            if self.token.type == TT_LPAREN:
-                # Method call
-                self.advance()  # Skip '('
-                
-                # Get method details
-                method = type_registry.get_method(struct_name, member_name)
-                if not method:
-                    self.error("Method '%s' not found in struct '%s'" % (member_name, struct_name))
-                    
-                # Parse arguments
-                args = []
-                if self.token.type != TT_RPAREN:
-                    args.append(self.expression(0))
-                    
-                    while self.token.type == TT_COMMA:
-                        self.advance()  # Skip ','
-                        args.append(self.expression(0))
-                        
-                self.consume(TT_RPAREN)
-                
-                # Type check arguments
-                if len(args) != len(method.params):
-                    self.error("Method '%s' expects %d arguments, got %d" % 
-                              (member_name, len(method.params), len(args)))
-                    
-                for i, ((param_name, param_type), arg) in enumerate(zip(method.params, args)):
-                    if not can_promote(arg.expr_type, param_type):
-                        self.error("Type mismatch for argument %d of method '%s': expected %s, got %s" % 
-                                  (i+1, member_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
-                        
-                return MethodCallNode(left, member_name, args, method.return_type)
-            else:
-                # Field access
-                field_type = type_registry.get_field_type(struct_name, member_name)
-                if field_type is None:
-                    self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
-                    
-                return MemberAccessNode(left, member_name, field_type)
+            return self.parse_member_access(left)
 
         # Handle function call
         if t.type == TT_LPAREN and left.node_type == AST_NODE_VARIABLE:
@@ -1166,6 +1198,39 @@ class Parser:
                 node = self.funccall(var)
                 self.check_statement_end()
                 return node
+
+            # Member access (variable.field)
+            elif self.token.type == TT_DOT:
+                # Create variable node for the object
+                if not self.is_variable_declared(var):
+                    self.error("Variable '%s' is not declared" % var)
+
+                var_type = self.get_variable_type(var)
+                obj_node = VariableNode(var, var_type)
+
+                # Parse member access
+                self.advance() # skip dot
+                member_node = self.parse_member_access(obj_node)
+
+                # Handle possible assignment for field access
+                if member_node.node_type == AST_NODE_MEMBER_ACCESS and self.token.type == TT_ASSIGN:
+                    self.advance()  # Skip =
+                    expr = self.expression(0)
+
+                    # Check type compatibility
+                    if not can_promote(expr.expr_type, member_node.expr_type):
+                        self.error("Type mismatch: cannot assign %s to field of type %s" % 
+                                  (var_type_to_string(expr.expr_type), var_type_to_string(member_node.expr_type)))
+
+                    # Create binary op node for the assignment
+                    node = BinaryOpNode('=', member_node, expr, member_node.expr_type)
+                    self.check_statement_end()
+                    return node
+
+                # Method call or field access as expression statement
+                self.check_statement_end()
+                return ExprStmtNode(member_node)
+
 
             # Variable reference
             else:
