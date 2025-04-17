@@ -17,7 +17,7 @@ class NumberNode(ASTNode):
     def __init__(self, value, expr_type):
         ASTNode.__init__(self, AST_NODE_NUMBER)
         self.value = value
-        self.expr_type = expr_type  # TYPE_INT, TYPE_FLOAT, TYPE_UINT, TYPE_LONG, TYPE_ULONG
+        self.expr_type = expr_type  # TYPE_INT, TYPE_FLOAT, etc.
 
     def __repr__(self):
         return "Number(%s, %s)" % (self.value, var_type_to_string(self.expr_type))
@@ -242,7 +242,6 @@ class BitOpNode(ASTNode):
     def __repr__(self):
         return "BitOp(%s, %s, %s)" % (self.operator, repr(self.left), repr(self.right))
 
-# Struct-related AST Nodes
 class StructDefNode(ASTNode):
     def __init__(self, name, parent_name, fields, struct_id):
         ASTNode.__init__(self, AST_NODE_STRUCT_DEF)
@@ -334,10 +333,9 @@ def is_literal_node(node):
 class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
-        self.token = self.lexer.next_token() # Current token
-        self.prev_token = None  # Previous token (for better error messages)
+        self.token = self.lexer.next_token()
+        self.prev_token = None
 
-        # Per-scope tracking structures
         self.scopes = ["global"]  # Stack of scope names
         self.variables = {"global": set()}  # Track declared variables per scope
         self.constants = {"global": set()}  # Track constants (let declarations) per scope
@@ -351,6 +349,90 @@ class Parser:
         
         # Track current struct for method definitions
         self.current_struct = None
+
+    def get_type_size(self, type_):
+        """Get size in bytes for integer types"""
+        type_sizes = {
+            TYPE_I8: 1, TYPE_U8: 1,
+            TYPE_I16: 2, TYPE_U16: 2,
+            TYPE_I32: 4, TYPE_U32: 4,
+            TYPE_I64: 8, TYPE_U64: 8,
+            TYPE_LONGLONG: 8, TYPE_ULONGLONG: 8,
+            TYPE_INT: 4,     # Assume 32-bit int
+            TYPE_UINT: 4,    # Assume 32-bit uint
+            TYPE_LONG: 8,    # Implementation defined
+            TYPE_ULONG: 8,   # Implementation defined
+            TYPE_FLOAT: 4,
+            TYPE_DOUBLE: 8
+        }
+        return type_sizes.get(type_, 0)
+
+    def is_signed_type(self, type_):
+        """Check if type is signed"""
+        return type_ in SIGNED_TYPES
+
+    def is_unsigned_type(self, type_):
+        """Check if type is unsigned"""
+        return type_ in UNSIGNED_TYPES
+
+    def is_float_type(self, type_):
+        """Check if type is floating point"""
+        return type_ in FLOAT_TYPES
+
+    def get_common_type(self, type1, type2):
+        """
+        Implement C's type promotion rules for binary operations
+        Returns the resulting type
+        """
+        # Handle string concatenation special case
+        if TYPE_STRING in (type1, type2):
+            return TYPE_STRING if type1 == type2 else None
+
+        # If either operand is floating point, result is the highest precision float
+        if self.is_float_type(type1) or self.is_float_type(type2):
+            if TYPE_DOUBLE in (type1, type2):
+                return TYPE_DOUBLE
+            return TYPE_FLOAT
+
+        # Handle integer promotions
+        size1 = self.get_type_size(type1)
+        size2 = self.get_type_size(type2)
+
+        # If same size, unsigned wins
+        if size1 == size2:
+            if self.is_unsigned_type(type1) or self.is_unsigned_type(type2):
+                return type1 if self.is_unsigned_type(type1) else type2
+            return type1  # Both signed, either works
+
+        # Different sizes - follow C rules
+        if size1 > size2:
+            return type1
+        return type2
+
+    def calculate_result_type(self, op, left_type, right_type):
+        """Calculate result type for binary operation following C rules"""
+        # String concatenation
+        if op == '+' and TYPE_STRING in (left_type, right_type):
+            if left_type != right_type:
+                self.error("Cannot concatenate string with non-string type")
+            return TYPE_STRING
+
+        # Comparison operators always return int
+        if op in ['==', '!=', '<', '<=', '>', '>=']:
+            return TYPE_INT
+
+        # Logical operators always return int
+        if op in ['and', 'or']:
+            return TYPE_INT
+
+        # Bitwise operators require integer operands
+        if op in ['&', '|', 'xor', 'shl', 'shr']:
+            if self.is_float_type(left_type) or self.is_float_type(right_type):
+                self.error("Bitwise operators require integer operands")
+            return self.get_common_type(left_type, right_type)
+
+        # Arithmetic operators
+        return self.get_common_type(left_type, right_type)
 
     def enter_scope(self, scope_name):
         """Enter a new scope for variable tracking"""
@@ -425,7 +507,7 @@ class Parser:
             expected_type_name = token_name(token_type)
             actual_type_name = token_name(self.token.type)
             self.error('Expected %s but got %s' %
-                       (expected_type_name, actual_type_name))
+                      (expected_type_name, actual_type_name))
 
     def lbp(self, t):
         return BINARY_PRECEDENCE.get(t.type, 0)
@@ -451,11 +533,10 @@ class Parser:
         """Check if the expression's type is compatible with the variable's type"""
         # Get variable type from the appropriate scope
         var_type = self.get_variable_type(var_name)
-
-        # Check compatibility using can_promote function
+        
         if var_type is not None and var_type != TYPE_UNKNOWN and expr_type != TYPE_UNKNOWN and not can_promote(expr_type, var_type):
             self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
-                       (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
+                      (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
 
     def parse_member_access(self, obj_node):
         """
@@ -906,35 +987,22 @@ class Parser:
         if t.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD, TT_SHL, TT_SHR]:
             right = self.expression(self.lbp(t))
 
-            # If types don't match, we need to fail
-            if can_promote(left.expr_type, right.expr_type):
-                result_type = right.expr_type
-            elif can_promote(right.expr_type, left.expr_type):
-                result_type = left.expr_type
-            else:
+            # Determine the result type based on operand types
+            result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
+            if result_type is None:
                 self.error("Type mismatch in binary operation: %s and %s" %
                           (var_type_to_string(left.expr_type), var_type_to_string(right.expr_type)))
-
-            # Special handling for string concatenation
-            if t.type == TT_PLUS and (left.expr_type == TYPE_STRING or right.expr_type == TYPE_STRING):
-                if left.expr_type != TYPE_STRING or right.expr_type != TYPE_STRING:
-                    self.error("Cannot concatenate string with non-string type")
-                result_type = TYPE_STRING
-            # Normal case - determine result type based on operands
-            elif left.expr_type != TYPE_UNKNOWN and left.expr_type == right.expr_type:
-                result_type = left.expr_type
-            else:
-                # Use the type with the highest precedence from TYPE_PRECEDENCE list
-                for tp in TYPE_PRECEDENCE:
-                    if left.expr_type == tp or right.expr_type == tp:
-                        result_type = tp
-                        break
 
             return BinaryOpNode(t.value, left, right, result_type)
 
         elif t.type in [TT_EQ, TT_NE, TT_GE, TT_LE, TT_LT, TT_GT]:
             right = self.expression(self.lbp(t))
             # Comparisons always return an integer (0/1 representing false/true)
+            # But operands must be compatible types
+            result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
+            if result_type is None:
+                self.error("Type mismatch in comparison: %s and %s" %
+                          (var_type_to_string(left.expr_type), var_type_to_string(right.expr_type)))
             return CompareNode(t.value, left, right)
 
         elif t.type in [TT_AND, TT_OR]:
@@ -944,8 +1012,12 @@ class Parser:
 
         elif t.type in [TT_XOR, TT_BITOR, TT_BITAND]:
             right = self.expression(self.lbp(t))
-            # Bit operations are performed on integers and return integers
-            return BitOpNode(t.value, left, right)
+            # Both operands must be integer types
+            if not self.is_float_type(left.expr_type) and not self.is_float_type(right.expr_type):
+                result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
+                if result_type is not None:
+                    return BitOpNode(t.value, left, right)
+            self.error("Bitwise operators require integer operands")
 
         raise CompilerException('Unexpected token type %d' % t.type, t)
 
@@ -1022,7 +1094,7 @@ class Parser:
                                   (func_name, len(func_params), len(args)))
         # Check argument types
         for i, ((param_name, param_type), arg) in enumerate(zip(func_params, args)):
-                if arg.expr_type != param_type and not can_promote(arg.expr_type, param_type):
+                if not can_promote(arg.expr_type, param_type):
                         self.error("Type mismatch for argument %d of function '%s': expected %s, got %s" %
                                          (i+1, func_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
         return FunctionCallNode(func_name, args, func_return_type)
@@ -1161,7 +1233,17 @@ class Parser:
                     self.error("Global variables can only be initialized with literals")
 
                 # Check type compatibility with expression type
-                if expr.expr_type != TYPE_UNKNOWN and var_type != expr.expr_type and not can_promote(expr.expr_type, var_type):
+                # Special cases for literals in declarations
+                if expr.node_type == AST_NODE_NUMBER:
+                    if expr.expr_type == TYPE_INT:
+                        # Allow int literals to initialize any numeric type, but not string nor structs
+                        if var_type not in FLOAT_TYPES and var_type not in UNSIGNED_TYPES and var_type not in SIGNED_TYPES:
+                            self.error("Type mismatch in initialization: can't assign %s to %s (type %s)" % 
+                                      (var_type_to_string(expr.expr_type), var_name, var_type_to_string(var_type)))
+                    elif expr.expr_type == TYPE_DOUBLE and var_type == TYPE_FLOAT:
+                        # Allow double literals to initialize float variables
+                        pass
+                elif expr.expr_type != TYPE_UNKNOWN and var_type != expr.expr_type and not can_promote(expr.expr_type, var_type):
                     self.error("Type mismatch in initialization: can't assign %s to %s (type %s)" % 
                               (var_type_to_string(expr.expr_type), var_name, var_type_to_string(var_type)))
             else:
@@ -1252,7 +1334,7 @@ class Parser:
 
                 # Handle all assignment operators (regular and compound)
                 if self.token.type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN, 
-                                      TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
+                                       TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
                     # Check if variable is a constant (declared with 'let')
                     if self.is_constant(var):
                         self.error("Cannot reassign to constant '%s'" % var)

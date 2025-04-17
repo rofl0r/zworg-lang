@@ -1,7 +1,5 @@
-# Implementation of C-like operators for our interpreter
-# This file contains functions that emulate C operator behavior
+# Implementation of interpreter for the AST with C-style type handling
 
-# Import type constants from compiler.py
 from __future__ import division  # Use true division
 from shared import *
 import type_registry
@@ -22,43 +20,93 @@ class StructInstance:
 # Helper functions for type handling
 def is_integer_type(type_):
     """Check if a type is any integer type (signed or unsigned)"""
-    return type_ in [TYPE_INT, TYPE_UINT, TYPE_LONG, TYPE_ULONG]
+    return type_ in [TYPE_INT, TYPE_UINT, TYPE_LONG, TYPE_ULONG, TYPE_LONGLONG, TYPE_ULONGLONG,
+                    TYPE_I8, TYPE_U8, TYPE_I16, TYPE_U16, TYPE_I32, TYPE_U32, TYPE_I64, TYPE_U64]
 
 def is_unsigned_type(type_):
     """Check if a type is unsigned"""
-    return type_ in [TYPE_UINT, TYPE_ULONG]
+    return type_ in [TYPE_UINT, TYPE_ULONG, TYPE_ULONGLONG, TYPE_U8, TYPE_U16, TYPE_U32, TYPE_U64]
 
 def is_signed_type(type_):
     """Check if a type is signed"""
-    return type_ in [TYPE_INT, TYPE_LONG]
+    return type_ in [TYPE_INT, TYPE_LONG, TYPE_LONGLONG, TYPE_I8, TYPE_I16, TYPE_I32, TYPE_I64]
 
 def is_float_type(type_):
     """Check if a type is floating point"""
-    return type_ == TYPE_FLOAT
+    return type_ in [TYPE_FLOAT, TYPE_DOUBLE]
 
-# Binary arithmetic operators
+def get_type_size(type_):
+    """Get size in bytes for numeric types"""
+    type_sizes = {
+        TYPE_I8: 1, TYPE_U8: 1,
+        TYPE_I16: 2, TYPE_U16: 2,
+        TYPE_I32: 4, TYPE_U32: 4,
+        TYPE_I64: 8, TYPE_U64: 8,
+        TYPE_INT: 4,     # Assume 32-bit int
+        TYPE_UINT: 4,    # Assume 32-bit uint
+        TYPE_LONG: 8,    # Implementation defined, assume 64-bit
+        TYPE_ULONG: 8,   # Implementation defined, assume 64-bit
+        TYPE_LONGLONG: 8,  # Always 64-bit
+        TYPE_ULONGLONG: 8, # Always 64-bit
+        TYPE_FLOAT: 4,
+        TYPE_DOUBLE: 8
+    }
+    return type_sizes.get(type_, 0)
+
+# Binary arithmetic operators with C-style type promotion
 def add(left, right, left_type, right_type):
     """Addition with C semantics"""
     if is_float_type(left_type) or is_float_type(right_type):
+        # Convert to double if either operand is double
+        if TYPE_DOUBLE in (left_type, right_type):
+            return float(left) + float(right)
+        # Otherwise use float precision
         return float(left) + float(right)
 
     # String concatenation
     if left_type == TYPE_STRING and right_type == TYPE_STRING:
         return str(left) + str(right)
 
-    return int(left) + int(right)
+    # Integer addition - follow C promotion rules
+    result = int(left) + int(right)
+    
+    # Handle overflow according to type
+    if is_unsigned_type(left_type) or is_unsigned_type(right_type):
+        # For unsigned types, result wraps around
+        max_val = (1 << (get_type_size(max(left_type, right_type)) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 def subtract(left, right, left_type, right_type):
     """Subtraction with C semantics"""
     if is_float_type(left_type) or is_float_type(right_type):
+        if TYPE_DOUBLE in (left_type, right_type):
+            return float(left) - float(right)
         return float(left) - float(right)
-    return int(left) - int(right)
+
+    result = int(left) - int(right)
+    
+    if is_unsigned_type(left_type) or is_unsigned_type(right_type):
+        max_val = (1 << (get_type_size(max(left_type, right_type)) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 def multiply(left, right, left_type, right_type):
     """Multiplication with C semantics"""
     if is_float_type(left_type) or is_float_type(right_type):
+        if TYPE_DOUBLE in (left_type, right_type):
+            return float(left) * float(right)
         return float(left) * float(right)
-    return int(left) * int(right)
+
+    result = int(left) * int(right)
+    
+    if is_unsigned_type(left_type) or is_unsigned_type(right_type):
+        max_val = (1 << (get_type_size(max(left_type, right_type)) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 def divide(left, right, left_type, right_type):
     """Division with C semantics"""
@@ -66,6 +114,8 @@ def divide(left, right, left_type, right_type):
         raise ZeroDivisionError("Division by zero")
 
     if is_float_type(left_type) or is_float_type(right_type):
+        if TYPE_DOUBLE in (left_type, right_type):
+            return float(left) / float(right)
         return float(left) / float(right)
 
     # Integer division - follow C rules
@@ -80,7 +130,7 @@ def divide(left, right, left_type, right_type):
         return result
     else:
         # Mixed signed/unsigned - follow C promotion rules
-        # We'll treat as unsigned if either operand is unsigned
+        # Treat as unsigned if either operand is unsigned
         return int(left) // int(right)
 
 def modulo(left, right, left_type, right_type):
@@ -109,7 +159,15 @@ def shift_left(left, right, left_type, right_type):
     """Left shift with C semantics"""
     if right < 0:
         raise ValueError("Negative shift count")
-    return int(left) << int(right)
+    
+    result = int(left) << int(right)
+    
+    # Handle overflow according to type
+    if is_unsigned_type(left_type):
+        max_val = (1 << (get_type_size(left_type) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 def shift_right(left, right, left_type, right_type):
     """Right shift with C semantics"""
@@ -119,17 +177,17 @@ def shift_right(left, right, left_type, right_type):
     # In C, right shift behavior depends on whether the left operand is signed
     if is_signed_type(left_type) and left < 0:
         # Arithmetic shift (preserve sign bit) for signed negative values
-        # Python's >> already does this
         return int(left) >> int(right)
     else:
         # Logical shift (fill with zeros) for unsigned or positive values
-        # For positive values, Python's >> is equivalent
         return int(left) >> int(right)
 
 # Unary operators
 def negate(value, type_):
     """Unary negation with C semantics"""
     if is_float_type(type_):
+        if type_ == TYPE_DOUBLE:
+            return -float(value)
         return -float(value)
     return -int(value)
 
@@ -139,7 +197,14 @@ def logical_not(value):
 
 def bitwise_not(value, type_):
     """Bitwise NOT with C semantics"""
-    return ~int(value)
+    result = ~int(value)
+    
+    # Handle overflow according to type
+    if is_unsigned_type(type_):
+        max_val = (1 << (get_type_size(type_) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 # Comparison operators
 def compare_eq(left, right, left_type, right_type):
@@ -208,15 +273,37 @@ def logical_or(left, right):
 # Bitwise operators
 def bitwise_and(left, right, left_type, right_type):
     """Bitwise AND with C semantics"""
-    return int(left) & int(right)
+    result = int(left) & int(right)
+    
+    # Handle overflow according to result type
+    result_type = max(left_type, right_type, key=get_type_size)
+    if is_unsigned_type(result_type):
+        max_val = (1 << (get_type_size(result_type) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 def bitwise_or(left, right, left_type, right_type):
     """Bitwise OR with C semantics"""
-    return int(left) | int(right)
+    result = int(left) | int(right)
+    
+    result_type = max(left_type, right_type, key=get_type_size)
+    if is_unsigned_type(result_type):
+        max_val = (1 << (get_type_size(result_type) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 def bitwise_xor(left, right, left_type, right_type):
     """Bitwise XOR with C semantics"""
-    return int(left) ^ int(right)
+    result = int(left) ^ int(right)
+    
+    result_type = max(left_type, right_type, key=get_type_size)
+    if is_unsigned_type(result_type):
+        max_val = (1 << (get_type_size(result_type) * 8)) - 1
+        return result & max_val
+        
+    return result
 
 class Interpreter(object):
     def __init__(self, environment=None):
@@ -503,19 +590,7 @@ class Interpreter(object):
     def visit_var_decl(self, node):
         """Evaluate a variable declaration node"""
         value = self.evaluate(node.expr)
-
-        # Check if type promotion is needed and allowed
-        if node.var_type != node.expr.expr_type:
-            if not can_promote(node.expr.expr_type, node.var_type):
-                raise CompilerException("Cannot assign %s to %s" % 
-                                      (var_type_to_string(node.expr.expr_type), var_type_to_string(node.var_type)))
-
-        # For variable declarations, literals get special treatment
-        # This supports writing code like: var x:uint = 42; (without 'u' suffix)
-        if node.expr.node_type == AST_NODE_NUMBER:
-            # No actual value transformation needed for most numeric types
-            pass
-
+        # types are already checked in compiler
         self.environment.set(node.var_name, value)
         return value
 
@@ -546,6 +621,10 @@ class Interpreter(object):
 
         for (param_name, param_type), arg in zip(func.params, node.args):
             arg_value = self.evaluate(arg)
+            if not can_promote(arg.expr_type, param_type):
+                self.environment.leave_scope()
+                raise CompilerException("Type mismatch in argument to function '%s': cannot convert %s to %s" %
+                                      (node.name, var_type_to_string(arg.expr_type), var_type_to_string(param_type)))
             self.environment.set(param_name, arg_value)
 
         result = None  # Default return value for void functions
@@ -660,14 +739,12 @@ class Interpreter(object):
             if is_struct_type(field_type):
                 # For now, we don't auto-initialize nested structs
                 instance.fields[field_name] = None
-            elif field_type == TYPE_INT or field_type == TYPE_UINT or field_type == TYPE_LONG or field_type == TYPE_ULONG:
-                instance.fields[field_name] = 0
-            elif field_type == TYPE_FLOAT:
-                instance.fields[field_name] = 0.0
             elif field_type == TYPE_STRING:
                 instance.fields[field_name] = ""
+            elif is_float_type(field_type):
+                instance.fields[field_name] = 0.0
             else:
-                instance.fields[field_name] = None
+                instance.fields[field_name] = 0
         
         # Call constructor if it exists and there are args or it's "init"
         init_method = type_registry.get_method(node.struct_name, "init")
@@ -686,7 +763,11 @@ class Interpreter(object):
                                       (node.struct_name, len(init_method.params), len(node.args)))
                 
             # Set parameter values
-            for (param_name, _), arg_value in zip(init_method.params, args):
+            for (param_name, param_type), arg_value in zip(init_method.params, args):
+                if not can_promote(node.args[0].expr_type, param_type):
+                    self.environment.leave_scope()
+                    raise CompilerException("Type mismatch in constructor argument: cannot convert %s to %s" %
+                                          (var_type_to_string(node.args[0].expr_type), var_type_to_string(param_type)))
                 self.environment.set(param_name, arg_value)
                 
             # Execute constructor body
@@ -754,7 +835,11 @@ class Interpreter(object):
                                   (node.method_name, len(method.params), len(node.args)))
             
         # Set parameter values
-        for (param_name, _), arg_value in zip(method.params, args):
+        for (param_name, param_type), arg_value in zip(method.params, args):
+            if not can_promote(node.args[0].expr_type, param_type):
+                self.environment.leave_scope()
+                raise CompilerException("Type mismatch in method argument: cannot convert %s to %s" %
+                                      (var_type_to_string(node.args[0].expr_type), var_type_to_string(param_type)))
             self.environment.set(param_name, arg_value)
             
         # Execute method body

@@ -70,6 +70,19 @@ TT_NEW = 62         # 'new' keyword for heap allocation
 TT_DEL = 63         # 'del' keyword for heap deallocation
 TT_LBRACE = 64      # '{' for future use
 TT_RBRACE = 65      # '}' for future use
+# New type tokens
+TT_TYPE_DOUBLE = 66
+TT_DOUBLE_LITERAL = 67
+TT_TYPE_I8 = 68
+TT_TYPE_U8 = 69
+TT_TYPE_I16 = 70
+TT_TYPE_U16 = 71
+TT_TYPE_I32 = 72
+TT_TYPE_U32 = 73
+TT_TYPE_I64 = 74
+TT_TYPE_U64 = 75
+TT_TYPE_LONGLONG = 76
+TT_TYPE_ULONGLONG = 77
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -112,36 +125,21 @@ TYPE_LONG = 4
 TYPE_ULONG = 5
 TYPE_STRING = 6
 TYPE_VOID = 7
+TYPE_DOUBLE = 8
+TYPE_I8 = 9
+TYPE_U8 = 10
+TYPE_I16 = 11
+TYPE_U16 = 12
+TYPE_I32 = 13
+TYPE_U32 = 14
+TYPE_I64 = 15
+TYPE_U64 = 16
+TYPE_LONGLONG = 17
+TYPE_ULONGLONG = 18
 
 # Type system constants
 TYPE_STRUCT_BASE = 100      # Base for struct types
 REF_TYPE_FLAG = 0x80000000  # Bit 32 set for reference types
-
-# Order of type precedence (highest to lowest)
-TYPE_PRECEDENCE = [TYPE_STRING, TYPE_FLOAT, TYPE_ULONG, TYPE_LONG, TYPE_UINT, TYPE_INT]
-
-# Type promotion helper functions
-def can_promote(src_type, dst_type):
-    """
-    Determine if a value of src_type can be promoted to dst_type
-    Rules:
-    1. Any type can be promoted to itself
-    2. Any integer literal (TYPE_INT) can be promoted to any type during declaration
-    3. For other cases, follow type precedence rules
-    """
-    # Same type - always compatible
-    if src_type == dst_type:
-        return True
-    
-    # Int literal special case - can promote to any other type 
-    # This allows writing var x:uint = 42; without having to add the 'u' suffix
-    if src_type == TYPE_INT:
-        return dst_type != TYPE_STRING
-        
-    # For other types, only allow promotion to higher precedence types
-    src_prec = TYPE_PRECEDENCE.index(src_type) if src_type in TYPE_PRECEDENCE else -1
-    dst_prec = TYPE_PRECEDENCE.index(dst_type) if dst_type in TYPE_PRECEDENCE else -1
-    return src_prec > dst_prec  # Lower index = higher precedence
 
 # Mapping from type constants to their string representations
 TYPE_TO_STRING_MAP = {
@@ -152,7 +150,18 @@ TYPE_TO_STRING_MAP = {
     TYPE_LONG: "long",
     TYPE_ULONG: "ulong",
     TYPE_STRING: "string",
-    TYPE_VOID: "void"
+    TYPE_VOID: "void",
+    TYPE_DOUBLE: "double",
+    TYPE_I8: "i8",
+    TYPE_U8: "u8",
+    TYPE_I16: "i16",
+    TYPE_U16: "u16",
+    TYPE_I32: "i32",
+    TYPE_U32: "u32",
+    TYPE_I64: "i64",
+    TYPE_U64: "u64",
+    TYPE_LONGLONG: "longlong",
+    TYPE_ULONGLONG: "ulonglong"
 }
 
 # Mapping from token types to variable types
@@ -162,7 +171,8 @@ TOKEN_TO_TYPE_MAP = {
     TT_UINT_LITERAL: TYPE_UINT,
     TT_LONG_LITERAL: TYPE_LONG,
     TT_ULONG_LITERAL: TYPE_ULONG,
-    TT_STRING_LITERAL: TYPE_STRING
+    TT_STRING_LITERAL: TYPE_STRING,
+    TT_DOUBLE_LITERAL: TYPE_DOUBLE
 }
 
 # Mapping from type tokens to variable types
@@ -172,7 +182,18 @@ TYPE_TOKEN_MAP = {
     TT_TYPE_UINT: TYPE_UINT,
     TT_TYPE_LONG: TYPE_LONG,
     TT_TYPE_ULONG: TYPE_ULONG,
-    TT_TYPE_STRING: TYPE_STRING
+    TT_TYPE_STRING: TYPE_STRING,
+    TT_TYPE_DOUBLE: TYPE_DOUBLE,
+    TT_TYPE_I8: TYPE_I8,
+    TT_TYPE_U8: TYPE_U8,
+    TT_TYPE_I16: TYPE_I16,
+    TT_TYPE_U16: TYPE_U16,
+    TT_TYPE_I32: TYPE_I32,
+    TT_TYPE_U32: TYPE_U32,
+    TT_TYPE_I64: TYPE_I64,
+    TT_TYPE_U64: TYPE_U64,
+    TT_TYPE_LONGLONG: TYPE_LONGLONG,
+    TT_TYPE_ULONGLONG: TYPE_ULONGLONG
 }
 
 # Global hashtable for keywords
@@ -201,10 +222,20 @@ KEYWORDS = {
     'string': TT_TYPE_STRING,  # String type
     'def': TT_DEF,          # Function definition
     'return': TT_RETURN,    # Return statement
-    # Struct system additions
     'struct': TT_STRUCT,
     'new': TT_NEW,
     'del': TT_DEL,
+    'double': TT_TYPE_DOUBLE,  # Double type
+    'i8': TT_TYPE_I8,
+    'u8': TT_TYPE_U8,
+    'i16': TT_TYPE_I16,
+    'u16': TT_TYPE_U16,
+    'i32': TT_TYPE_I32,
+    'u32': TT_TYPE_U32,
+    'i64': TT_TYPE_I64,
+    'u64': TT_TYPE_U64,
+    'longlong': TT_TYPE_LONGLONG,
+    'ulonglong': TT_TYPE_ULONGLONG
 }
 
 # Global precedence table for binary operators
@@ -236,84 +267,21 @@ BINARY_PRECEDENCE = {
 # Unary operator precedence (higher than binary operators)
 UNARY_PRECEDENCE = 120
 
-# Type helpers for struct and reference types
-def is_struct_type(type_):
-    """Check if a type is a struct type"""
-    return type_ >= TYPE_STRUCT_BASE and (type_ & REF_TYPE_FLAG) == 0
+FLOAT_TYPES = {TYPE_FLOAT, TYPE_DOUBLE}
+UNSIGNED_TYPES = {TYPE_UINT, TYPE_ULONG, TYPE_ULONGLONG, TYPE_U8, TYPE_U16, TYPE_U32, TYPE_U64}
+SIGNED_TYPES = {TYPE_INT, TYPE_LONG, TYPE_LONGLONG, TYPE_I8, TYPE_I16, TYPE_I32, TYPE_I64}
 
-def is_ref_type(type_):
-    """Check if a type is a reference type"""
-    return (type_ & REF_TYPE_FLAG) != 0
-
-def get_base_type(type_):
-    """Get the base type of a reference type"""
-    if is_ref_type(type_):
-        return type_ & ~REF_TYPE_FLAG
-    return type_
-
-def make_ref_type(type_):
-    """Convert a type to its reference equivalent"""
-    if is_ref_type(type_):
-        return type_  # Already a reference
-    return type_ | REF_TYPE_FLAG
-
-def var_type_to_string(var_type):
-    """Convert a variable type constant to a string for error messages using the map"""
-    if is_ref_type(var_type):
-        base_type = get_base_type(var_type)
-        base_type_name = var_type_to_string(base_type)
-        return "ref to " + base_type_name
-    elif is_struct_type(var_type):
-        # Import here to avoid circular imports
-        from type_registry import get_struct_name
-        struct_name = get_struct_name(var_type)
-        return struct_name if struct_name else "unknown struct"
-    return TYPE_TO_STRING_MAP.get(var_type, "unknown")
-
-def ast_node_type_to_string(node_type):
-    """Convert AST node type to string for debugging"""
-    type_names = {
-        AST_NODE_BASE: "BASE",
-        AST_NODE_NUMBER: "NUMBER",
-        AST_NODE_VARIABLE: "VARIABLE",
-        AST_NODE_BINARY_OP: "BINARY_OP",
-        AST_NODE_UNARY_OP: "UNARY_OP",
-        AST_NODE_ASSIGN: "ASSIGN",
-        AST_NODE_COMPOUND_ASSIGN: "COMPOUND_ASSIGN",
-        AST_NODE_PRINT: "PRINT",
-        AST_NODE_IF: "IF",
-        AST_NODE_WHILE: "WHILE",
-        AST_NODE_BREAK: "BREAK",
-        AST_NODE_CONTINUE: "CONTINUE",
-        AST_NODE_EXPR_STMT: "EXPR_STMT",
-        AST_NODE_VAR_DECL: "VAR_DECL",
-        AST_NODE_COMPARE: "COMPARE",
-        AST_NODE_LOGICAL: "LOGICAL",
-        AST_NODE_BITOP: "BITOP",
-        AST_NODE_STRING: "STRING",
-        AST_NODE_FUNCTION_DECL: "FUNCTION_DECL",
-        AST_NODE_FUNCTION_CALL: "FUNCTION_CALL",
-        AST_NODE_RETURN: "RETURN",
-        AST_NODE_PARAM: "PARAM",
-        # Struct system additions
-        AST_NODE_STRUCT_DEF: "STRUCT_DEF",
-        AST_NODE_STRUCT_INIT: "STRUCT_INIT",
-        AST_NODE_METHOD_DEF: "METHOD_DEF",
-        AST_NODE_MEMBER_ACCESS: "MEMBER_ACCESS",
-        AST_NODE_METHOD_CALL: "METHOD_CALL",
-        AST_NODE_NEW: "NEW",
-        AST_NODE_DEL: "DEL",
-    }
-    return type_names.get(node_type, "UNKNOWN")
-
-# Helper function for promoting literal values
-def promote_literal_if_needed(value, from_type, to_type):
-    """Promote a literal value if needed between compatible types"""
-    if from_type != to_type and can_promote(from_type, to_type):
-        # Most numeric promotions don't require value changes in Python
-        # But certain conversions might need special handling in the future
-        return value
-    return value
+# Order of type precedence from lowest to highest
+TYPE_PRECEDENCE = [
+    TYPE_I8, TYPE_U8,
+    TYPE_I16, TYPE_U16,
+    TYPE_I32, TYPE_U32,
+    TYPE_I64, TYPE_U64,
+    TYPE_INT, TYPE_UINT,
+    TYPE_LONG, TYPE_ULONG,
+    TYPE_LONGLONG, TYPE_ULONGLONG,
+    TYPE_FLOAT, TYPE_DOUBLE
+]
 
 # Define token type names for debugging (pre-populated)
 TOKEN_NAMES = {
@@ -376,22 +344,157 @@ TOKEN_NAMES = {
     TT_RETURN: "TT_RETURN",
     TT_COMMA: "TT_COMMA",
     TT_NEWLINE: "TT_NEWLINE",
-    # Struct system additions
     TT_STRUCT: "TT_STRUCT",
     TT_DOT: "TT_DOT",
     TT_NEW: "TT_NEW",
     TT_DEL: "TT_DEL",
     TT_LBRACE: "TT_LBRACE",
     TT_RBRACE: "TT_RBRACE",
+    TT_TYPE_DOUBLE: "TT_TYPE_DOUBLE",
+    TT_DOUBLE_LITERAL: "TT_DOUBLE_LITERAL",
+    TT_TYPE_I8: "TT_TYPE_I8",
+    TT_TYPE_U8: "TT_TYPE_U8",
+    TT_TYPE_I16: "TT_TYPE_I16",
+    TT_TYPE_U16: "TT_TYPE_U16",
+    TT_TYPE_I32: "TT_TYPE_I32",
+    TT_TYPE_U32: "TT_TYPE_U32",
+    TT_TYPE_I64: "TT_TYPE_I64",
+    TT_TYPE_U64: "TT_TYPE_U64",
+    TT_TYPE_LONGLONG: "TT_TYPE_LONGLONG",
+    TT_TYPE_ULONGLONG: "TT_TYPE_ULONGLONG"
 }
 
 def token_name(token_type):
     """Convert a token type number to its name for better debugging"""
     return TOKEN_NAMES.get(token_type, str(token_type))
 
-# Base class for all compiler-defined exceptions
+
+# Type helpers for struct and reference types
+def is_struct_type(type_):
+    """Check if a type is a struct type"""
+    return type_ >= TYPE_STRUCT_BASE and (type_ & REF_TYPE_FLAG) == 0
+
+def is_ref_type(type_):
+    """Check if a type is a reference type"""
+    return (type_ & REF_TYPE_FLAG) != 0
+
+def get_base_type(type_):
+    """Get the base type of a reference type"""
+    if is_ref_type(type_):
+        return type_ & ~REF_TYPE_FLAG
+    return type_
+
+def make_ref_type(type_):
+    """Convert a type to its reference equivalent"""
+    if is_ref_type(type_):
+        return type_  # Already a reference
+    return type_ | REF_TYPE_FLAG
+
+def var_type_to_string(var_type):
+    """Convert a variable type constant to a string for error messages using the map"""
+    if is_ref_type(var_type):
+        base_type = get_base_type(var_type)
+        base_type_name = var_type_to_string(base_type)
+        return "ref to " + base_type_name
+    elif is_struct_type(var_type):
+        # Import here to avoid circular imports
+        from type_registry import get_struct_name
+        struct_name = get_struct_name(var_type)
+        return struct_name if struct_name else "unknown struct"
+    return TYPE_TO_STRING_MAP.get(var_type, "unknown")
+
+def ast_node_type_to_string(node_type):
+    """Convert AST node type to string for debugging"""
+    type_names = {
+        AST_NODE_BASE: "BASE",
+        AST_NODE_NUMBER: "NUMBER",
+        AST_NODE_VARIABLE: "VARIABLE",
+        AST_NODE_BINARY_OP: "BINARY_OP",
+        AST_NODE_UNARY_OP: "UNARY_OP",
+        AST_NODE_ASSIGN: "ASSIGN",
+        AST_NODE_COMPOUND_ASSIGN: "COMPOUND_ASSIGN",
+        AST_NODE_PRINT: "PRINT",
+        AST_NODE_IF: "IF",
+        AST_NODE_WHILE: "WHILE",
+        AST_NODE_BREAK: "BREAK",
+        AST_NODE_CONTINUE: "CONTINUE",
+        AST_NODE_EXPR_STMT: "EXPR_STMT",
+        AST_NODE_VAR_DECL: "VAR_DECL",
+        AST_NODE_COMPARE: "COMPARE",
+        AST_NODE_LOGICAL: "LOGICAL",
+        AST_NODE_BITOP: "BITOP",
+        AST_NODE_STRING: "STRING",
+        AST_NODE_FUNCTION_DECL: "FUNCTION_DECL",
+        AST_NODE_FUNCTION_CALL: "FUNCTION_CALL",
+        AST_NODE_RETURN: "RETURN",
+        AST_NODE_PARAM: "PARAM",
+        AST_NODE_STRUCT_DEF: "STRUCT_DEF",
+        AST_NODE_STRUCT_INIT: "STRUCT_INIT",
+        AST_NODE_METHOD_DEF: "METHOD_DEF",
+        AST_NODE_MEMBER_ACCESS: "MEMBER_ACCESS",
+        AST_NODE_METHOD_CALL: "METHOD_CALL",
+        AST_NODE_NEW: "NEW",
+        AST_NODE_DEL: "DEL",
+    }
+    return type_names.get(node_type, "UNKNOWN")
+
+# Helper function for promoting literal values
+def can_promote(from_type, to_type):
+    """Determine if a value of from_type can be promoted to to_type"""
+    # Same type - always allowed
+    if from_type == to_type:
+        return True
+
+    # Handle float/double conversions - always allowed in either direction
+    if from_type in FLOAT_TYPES and to_type in FLOAT_TYPES:
+        return True
+
+    # Handle numeric conversions using precedence table
+    if from_type in TYPE_PRECEDENCE and to_type in TYPE_PRECEDENCE:
+        from_idx = TYPE_PRECEDENCE.index(from_type)
+        to_idx = TYPE_PRECEDENCE.index(to_type)
+        
+        # Allow promotion to higher precedence
+        if from_idx <= to_idx:
+            # For unsigned types, only allow promotion to other unsigned types
+            if from_type in UNSIGNED_TYPES:
+                return to_type in UNSIGNED_TYPES
+            # For signed types, allow promotion to signed or float types
+            if from_type in SIGNED_TYPES:
+                return to_type in SIGNED_TYPES or to_type in FLOAT_TYPES
+            return True
+
+    # Everything else is not allowed
+    return False
+
+# used from interpreter.py only TODO: move there
+def promote_literal_if_needed(value, from_type, to_type):
+    """Promote a literal value to a new type if needed"""
+    # If types are the same, no promotion needed
+    if from_type == to_type:
+        return value
+        
+    # Handle integer promotions
+    if is_integer_type(from_type) and is_integer_type(to_type):
+        # For unsigned types, mask to appropriate size
+        if is_unsigned_type(to_type):
+            max_val = (1 << (get_type_size(to_type) * 8)) - 1
+            return value & max_val
+        return value
+        
+    # Handle float/double promotions
+    if is_float_type(from_type) and is_float_type(to_type):
+        return float(value)
+        
+    # Handle int to float promotions
+    if is_integer_type(from_type) and is_float_type(to_type):
+        return float(value)
+        
+    return value
+
+# Base class for compiler exceptions
 class CompilerException(Exception):
-    """Base class for all exceptions raised by the compiler"""
+    """Base class for compiler exceptions"""
     def __init__(self, message, token=None):
         if token: message += " (line %d, column %d)"%(token.line, token.column)
         super(CompilerException, self).__init__(message)
