@@ -250,7 +250,7 @@ class StructDefNode(ASTNode):
         self.fields = fields  # [(name, type), ...]
         self.struct_id = struct_id
         self.expr_type = TYPE_VOID
-        
+
     def __repr__(self):
         parent_str = "(%s)" % self.parent_name if self.parent_name else ""
         fields_str = ", ".join(["%s:%s" % (name, var_type_to_string(type_)) for name, type_ in self.fields])
@@ -265,7 +265,7 @@ class MethodDefNode(ASTNode):
         self.return_type = return_type
         self.body = body
         self.expr_type = TYPE_VOID
-        
+
     def __repr__(self):
         params_str = ", ".join(["%s:%s" % (name, var_type_to_string(type_)) for name, type_ in self.params])
         body_str = ", ".join(repr(stmt) for stmt in self.body)
@@ -281,7 +281,7 @@ class StructInitNode(ASTNode):
         self.struct_id = struct_id
         self.args = args or []  # Args for constructor
         self.expr_type = struct_id
-        
+
     def __repr__(self):
         args_str = ", ".join(repr(arg) for arg in self.args)
         return "StructInit(%s(%s))" % (self.struct_name, args_str)
@@ -292,7 +292,7 @@ class MemberAccessNode(ASTNode):
         self.obj = obj  # Object expression
         self.member_name = member_name
         self.expr_type = member_type
-        
+
     def __repr__(self):
         return "MemberAccess(%s.%s)" % (repr(self.obj), self.member_name)
 
@@ -303,7 +303,7 @@ class MethodCallNode(ASTNode):
         self.method_name = method_name
         self.args = args
         self.expr_type = return_type
-        
+
     def __repr__(self):
         args_str = ", ".join(repr(arg) for arg in self.args)
         return "MethodCall(%s.%s(%s))" % (repr(self.obj), self.method_name, args_str)
@@ -313,7 +313,7 @@ class NewNode(ASTNode):
         ASTNode.__init__(self, AST_NODE_NEW)
         self.struct_init = struct_init
         self.expr_type = make_ref_type(struct_init.expr_type)
-        
+
     def __repr__(self):
         return "New(%s)" % repr(self.struct_init)
 
@@ -322,7 +322,7 @@ class DelNode(ASTNode):
         ASTNode.__init__(self, AST_NODE_DEL)
         self.expr = expr
         self.expr_type = TYPE_VOID
-        
+
     def __repr__(self):
         return "Del(%s)" % repr(self.expr)
 
@@ -346,7 +346,7 @@ class Parser:
 
         self.functions = {}     # Track function declarations (name -> (params, return_type))
         self.current_function = None  # Track current function for return checking
-        
+
         # Track current struct for method definitions
         self.current_struct = None
 
@@ -515,7 +515,7 @@ class Parser:
         """Check if the expression's type is compatible with the variable's type"""
         # Get variable type from the appropriate scope
         var_type = self.get_variable_type(var_name)
-        
+
         if var_type is not None and var_type != TYPE_UNKNOWN and expr_type != TYPE_UNKNOWN and not can_promote(expr_type, var_type):
             self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
                       (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
@@ -529,127 +529,127 @@ class Parser:
         # Get object type
         obj_type = obj_node.expr_type
         base_type = get_base_type(obj_type)  # Unwrap reference if needed
-        
+
         if not is_struct_type(base_type):
             self.error("Left side of '.' is not a struct type")
-            
+
         struct_name = type_registry.get_struct_name(base_type)
-        
+
         # Parse member name
         if self.token.type != TT_IDENT:
             self.error("Expected member name after '.'")
-            
+
         member_name = self.token.value
         self.advance()
-        
+
         # Check if it's a method call or field access
         if self.token.type == TT_LPAREN:
             # Method call
             self.advance()  # Skip '('
-            
+
             # Get method details
             method = type_registry.get_method(struct_name, member_name)
             if not method:
                 self.error("Method '%s' not found in struct '%s'" % (member_name, struct_name))
-                
+
             # Parse arguments
             args = []
             if self.token.type != TT_RPAREN:
                 args.append(self.expression(0))
-                
+
                 while self.token.type == TT_COMMA:
                     self.advance()  # Skip ','
                     args.append(self.expression(0))
-                    
+
             self.consume(TT_RPAREN)
-            
+
             # Type check arguments
             if len(args) != len(method.params):
                 self.error("Method '%s' expects %d arguments, got %d" % 
                           (member_name, len(method.params), len(args)))
-                
+
             for i, ((param_name, param_type), arg) in enumerate(zip(method.params, args)):
                 if not can_promote(arg.expr_type, param_type):
                     self.error("Type mismatch for argument %d of method '%s': expected %s, got %s" % 
                               (i+1, member_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
-                    
+
             return MethodCallNode(obj_node, member_name, args, method.return_type)
         else:
             # Field access
             field_type = type_registry.get_field_type(struct_name, member_name)
             if field_type is None:
                 self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
-                
+
             return MemberAccessNode(obj_node, member_name, field_type)
 
     def function_declaration(self):
         """Parse a function declaration or method definition"""
         self.advance()  # Skip 'def'
-        
+
         # Parse function/method name
         if self.token.type != TT_IDENT:
             self.error("Expected name after 'def'")
-        
+
         name = self.token.value
         is_method = False
         struct_name = None
         method_name = None
-        
+
         self.advance()
-        
+
         # Check if it's a method (has a dot after struct name)
         if self.token.type == TT_DOT:
             is_method = True
             struct_name = name
-            
+
             # Verify struct exists
             if not type_registry.struct_exists(struct_name):
                 self.error("Struct '%s' is not defined" % struct_name)
-                
+
             # Parse method name after the dot
             self.advance()  # Skip the dot
             if self.token.type != TT_IDENT:
                 self.error("Expected method name after '.'")
-                
+
             method_name = self.token.value
             name = struct_name + "." + method_name  # Store full name for scope
             self.advance()
         elif self.current_function is not None and not is_method:
             self.error("Nested function declarations are not allowed")
-            
+
         if name == "main":
             self.seen_main_function = True
-            
+
         # Parse parameters
         self.consume(TT_LPAREN)
         params = []
-        
+
         while self.token.type != TT_RPAREN:
             tmp = self.parameter()
-            
+
             # For methods, check if parameter name is 'self'
             if is_method and tmp[0] == "self":
                 self.error("Cannot use 'self' as a parameter name, it is reserved")
-                
+
             for n, _ in params:
                 if n == tmp[0]:
                     self.error("Parameter '%s' is already defined" % n)
-                    
+
             params.append(tmp)
-            
+
             if self.token.type == TT_COMMA:
                 self.advance()  # Skip comma
                 if self.token.type == TT_RPAREN:  # Handle trailing comma
                     break
-                    
+
         self.consume(TT_RPAREN)
-        
+
         # Parse return type (if specified)
         return_type = TYPE_VOID  # Default to void
         if self.token.type == TT_COLON:
             self.advance()
             return_type = self.parse_type_reference()
-            
+
         # Special checks for methods
         if is_method:
             # Check constructor and destructor constraints
@@ -665,13 +665,13 @@ class Parser:
             if name in self.functions:
                 self.error("Function '%s' is already defined" % name)
             self.functions[name] = (params, return_type)
-            
+
         # Enter function/method scope
         self.enter_scope(name)
         prev_function = self.current_function
         prev_struct = self.current_struct
         self.current_function = name
-        
+
         if is_method:
             self.current_struct = struct_name
             # Add implicit 'self' parameter of struct type
@@ -685,15 +685,15 @@ class Parser:
         # Add parameters to scope
         for param_name, param_type in params:
             self.declare_variable(param_name, param_type)
-            
+
         # Parse function/method body
         body = self.doblock()
-        
+
         # Restore previous context
         self.leave_scope()
         self.current_function = prev_function
         self.current_struct = prev_struct
-        
+
         # Create and return the appropriate node
         if is_method:
             temp_method.body = body
@@ -737,72 +737,72 @@ class Parser:
     def struct_definition(self):
         """Parse a struct definition: struct Name [(ParentName)] do ... end"""
         self.advance()  # Skip 'struct' keyword
-        
+
         if self.token.type != TT_IDENT:
             self.error("Expected struct name after 'struct'")
-            
+
         struct_name = self.token.value
         self.advance()
-        
+
         # Check for parent struct (inheritance)
         parent_name = None
         if self.token.type == TT_LPAREN:
             self.advance()  # Skip '('
-            
+
             if self.token.type != TT_IDENT:
                 self.error("Expected parent struct name after '('")
-                
+
             parent_name = self.token.value
-            
+
             # Verify parent struct exists
             if not type_registry.struct_exists(parent_name):
                 self.error("Parent struct '%s' is not defined" % parent_name)
-                
+
             self.advance()
             self.consume(TT_RPAREN)
-        
+
         # Register the struct
         struct_id = type_registry.register_struct(struct_name, parent_name, self.token)
-        
+
         # Parse struct body
         self.skip_separators()
         self.consume(TT_DO)
-        
+
         fields = []
         while self.token.type != TT_END:
             if self.token.type == TT_EOF:
                 self.error("Unexpected end of file in struct definition")
-                
+
             self.skip_separators()
-            
+
             # Check for end of struct
             if self.token.type == TT_END:
                 break
-                
+
             # Parse field: name:type;
             if self.token.type != TT_IDENT:
                 self.error("Expected field name in struct definition")
-                
+
             field_name = self.token.value
             self.advance()
-            
+
             self.consume(TT_COLON)
-            
+
             # Parse field type
             field_type = self.parse_type_reference()
-            
+
             # Register field
             type_registry.add_field(struct_name, field_name, field_type, self.token)
             fields.append((field_name, field_type))
-            
+
             # If on the same line, require a semicolon
             if self.token.type != TT_NEWLINE and self.token.type != TT_EOF and self.token.type != TT_END:
                 self.consume(TT_SEMI)
-            
+
             self.skip_separators()
-            
+
         self.advance()  # Skip 'end'
-        
+
         return StructDefNode(struct_name, parent_name, fields, struct_id)
 
     def determine_result_type(self, left_type, right_type):
@@ -825,25 +825,25 @@ class Parser:
             # Check if it's a struct type name (for initialization)
             if type_registry.struct_exists(var_name):
                 struct_id = type_registry.get_struct_id(var_name)
-                
+
                 # Parse initializer: StructName() or StructName(arg1, arg2, ...)
                 if self.token.type == TT_LPAREN:
                     self.advance()  # Skip '('
-                    
+
                     # Parse constructor args
                     args = []
                     if self.token.type != TT_RPAREN:
                         args.append(self.expression(0))
-                        
+
                         while self.token.type == TT_COMMA:
                             self.advance()  # Skip ','
                             args.append(self.expression(0))
-                            
+
                     self.consume(TT_RPAREN)
-                    
+
                     # Create struct initialization
                     return StructInitNode(var_name, struct_id, args)
-                
+
             # For a variable in an expression context:
             # Could be a function name.
             if self.is_function_declared(var_name):
@@ -871,17 +871,17 @@ class Parser:
             # Parse the struct name after 'new'
             if self.token.type != TT_IDENT:
                 self.error("Expected struct name after 'new'")
-                
+
             struct_name = self.token.value
             self.advance()
-            
+
             # Verify struct exists
             if not type_registry.struct_exists(struct_name):
                 self.error("Struct '%s' is not defined" % struct_name)
-                
+
             # Get the struct type ID
             struct_id = type_registry.get_struct_id(struct_name)
-            
+
             # Check for constructor call
             args = []
 
@@ -890,7 +890,7 @@ class Parser:
 
             # Parse constructor arguments
             self.advance()  # Skip '('
-            
+
             if self.token.type != TT_RPAREN:
                 args.append(self.expression(0))
 
@@ -899,7 +899,7 @@ class Parser:
                     args.append(self.expression(0))
 
             self.consume(TT_RPAREN)
-            
+
             # Check if init method exists for the struct
             init_method = type_registry.get_method(struct_name, "init")
             if init_method:
@@ -952,17 +952,17 @@ class Parser:
             self.check_type_compatibility(var_name, right.expr_type)
 
             return AssignNode(var_name, right, var_type)
-            
+
         # Handle member assignment (obj.field = value)
         elif t.type == TT_ASSIGN and left.node_type == AST_NODE_MEMBER_ACCESS:
             # Parse the right side expression
             right = self.expression(0)
-            
+
             # Check type compatibility
             if not can_promote(right.expr_type, left.expr_type):
                 self.error("Type mismatch: cannot assign %s to member of type %s" % 
                           (var_type_to_string(right.expr_type), var_type_to_string(left.expr_type)))
-                
+
             # Create a special binary operation that models the assignment
             return BinaryOpNode('=', left, right, left.expr_type)
 
@@ -1122,7 +1122,7 @@ class Parser:
             # Regular function return
             else:
                 func_return_type = self.functions[self.current_function][1]
-                
+
             if func_return_type == TYPE_VOID:
                 self.error("Void function '%s' cannot return a value" % self.current_function)
 
@@ -1138,11 +1138,11 @@ class Parser:
         if self.token.type == TT_DEL:
             self.advance()
             expr = self.expression(0)
-            
+
             # Verify expr is a reference type
             if not is_ref_type(expr.expr_type):
                 self.error("'del' can only be used with reference types (created with 'new')")
-                
+
             self.check_statement_end()
             return DelNode(expr)
 

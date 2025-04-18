@@ -126,7 +126,7 @@ class Lexer:
                 return Token(TT_LONG_LITERAL, num_value, start_line, start_column)
             if suffix.lower() in ['ul', 'lu']:
                 return Token(TT_ULONG_LITERAL, num_value, start_line, start_column)
-            
+
             self.error("Invalid integer literal suffix: '%s'" % suffix)
 
         # Handle float literal
@@ -163,7 +163,7 @@ class Lexer:
                 self.advance()
                 return 'ul'  # standardize to 'ul' even if written as 'lu'
             return 'l'
-        
+
         self.error("Expected integer literal suffix")
 
     def handle_string(self):

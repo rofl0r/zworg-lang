@@ -7,12 +7,12 @@ import type_registry
 # Struct instance class for runtime
 class StructInstance:
     """Object to store a struct's fields at runtime"""
-    
+
     def __init__(self, struct_id, struct_name):
         self.struct_id = struct_id
         self.struct_name = struct_name
         self.fields = {}  # field_name -> value
-        
+
     def __repr__(self):
         fields_str = ", ".join(["%s=%s" % (name, value) for name, value in self.fields.items()])
         return "%s(%s)" % (self.struct_name, fields_str)
@@ -49,7 +49,7 @@ def subtract(left, right, left_type, right_type):
         return float(left) - float(right)
 
     result = int(left) - int(right)
-    
+
     if is_unsigned_type(left_type) or is_unsigned_type(right_type):
         return truncate_to_unsigned(result, max(left_type, right_type))
 
@@ -120,9 +120,9 @@ def shift_left(left, right, left_type, right_type):
     """Left shift with C semantics"""
     if right < 0:
         raise ValueError("Negative shift count")
-    
+
     result = int(left) << int(right)
-    
+
     # Handle overflow according to type
     if is_unsigned_type(left_type):
         return truncate_to_unsigned(result, left_type)
@@ -233,7 +233,7 @@ def logical_or(left, right):
 def bitwise_and(left, right, left_type, right_type):
     """Bitwise AND with C semantics"""
     result = int(left) & int(right)
-    
+
     # Handle overflow according to result type
     result_type = max(left_type, right_type) #depends on right order of type constants
     if is_unsigned_type(result_type):
@@ -244,7 +244,7 @@ def bitwise_and(left, right, left_type, right_type):
 def bitwise_or(left, right, left_type, right_type):
     """Bitwise OR with C semantics"""
     result = int(left) | int(right)
-    
+
     result_type = max(left_type, right_type)
     if is_unsigned_type(result_type):
         return truncate_to_unsigned(result, result_type)
@@ -254,12 +254,12 @@ def bitwise_or(left, right, left_type, right_type):
 def bitwise_xor(left, right, left_type, right_type):
     """Bitwise XOR with C semantics"""
     result = int(left) ^ int(right)
-    
+
     result_type = max(left_type, right_type)
 
     if is_unsigned_type(result_type):
         return truncate_to_unsigned(result, result_type)
-        
+
     return result
 
 class Interpreter(object):
@@ -404,7 +404,7 @@ class Interpreter(object):
             self.environment.leave_scope()
             raise CompilerException("%s expects %d arguments, got %d" % 
                                   (method_name, len(method_params), len(args)))
-        
+
         for i, ((param_name, param_type), arg_value) in enumerate(zip(method_params, args)):
             if not can_promote(arg_nodes[i].expr_type, param_type):
                 self.environment.leave_scope()
@@ -454,11 +454,11 @@ class Interpreter(object):
         elif node.operator == '=' and node.left.node_type == AST_NODE_MEMBER_ACCESS:
             # First evaluate the object to get the struct instance
             obj = self.evaluate(node.left.obj)
-            
+
             # Check if obj is a struct instance
             if not isinstance(obj, StructInstance):
                 raise CompilerException("Cannot assign to field of non-struct value")
-                
+
             # Set the field value
             obj.fields[node.left.member_name] = right_val
             return right_val
@@ -693,23 +693,23 @@ class Interpreter(object):
             return bitwise_xor(left_val, right_val, node.left.expr_type, node.right.expr_type)
 
         raise CompilerException("Unknown bitwise operator: %s" % node.operator)
-    
+
     # Struct-related visitor methods
     def visit_struct_def(self, node):
         """Visit a struct definition node - Nothing to do at runtime"""
         # Struct definitions are handled at parse time
         return None
-    
+
     def visit_method_def(self, node):
         """Visit a method definition node - Nothing to do at runtime"""
         # Method definitions are handled at parse time
         return None
-    
+
     def visit_struct_init(self, node):
         """Visit a struct initialization node"""
         # Create a new struct instance
         instance = StructInstance(node.struct_id, node.struct_name)
-        
+
         # Initialize fields with default values first
         all_fields = type_registry.get_all_fields(node.struct_name)
         for field_name, field_type in all_fields:
@@ -723,7 +723,7 @@ class Interpreter(object):
                 instance.fields[field_name] = 0.0
             else:
                 instance.fields[field_name] = 0
-        
+
         # Call constructor if it exists and there are args or it's "init"
         init_method = type_registry.get_method(node.struct_name, "init")
         if init_method:
@@ -742,54 +742,54 @@ class Interpreter(object):
             except ReturnException:
                 # Ignore return value from constructor
                 pass
-                
+
             self.environment.leave_scope()
-                
+
         return instance
-    
+
     def visit_member_access(self, node):
         """Visit a member access node (obj.field)"""
         # Evaluate the object expression
         obj = self.evaluate(node.obj)
-        
+
         # Handle nil reference
         if obj is None:
             raise CompilerException("Attempt to access field of a nil reference")
-            
+
         # Make sure it's a struct instance
         if not isinstance(obj, StructInstance):
             raise CompilerException("Cannot access member '%s' on non-struct value" % node.member_name)
-            
+
         # Get the field value
         if node.member_name not in obj.fields:
             raise CompilerException("Field '%s' not found in struct '%s'" % (node.member_name, obj.struct_name))
-            
+
         return obj.fields[node.member_name]
-    
+
     def visit_method_call(self, node):
         """Visit a method call node (obj.method())"""
         # Evaluate the object
         obj = self.evaluate(node.obj)
-        
+
         # Handle nil reference
         if obj is None:
             raise CompilerException("Attempt to call method '%s' on a nil reference" % node.method_name)
-            
+
         # Make sure it's a struct instance
         if not isinstance(obj, StructInstance):
             raise CompilerException("Cannot call method '%s' on non-struct value" % node.method_name)
-            
+
         # Get the method
         method = type_registry.get_method(obj.struct_name, node.method_name)
         if not method:
             raise CompilerException("Method '%s' not found in struct '%s'" % (node.method_name, obj.struct_name))
-            
+
         # Create a new scope for method execution
         self.environment.enter_scope()
-        
+
         # Set 'self' to the object instance
         self.environment.set("self", obj)
-        
+
         # Evaluate and pass method arguments
         args = [self.evaluate(arg) for arg in node.args]
         self.check_and_set_params("Method '%s'" % node.method_name, method.params, args, node.args)
@@ -799,40 +799,40 @@ class Interpreter(object):
         try:
             for stmt in method.body:
                 self.evaluate(stmt)
-                
+
             # If we reach here without a return and the method isn't void, it's an error
             if method.return_type != TYPE_VOID:
                 self.environment.leave_scope()
                 raise CompilerException("Method '%s' has non-void return type but reached end without returning" % 
                                       (node.method_name))
-                
+
         except ReturnException as ret:
             # Check return value type against method's return type
             if method.return_type == TYPE_VOID and ret.value is not None:
                 self.environment.leave_scope()
                 raise CompilerException("Void method '%s' returned a value" % node.method_name)
-                
+
             result = ret.value
-            
+
         # Clean up scope
         self.environment.leave_scope()
         return result
-    
+
     def visit_new(self, node):
         """Visit a new expression for heap allocation"""
         # Evaluate the struct initialization
         instance = self.evaluate(node.struct_init)
         return instance  # The expression type is already set to reference type
-    
+
     def visit_del(self, node):
         """Visit a del statement for heap deallocation"""
         # Evaluate the expression
         obj = self.evaluate(node.expr)
-        
+
         # Handle nil reference
         if obj is None:
             raise CompilerException("Attempt to delete a nil reference")
-        
+
         # Call destructor if it exists
         if isinstance(obj, StructInstance):
             fini_method = type_registry.get_method(obj.struct_name, "fini")
@@ -840,7 +840,7 @@ class Interpreter(object):
                 # Create a temporary scope for the destructor
                 self.environment.enter_scope()
                 self.environment.set("self", obj)
-                
+
                 # Execute destructor body
                 try:
                     for stmt in fini_method.body:
@@ -848,9 +848,9 @@ class Interpreter(object):
                 except ReturnException:
                     # Ignore return from destructor
                     pass
-                    
+
                 self.environment.leave_scope()
-                
+
         # Mark object as deleted (set to None)
         # In a real implementation, this would free memory
         return None

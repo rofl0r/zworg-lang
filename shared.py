@@ -492,7 +492,7 @@ def promote_literal_if_needed(value, from_type, to_type):
     # If types are the same, no promotion needed
     if from_type == to_type:
         return value
-        
+
     # Handle integer promotions
     if is_integer_type(from_type) and is_integer_type(to_type):
         # For unsigned types, mask to appropriate size
@@ -500,15 +500,15 @@ def promote_literal_if_needed(value, from_type, to_type):
             max_val = (1 << (get_type_size(to_type) * 8)) - 1
             return value & max_val
         return value
-        
+
     # Handle float/double promotions
     if is_float_type(from_type) and is_float_type(to_type):
         return float(value)
-        
+
     # Handle int to float promotions
     if is_integer_type(from_type) and is_float_type(to_type):
         return float(value)
-        
+
     return value
 
 # Base class for compiler exceptions

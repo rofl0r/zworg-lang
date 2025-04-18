@@ -29,11 +29,11 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def Point.get_x(): string do
                 return self.x;  // int returned from string function
             end
-            
+
             def main() do
             end
         """,
@@ -331,14 +331,14 @@ def test():
                    var c := 42l;    // long
                    var d := 42ul;   // ulong
                    var e := 42.0;   // float
-                   
+
                    // Test assignments to explicitly typed variables
                    var x : int = 10;
                    var y : uint = 20u;
                    var z : long = 30l;
                    var w : ulong = 40ul;
                    var v : float = 50.0;
-                   
+
                    print a;
                    print b;
                    print c;
@@ -369,12 +369,12 @@ def test():
                    var y : int = 3;
                    var z : int = x / y;  // Should be -3 (truncated toward zero)
                    print z;
-                   
+
                    var a : int = 10;
                    var b : int = -3;
                    var c : int = a / b;  // Should be -3
                    print c;
-                   
+
                    var m : int = -10;
                    var n : int = -3;
                    var o : int = m / n;  // Should be 3
@@ -390,16 +390,16 @@ def test():
            "code": """
                def main() do
                    var a : uint = 0u;
-                   
+
                    if a = 5u do
                        print a;
                    end
-                   
+
                    var b : long = 0l;
                    if b = 10l do
                        print b;
                    end
-                   
+
                    var c : ulong = 0ul;
                    if c = 15ul do
                        print c;
@@ -497,7 +497,7 @@ def test():
                 def add(a:int, b:int):int do
                     return a + b;
                 end
-                
+
                 def main() do
                     var x := 10;
                     var y := 20;
@@ -513,7 +513,7 @@ def test():
                 def square(n:int):int do
                     return n * n;
                 end
-                
+
                 def main() do
                     var x := 5;
                     var y := square(x);
@@ -703,7 +703,7 @@ def test():
         "code": """
             struct EmptyStruct do
             end
-            
+
             def main() do
             end
         """,
@@ -715,11 +715,11 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def Point.bad(): int do
                 return x;  // Missing self.x
             end
-            
+
             def main() do
             end
         """,
@@ -731,7 +731,7 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def main() do
                 var p := Point(5);
                 p.nonexistent();
@@ -745,7 +745,7 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def main() do
                 var p := Point(5);
                 print p.y;
@@ -759,11 +759,11 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def Point.init(x: int, y: int) do
                 self.x = x;
             end
-            
+
             def main() do
                 var p := Point(5);  // Missing second parameter
             end
@@ -775,7 +775,7 @@ def test():
         "code": """
             def NotAStruct.method() do
             end
-            
+
             def main() do
             end
         """,
@@ -787,7 +787,7 @@ def test():
             struct Child(NonExistentParent) do
                 x: int
             end
-            
+
             def main() do
             end
         """,
@@ -799,12 +799,12 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def Point.init(): int do
                 self.x = 5;
                 return 0;
             end
-            
+
             def main() do
             end
         """,
@@ -816,10 +816,10 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def Point.fini(flag: int) do
             end
-            
+
             def main() do
             end
         """,
@@ -831,7 +831,7 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def main() do
                 var p := Point(5);
                 del p;  // Cannot delete stack object
@@ -846,12 +846,12 @@ def test():
                 x: int
                 y: int
             end
-            
+
             def Point.init(x: int, y: int) do
                 self.x = x;
                 self.y = y;
             end
-            
+
             def main() do
                 var p := Point();  // No arguments provided
             end
@@ -882,11 +882,11 @@ def test():
             struct Point do
                 x: int
             end
-            
+
             def Point.init(self: int) do
                 self.x = 5;
             end
-            
+
             def main() do
             end
         """,
@@ -898,7 +898,7 @@ def test():
             struct Counter do
                 count: int
             end
-            
+
             def main() do
                 var c := new Counter;  // Missing parentheses
             end
@@ -919,9 +919,9 @@ def test():
         test_num = i + 1
         print("\nTest %d:" % test_num)
         print("Input: %s" % test_case["code"])
-        
+
         result = interpreter.run(test_case["code"])
-        
+
         # Check if this test is expected to fail
         if "expected_error" in test_case:
             # This is a test that should fail
@@ -933,7 +933,7 @@ def test():
                 # Add AST dump for unexpected failures
                 if result.get('ast'):
                     print("AST dump: %s" % result['ast'])
-            
+
         else:
             # This is a test that should succeed
             if result['success']:
@@ -942,7 +942,7 @@ def test():
                 if 'result' in result:
                     # This is likely from a function return
                     print("Function returned: %s" % result['result'])
-                
+
                 # Get environment from main function
 		env = result['main_env']
 
@@ -952,7 +952,7 @@ def test():
                     if k not in env or env[k] != v:
                         env_match = False
                         break
-                
+
                 if env_match:
                     print("Success! Environment matches expectations.")
                 else:
