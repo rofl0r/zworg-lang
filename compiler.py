@@ -350,18 +350,6 @@ class Parser:
         # Track current struct for method definitions
         self.current_struct = None
 
-    def is_signed_type(self, type_):
-        """Check if type is signed"""
-        return type_ in SIGNED_TYPES
-
-    def is_unsigned_type(self, type_):
-        """Check if type is unsigned"""
-        return type_ in UNSIGNED_TYPES
-
-    def is_float_type(self, type_):
-        """Check if type is floating point"""
-        return type_ in FLOAT_TYPES
-
     def get_common_type(self, type1, type2):
         """
         Implement C's type promotion rules for binary operations
@@ -376,7 +364,7 @@ class Parser:
             return type1 if type1 == type2 else None
 
         # If either operand is floating point, result is the highest precision float
-        if self.is_float_type(type1) or self.is_float_type(type2):
+        if is_float_type(type1) or is_float_type(type2):
             if TYPE_DOUBLE in (type1, type2):
                 return TYPE_DOUBLE
             return TYPE_FLOAT
@@ -410,7 +398,7 @@ class Parser:
 
         # Bitwise operators require integer operands
         if op in ['&', '|', 'xor', 'shl', 'shr']:
-            if self.is_float_type(left_type) or self.is_float_type(right_type) or is_struct_type(left_type) or is_struct_type(right_type):
+            if is_float_type(left_type) or is_float_type(right_type) or is_struct_type(left_type) or is_struct_type(right_type):
                 self.error("Bitwise operators require integer operands")
 
         # Arithmetic operators
@@ -995,7 +983,7 @@ class Parser:
         elif t.type in [TT_XOR, TT_BITOR, TT_BITAND]:
             right = self.expression(self.lbp(t))
             # Both operands must be integer types
-            if not self.is_float_type(left.expr_type) and not self.is_float_type(right.expr_type):
+            if not is_float_type(left.expr_type) and not is_float_type(right.expr_type):
                 result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
                 if result_type is not None:
                     return BitOpNode(t.value, left, right)

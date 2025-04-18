@@ -161,7 +161,7 @@ def bitwise_not(value, type_):
 
     # Handle overflow according to type
     if is_unsigned_type(type_):
-        return truncate_to_unsigned(result, _type)
+        return truncate_to_unsigned(result, type_)
 
     return result
 
