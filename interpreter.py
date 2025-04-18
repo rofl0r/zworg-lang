@@ -17,42 +17,6 @@ class StructInstance:
         fields_str = ", ".join(["%s=%s" % (name, value) for name, value in self.fields.items()])
         return "%s(%s)" % (self.struct_name, fields_str)
 
-# Helper functions for type handling
-def is_integer_type(type_):
-    """Check if a type is any integer type (signed or unsigned)"""
-    return type_ in [TYPE_INT, TYPE_UINT, TYPE_LONG, TYPE_ULONG, TYPE_LONGLONG, TYPE_ULONGLONG,
-                    TYPE_I8, TYPE_U8, TYPE_I16, TYPE_U16, TYPE_I32, TYPE_U32, TYPE_I64, TYPE_U64]
-
-def is_unsigned_type(type_):
-    """Check if a type is unsigned"""
-    return type_ in [TYPE_UINT, TYPE_ULONG, TYPE_ULONGLONG, TYPE_U8, TYPE_U16, TYPE_U32, TYPE_U64]
-
-def is_signed_type(type_):
-    """Check if a type is signed"""
-    return type_ in [TYPE_INT, TYPE_LONG, TYPE_LONGLONG, TYPE_I8, TYPE_I16, TYPE_I32, TYPE_I64]
-
-def is_float_type(type_):
-    """Check if a type is floating point"""
-    return type_ in [TYPE_FLOAT, TYPE_DOUBLE]
-
-def get_type_size(type_):
-    """Get size in bytes for numeric types"""
-    type_sizes = {
-        TYPE_I8: 1, TYPE_U8: 1,
-        TYPE_I16: 2, TYPE_U16: 2,
-        TYPE_I32: 4, TYPE_U32: 4,
-        TYPE_I64: 8, TYPE_U64: 8,
-        TYPE_INT: 4,     # Assume 32-bit int
-        TYPE_UINT: 4,    # Assume 32-bit uint
-        TYPE_LONG: 8,    # Implementation defined, assume 64-bit
-        TYPE_ULONG: 8,   # Implementation defined, assume 64-bit
-        TYPE_LONGLONG: 8,  # Always 64-bit
-        TYPE_ULONGLONG: 8, # Always 64-bit
-        TYPE_FLOAT: 4,
-        TYPE_DOUBLE: 8
-    }
-    return type_sizes.get(type_, 0)
-
 # Binary arithmetic operators with C-style type promotion
 def add(left, right, left_type, right_type):
     """Addition with C semantics"""
@@ -69,13 +33,12 @@ def add(left, right, left_type, right_type):
 
     # Integer addition - follow C promotion rules
     result = int(left) + int(right)
-    
+
     # Handle overflow according to type
     if is_unsigned_type(left_type) or is_unsigned_type(right_type):
         # For unsigned types, result wraps around
-        max_val = (1 << (get_type_size(max(left_type, right_type)) * 8)) - 1
-        return result & max_val
-        
+        return truncate_to_unsigned(result, max(left_type, right_type))
+
     return result
 
 def subtract(left, right, left_type, right_type):
@@ -88,9 +51,8 @@ def subtract(left, right, left_type, right_type):
     result = int(left) - int(right)
     
     if is_unsigned_type(left_type) or is_unsigned_type(right_type):
-        max_val = (1 << (get_type_size(max(left_type, right_type)) * 8)) - 1
-        return result & max_val
-        
+        return truncate_to_unsigned(result, max(left_type, right_type))
+
     return result
 
 def multiply(left, right, left_type, right_type):
@@ -101,11 +63,10 @@ def multiply(left, right, left_type, right_type):
         return float(left) * float(right)
 
     result = int(left) * int(right)
-    
+
     if is_unsigned_type(left_type) or is_unsigned_type(right_type):
-        max_val = (1 << (get_type_size(max(left_type, right_type)) * 8)) - 1
-        return result & max_val
-        
+        return truncate_to_unsigned(result, max(left_type, right_type))
+
     return result
 
 def divide(left, right, left_type, right_type):
@@ -164,9 +125,8 @@ def shift_left(left, right, left_type, right_type):
     
     # Handle overflow according to type
     if is_unsigned_type(left_type):
-        max_val = (1 << (get_type_size(left_type) * 8)) - 1
-        return result & max_val
-        
+        return truncate_to_unsigned(result, left_type)
+
     return result
 
 def shift_right(left, right, left_type, right_type):
@@ -198,12 +158,11 @@ def logical_not(value):
 def bitwise_not(value, type_):
     """Bitwise NOT with C semantics"""
     result = ~int(value)
-    
+
     # Handle overflow according to type
     if is_unsigned_type(type_):
-        max_val = (1 << (get_type_size(type_) * 8)) - 1
-        return result & max_val
-        
+        return truncate_to_unsigned(result, _type)
+
     return result
 
 # Comparison operators
@@ -276,32 +235,30 @@ def bitwise_and(left, right, left_type, right_type):
     result = int(left) & int(right)
     
     # Handle overflow according to result type
-    result_type = max(left_type, right_type, key=get_type_size)
+    result_type = max(left_type, right_type) #depends on right order of type constants
     if is_unsigned_type(result_type):
-        max_val = (1 << (get_type_size(result_type) * 8)) - 1
-        return result & max_val
-        
+        return truncate_to_unsigned(result, result_type)
+
     return result
 
 def bitwise_or(left, right, left_type, right_type):
     """Bitwise OR with C semantics"""
     result = int(left) | int(right)
     
-    result_type = max(left_type, right_type, key=get_type_size)
+    result_type = max(left_type, right_type)
     if is_unsigned_type(result_type):
-        max_val = (1 << (get_type_size(result_type) * 8)) - 1
-        return result & max_val
-        
+        return truncate_to_unsigned(result, result_type)
+
     return result
 
 def bitwise_xor(left, right, left_type, right_type):
     """Bitwise XOR with C semantics"""
     result = int(left) ^ int(right)
     
-    result_type = max(left_type, right_type, key=get_type_size)
+    result_type = max(left_type, right_type)
+
     if is_unsigned_type(result_type):
-        max_val = (1 << (get_type_size(result_type) * 8)) - 1
-        return result & max_val
+        return truncate_to_unsigned(result, result_type)
         
     return result
 
@@ -434,6 +391,27 @@ class Interpreter(object):
             return visitor(node)
 
         raise CompilerException("No visit method defined for node type: %s" % ast_node_type_to_string(node.node_type))
+
+    def check_and_set_params(self, method_name, method_params, args, arg_nodes):
+        """Helper function to check parameter types and set them in current scope
+        Args:
+            method_name: Name of method/constructor for error messages
+            method_params: List of (param_name, param_type) tuples
+            args: List of evaluated argument values
+            arg_nodes: List of argument AST nodes for type information
+        """
+        if len(args) != len(method_params):
+            self.environment.leave_scope()
+            raise CompilerException("%s expects %d arguments, got %d" % 
+                                  (method_name, len(method_params), len(args)))
+        
+        for i, ((param_name, param_type), arg_value) in enumerate(zip(method_params, args)):
+            if not can_promote(arg_nodes[i].expr_type, param_type):
+                self.environment.leave_scope()
+                raise CompilerException("Type mismatch in %s argument: cannot convert %s to %s" %
+                                      (method_name, var_type_to_string(arg_nodes[i].expr_type), 
+                                       var_type_to_string(param_type)))
+            self.environment.set(param_name, arg_value)
 
     def visit_number(self, node):
         """Evaluate a number node (integer or float)"""
@@ -752,24 +730,11 @@ class Interpreter(object):
             # Create a temporary scope for the constructor
             self.environment.enter_scope()
             self.environment.set("self", instance)
-            
+
             # Evaluate and pass constructor arguments
             args = [self.evaluate(arg) for arg in node.args]
-            
-            # Check argument count
-            if len(args) != len(init_method.params):
-                self.environment.leave_scope()
-                raise CompilerException("Constructor for '%s' expects %d arguments, got %d" % 
-                                      (node.struct_name, len(init_method.params), len(node.args)))
-                
-            # Set parameter values
-            for (param_name, param_type), arg_value in zip(init_method.params, args):
-                if not can_promote(node.args[0].expr_type, param_type):
-                    self.environment.leave_scope()
-                    raise CompilerException("Type mismatch in constructor argument: cannot convert %s to %s" %
-                                          (var_type_to_string(node.args[0].expr_type), var_type_to_string(param_type)))
-                self.environment.set(param_name, arg_value)
-                
+            self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
+
             # Execute constructor body
             try:
                 for stmt in init_method.body:
@@ -827,21 +792,8 @@ class Interpreter(object):
         
         # Evaluate and pass method arguments
         args = [self.evaluate(arg) for arg in node.args]
-        
-        # Check argument count
-        if len(args) != len(method.params):
-            self.environment.leave_scope()
-            raise CompilerException("Method '%s' expects %d arguments, got %d" % 
-                                  (node.method_name, len(method.params), len(node.args)))
-            
-        # Set parameter values
-        for (param_name, param_type), arg_value in zip(method.params, args):
-            if not can_promote(node.args[0].expr_type, param_type):
-                self.environment.leave_scope()
-                raise CompilerException("Type mismatch in method argument: cannot convert %s to %s" %
-                                      (var_type_to_string(node.args[0].expr_type), var_type_to_string(param_type)))
-            self.environment.set(param_name, arg_value)
-            
+        self.check_and_set_params("Method '%s'" % node.method_name, method.params, args, node.args)
+
         # Execute method body
         result = None
         try:

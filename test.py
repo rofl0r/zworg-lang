@@ -659,7 +659,7 @@ def test():
                     var result := s + i;
                 end
             """,
-            "expected_error": "Type mismatch in binary operation: string and int"
+            "expected_error": "Cannot concatenate string with non-string type"
         },
         {
             "name": "String comparison error - unsupported operator",

@@ -116,26 +116,30 @@ AST_NODE_METHOD_CALL = 27   # method call
 AST_NODE_NEW = 28           # heap allocation with 'new'
 AST_NODE_DEL = 29           # heap deallocation with 'del'
 
-# Variable types
+# Variable types - We depend on the order in interpreter.py when taking the max(type1, type2)
 TYPE_UNKNOWN = 0
-TYPE_INT = 1
-TYPE_FLOAT = 2
-TYPE_UINT = 3
-TYPE_LONG = 4
-TYPE_ULONG = 5
-TYPE_STRING = 6
-TYPE_VOID = 7
-TYPE_DOUBLE = 8
-TYPE_I8 = 9
-TYPE_U8 = 10
-TYPE_I16 = 11
-TYPE_U16 = 12
-TYPE_I32 = 13
-TYPE_U32 = 14
-TYPE_I64 = 15
-TYPE_U64 = 16
-TYPE_LONGLONG = 17
-TYPE_ULONGLONG = 18
+TYPE_VOID = 1
+TYPE_STRING = 2
+
+# Integer types by size
+TYPE_I8 = 3
+TYPE_U8 = 4
+TYPE_I16 = 5
+TYPE_U16 = 6
+TYPE_I32 = 7
+TYPE_U32 = 8
+TYPE_I64 = 9
+TYPE_U64 = 10
+# Classic C types mapped to their sized equivalents
+TYPE_INT = 11     # 32-bit
+TYPE_UINT = 12
+TYPE_LONG = 13
+TYPE_ULONG = 14
+TYPE_LONGLONG = 15
+TYPE_ULONGLONG = 16
+# Floating point types
+TYPE_FLOAT = 17
+TYPE_DOUBLE = 18
 
 # Type system constants
 TYPE_STRUCT_BASE = 100      # Base for struct types
@@ -271,17 +275,45 @@ FLOAT_TYPES = {TYPE_FLOAT, TYPE_DOUBLE}
 UNSIGNED_TYPES = {TYPE_UINT, TYPE_ULONG, TYPE_ULONGLONG, TYPE_U8, TYPE_U16, TYPE_U32, TYPE_U64}
 SIGNED_TYPES = {TYPE_INT, TYPE_LONG, TYPE_LONGLONG, TYPE_I8, TYPE_I16, TYPE_I32, TYPE_I64}
 
-# Order of type precedence from lowest to highest
-TYPE_PRECEDENCE = [
-    TYPE_I8, TYPE_U8,
-    TYPE_I16, TYPE_U16,
-    TYPE_I32, TYPE_U32,
-    TYPE_I64, TYPE_U64,
-    TYPE_INT, TYPE_UINT,
-    TYPE_LONG, TYPE_ULONG,
-    TYPE_LONGLONG, TYPE_ULONGLONG,
-    TYPE_FLOAT, TYPE_DOUBLE
-]
+# Helper functions for type handling
+def is_integer_type(type_):
+    """Check if a type is any integer type (signed or unsigned)"""
+    return type_ in SIGNED_TYPES or type_ in UNSIGNED_TYPES
+
+def is_unsigned_type(type_):
+    """Check if a type is unsigned"""
+    return type_ in UNSIGNED_TYPES
+
+def is_signed_type(type_):
+    """Check if a type is signed"""
+    return type_ in SIGNED_TYPES
+
+def is_float_type(type_):
+    """Check if a type is floating point"""
+    return type_ in FLOAT_TYPES
+
+
+# Maximum values for unsigned integer types (for runtime overflow handling)
+TYPE_MAX_VALUES = {
+    TYPE_U8:  0xFF,
+    TYPE_U16: 0xFFFF,
+    TYPE_UINT: 0xFFFFFFFF,  # 32-bit
+    TYPE_INT: 0xFFFFFFFF,
+    TYPE_U32: 0xFFFFFFFF,
+    TYPE_ULONG: 0xFFFFFFFFFFFFFFFF,  # 64-bit
+    TYPE_LONG: 0xFFFFFFFFFFFFFFFF,
+    TYPE_ULONGLONG: 0xFFFFFFFFFFFFFFFF,
+    TYPE_U64: 0xFFFFFFFFFFFFFFFF,
+}
+
+def get_max_value(type_):
+    """Get maximum value for an unsigned type"""
+    return TYPE_MAX_VALUES.get(type_, 0xFFFFFFFF)  # Default to 32-bit max
+
+def truncate_to_unsigned(value, type_):
+    """Truncate value to fit in unsigned type"""
+    max_val = get_max_value(type_)
+    return value & max_val
 
 # Define token type names for debugging (pre-populated)
 TOKEN_NAMES = {
@@ -445,29 +477,16 @@ def can_promote(from_type, to_type):
     if from_type == to_type:
         return True
 
-    # Handle float/double conversions - always allowed in either direction
-    if from_type in FLOAT_TYPES and to_type in FLOAT_TYPES:
+    # Allow all conversions between numeric types
+    if (is_integer_type(from_type) or is_float_type(from_type)) and \
+       (is_integer_type(to_type) or is_float_type(to_type)):
         return True
-
-    # Handle numeric conversions using precedence table
-    if from_type in TYPE_PRECEDENCE and to_type in TYPE_PRECEDENCE:
-        from_idx = TYPE_PRECEDENCE.index(from_type)
-        to_idx = TYPE_PRECEDENCE.index(to_type)
-        
-        # Allow promotion to higher precedence
-        if from_idx <= to_idx:
-            # For unsigned types, only allow promotion to other unsigned types
-            if from_type in UNSIGNED_TYPES:
-                return to_type in UNSIGNED_TYPES
-            # For signed types, allow promotion to signed or float types
-            if from_type in SIGNED_TYPES:
-                return to_type in SIGNED_TYPES or to_type in FLOAT_TYPES
-            return True
 
     # Everything else is not allowed
     return False
 
 # used from interpreter.py only TODO: move there
+# this is ONLY for runtime emulation of C promotions.
 def promote_literal_if_needed(value, from_type, to_type):
     """Promote a literal value to a new type if needed"""
     # If types are the same, no promotion needed

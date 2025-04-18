@@ -350,23 +350,6 @@ class Parser:
         # Track current struct for method definitions
         self.current_struct = None
 
-    def get_type_size(self, type_):
-        """Get size in bytes for integer types"""
-        type_sizes = {
-            TYPE_I8: 1, TYPE_U8: 1,
-            TYPE_I16: 2, TYPE_U16: 2,
-            TYPE_I32: 4, TYPE_U32: 4,
-            TYPE_I64: 8, TYPE_U64: 8,
-            TYPE_LONGLONG: 8, TYPE_ULONGLONG: 8,
-            TYPE_INT: 4,     # Assume 32-bit int
-            TYPE_UINT: 4,    # Assume 32-bit uint
-            TYPE_LONG: 8,    # Implementation defined
-            TYPE_ULONG: 8,   # Implementation defined
-            TYPE_FLOAT: 4,
-            TYPE_DOUBLE: 8
-        }
-        return type_sizes.get(type_, 0)
-
     def is_signed_type(self, type_):
         """Check if type is signed"""
         return type_ in SIGNED_TYPES
@@ -388,6 +371,10 @@ class Parser:
         if TYPE_STRING in (type1, type2):
             return TYPE_STRING if type1 == type2 else None
 
+        # Handle struct types - they must be identical
+        if type1 >= TYPE_STRUCT_BASE or type2 >= TYPE_STRUCT_BASE:
+            return type1 if type1 == type2 else None
+
         # If either operand is floating point, result is the highest precision float
         if self.is_float_type(type1) or self.is_float_type(type2):
             if TYPE_DOUBLE in (type1, type2):
@@ -395,19 +382,15 @@ class Parser:
             return TYPE_FLOAT
 
         # Handle integer promotions
-        size1 = self.get_type_size(type1)
-        size2 = self.get_type_size(type2)
-
-        # If same size, unsigned wins
-        if size1 == size2:
-            if self.is_unsigned_type(type1) or self.is_unsigned_type(type2):
-                return type1 if self.is_unsigned_type(type1) else type2
-            return type1  # Both signed, either works
-
-        # Different sizes - follow C rules
-        if size1 > size2:
+        # For integer types, use the type promotion rules we defined in can_promote
+        # Try promoting each type to the other, take the higher one.
+        # This depends on the right order of the TYPE_XXX values in shared.py
+        if can_promote(type1, type2):
+            if can_promote(type2, type1):
+                return max(type1, type2)
+            return type2
+        if can_promote(type2, type1):
             return type1
-        return type2
 
     def calculate_result_type(self, op, left_type, right_type):
         """Calculate result type for binary operation following C rules"""
@@ -427,9 +410,8 @@ class Parser:
 
         # Bitwise operators require integer operands
         if op in ['&', '|', 'xor', 'shl', 'shr']:
-            if self.is_float_type(left_type) or self.is_float_type(right_type):
+            if self.is_float_type(left_type) or self.is_float_type(right_type) or is_struct_type(left_type) or is_struct_type(right_type):
                 self.error("Bitwise operators require integer operands")
-            return self.get_common_type(left_type, right_type)
 
         # Arithmetic operators
         return self.get_common_type(left_type, right_type)
