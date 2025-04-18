@@ -508,6 +508,13 @@ class Parser:
             self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
                       (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
 
+    def check_argument_types(self, args, params, context_name):
+        """Check if argument types match parameter types"""
+        for i, ((param_name, param_type), arg) in enumerate(zip(params, args)):
+            if not can_promote(arg.expr_type, param_type):
+                self.error("Type mismatch for argument %d of %s: expected %s, got %s" % 
+                          (i+1, context_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
+
     def parse_member_access(self, obj_node):
         """
         Parse member access for an object (obj.member)
@@ -556,10 +563,8 @@ class Parser:
                 self.error("Method '%s' expects %d arguments, got %d" % 
                           (member_name, len(method.params), len(args)))
 
-            for i, ((param_name, param_type), arg) in enumerate(zip(method.params, args)):
-                if not can_promote(arg.expr_type, param_type):
-                    self.error("Type mismatch for argument %d of method '%s': expected %s, got %s" % 
-                              (i+1, member_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
+            # Refactored argument type checking using check_argument_types
+            self.check_argument_types(args, method.params, "method '%s'" % member_name)
 
             return MethodCallNode(obj_node, member_name, args, method.return_type)
         else:
@@ -896,11 +901,8 @@ class Parser:
                     self.error("Constructor for '%s' expects %d arguments, got %d" % 
                               (struct_name, len(init_method.params), len(args)))
 
-                # Type check arguments
-                for i, ((param_name, param_type), arg) in enumerate(zip(init_method.params, args)):
-                    if not can_promote(arg.expr_type, param_type):
-                        self.error("Type mismatch for argument %d of constructor: expected %s, got %s" % 
-                                  (i+1, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
+                # Type check arguments using the helper function
+                self.check_argument_types(args, init_method.params, "constructor for '%s'" % struct_name)
 
             # Create heap allocated struct
             struct_init = StructInitNode(struct_name, struct_id, args)
@@ -1061,12 +1063,8 @@ class Parser:
         # Check number of arguments
         if len(args) != len(func_params):
                 self.error("Function '%s' expects %d arguments, got %d" %
-                                  (func_name, len(func_params), len(args)))
-        # Check argument types
-        for i, ((param_name, param_type), arg) in enumerate(zip(func_params, args)):
-                if not can_promote(arg.expr_type, param_type):
-                        self.error("Type mismatch for argument %d of function '%s': expected %s, got %s" %
-                                         (i+1, func_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
+                          (func_name, len(func_params), len(args)))
+        self.check_argument_types(args, func_params, "function '%s'" % func_name)
         return FunctionCallNode(func_name, args, func_return_type)
 
     def statement(self):
