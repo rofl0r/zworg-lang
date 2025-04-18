@@ -87,84 +87,119 @@ class Lexer:
         start = self.pos
         start_line = self.line
         start_column = self.column
-        is_hex = False
         is_float = False
+        result = ""
+        digits = "0123456789"
 
-        # Check for hex prefix
-        if self.current_char == '0' and self.peek() in ['x', 'X']:
-            is_hex = True
-            self.advance()  # Skip '0'
-            self.advance()  # Skip 'x'
-            # Read hex digits
-            while self.current_char and self.current_char in '0123456789abcdefABCDEF':
+        # Handle prefixes
+        if self.current_char == '0' and self.peek():
+            next_char = self.peek()
+            if next_char == 'x':
+                digits = "0123456789abcdef"
+                self.advance()  # Skip '0'
+                self.advance()  # Skip 'x'
+            elif next_char == 'b':
+                digits = "01"
+                self.advance()  # Skip '0'
+                self.advance()  # Skip 'b'
+            elif next_char in "01234567":
+                digits = "01234567"
+
+        has_digits = False
+        # Parse main part of the number (integer part)
+        while self.current_char:
+            if self.current_char == '_':
                 self.advance()
-        else:
-            # Read decimal integer or float
-            while self.current_char and self.current_char.isdigit():
+                continue
+            if self.current_char not in digits:
+                break
+            result += self.current_char
+            has_digits = True
+            self.advance()
+
+        # Validate there's no trailing underscore
+        if result.endswith('_'):
+            self.error("Numbers cannot end with an underscore")
+
+        # Check if we have an unrecognized character immediately after the number
+        if self.current_char and self.current_char.isalnum() and self.current_char not in 'ulfd.':
+            self.error("Invalid character '%s' in numeric literal of base %d" % (self.current_char, len(digits)))
+
+        # Check for decimal point (only for decimal numbers)
+        if len(digits) == 10 and self.current_char == '.':
+            is_float = True
+            result += '.'
+            self.advance()
+            # Must have at least one digit after decimal
+            if not (self.current_char and self.current_char in digits):
+                self.error("Invalid float literal: requires digits after decimal point")
+            while self.current_char and (self.current_char in digits or self.current_char == '_'):
+                if self.current_char != '_':
+                    result += self.current_char
+                    has_digits = True
                 self.advance()
 
-            # Check for decimal point
-            if self.current_char == '.':
-                is_float = True
-                self.advance()
-                # Must have at least one digit after decimal
-                if not (self.current_char and self.current_char.isdigit()):
-                    self.error("Invalid float literal: requires digits after decimal point")
-                while self.current_char and self.current_char.isdigit():
-                    self.advance()
-
-        # Parse any suffix (u, l, ul, f)
-        if not is_float and self.current_char in ['u', 'l', 'U', 'L']:
-            num_str = self.text[start:self.pos]
-            num_value = int(num_str, 16 if is_hex else 10)
+        # Parse any suffix (u, l, ul, f, d)
+        if not is_float and self.current_char and self.current_char in 'ul':
+            num_value = int(result, len(digits))
             suffix = self.parse_int_suffix()
 
             # Create appropriate token based on suffix
-            if suffix.lower() == 'u':
+            if suffix == 'u':
                 return Token(TT_UINT_LITERAL, num_value, start_line, start_column)
-            if suffix.lower() == 'l':
+            if suffix == 'l':
                 return Token(TT_LONG_LITERAL, num_value, start_line, start_column)
-            if suffix.lower() in ['ul', 'lu']:
+            if suffix == 'ul':
                 return Token(TT_ULONG_LITERAL, num_value, start_line, start_column)
+            if suffix == 'll':
+                return Token(TT_LONGLONG_LITERAL, num_value, start_line, start_column)
+            if suffix == 'ull':
+                return Token(TT_ULONGLONG_LITERAL, num_value, start_line, start_column)
 
             self.error("Invalid integer literal suffix: '%s'" % suffix)
 
         # Handle float literal
         if is_float:
-            value_str = self.text[start:self.pos]
-            value = float(value_str)
+            value = float(result)
+            token = None
             # Check for float suffix
-            if self.current_char in ['f', 'F']:
+            if self.current_char == 'f':
                 self.advance()
-                return Token(TT_FLOAT_LITERAL, value, start_line, start_column)
-            elif self.current_char in ['d', 'D']:
+                token = Token(TT_FLOAT_LITERAL, value, start_line, start_column)
+            if self.current_char == 'd':
                 self.advance()
-                return Token(TT_DOUBLE_LITERAL, value, start_line, start_column)
-            # No suffix = double by default
-            return Token(TT_DOUBLE_LITERAL, value, start_line, start_column)
+                # fall-through to default of double token
+
+            # Validate there's no unrecognized character after the float
+            if self.current_char and self.current_char.isalnum():
+                self.error("Invalid character '%s' after float literal" % self.current_char)
+
+            # No suffix or 'd' suffix = double
+            if not token: token = Token(TT_DOUBLE_LITERAL, value, start_line, start_column)
+            return token
 
         # Plain integer literal
-        value_str = self.text[start:self.pos]
-        value = int(value_str, 16 if is_hex else 10)
+        value = int(result, len(digits))
         return Token(TT_INT_LITERAL, value, start_line, start_column)
 
     def parse_int_suffix(self):
-        """Parse integer literal suffixes (u, l, ul, lu)"""
-        first = self.current_char.lower()
-        self.advance()
+        """Parse integer literal suffixes (u, l, ul, ull)"""
+        # Collect the entire suffix
+        suffix = ""
 
-        if first == 'u':
-            if self.current_char and self.current_char.lower() == 'l':
-                self.advance()
-                return 'ul'
-            return 'u'
-        elif first == 'l':
-            if self.current_char and self.current_char.lower() == 'u':
-                self.advance()
-                return 'ul'  # standardize to 'ul' even if written as 'lu'
-            return 'l'
+        # Only 'u' and 'l' are valid suffix characters
+        valid_suffix_chars = "ul"
 
-        self.error("Expected integer literal suffix")
+        # Collect all characters that might be part of the suffix
+        while self.current_char and self.current_char in valid_suffix_chars:
+            suffix += self.current_char
+            self.advance()
+
+        # Check if there's an invalid character immediately after the suffix
+        if self.current_char and self.current_char.isalnum():
+            self.error("Invalid character '%s' after numeric suffix" % self.current_char)
+
+        return suffix
 
     def handle_string(self):
         """Handle string literals"""

@@ -326,11 +326,12 @@ def test():
            "name": "mixed types variable declaration - type inference",
            "code": """
                def main() do
-                   var a := 42;     // int
+                   var a := 0b101010;     // int
                    var b := 42u;    // uint
-                   var c := 42l;    // long
+                   var c := 42_000_l;    // long
                    var d := 42ul;   // ulong
                    var e := 42.0;   // float
+                   var f := 0xcafe_babe_ull // unsigned long long
 
                    // Test assignments to explicitly typed variables
                    var x : int = 10;
@@ -338,6 +339,7 @@ def test():
                    var z : long = 30l;
                    var w : ulong = 40ul;
                    var v : float = 50.0;
+                   var u : longlong = 0xcafebabe
 
                    print a;
                    print b;
@@ -346,8 +348,8 @@ def test():
                    print e;
                end
            """,
-           "expected_env": {"a": 42, "b": 42, "c": 42, "d": 42, "e": 42.0,
-                        "x": 10, "y": 20, "z": 30, "w": 40, "v": 50.0}
+           "expected_env": {"a": 42, "b": 42, "c": 42000, "d": 42, "e": 42.0, "f": 0xcafebabe,
+                        "x": 10, "y": 20, "z": 30, "w": 40, "v": 50.0, "u": 0xcafebabe}
         },
         {
            "name": "unsigned int division",

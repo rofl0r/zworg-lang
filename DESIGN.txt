@@ -36,13 +36,14 @@ The language reserves the following keywords:
 
 ### 1.3 Literals
 - Integer literals: Sequence of digits (e.g., '123')
-  - Can be decimal or hexadecimal (0x or 0X prefix)
-  [TODO add 0b for bits and octal and thousand separators using _ like 1_000]
+  - Can be decimal or hexadecimal (0x prefix), binary (0b prefix) or octal (0 prefix).
+  - Can contain underscores at arbitrary positions, a feature most often used for thousand separators like 1_000.
 - Integer literals can have the following suffixes:
   - 'u' for unsigned integers (e.g., '123u')
   - 'l' for long integers (e.g., '123l')
-  - 'ul', 'lu', for unsigned long integers (e.g., '123ul')
-  [TODO need to support llu too!]
+  - 'ul' for unsigned long integers (e.g., '123ul')
+  - 'll' for long long integers (e.g., '123ll')
+  - 'ull' for unsigned long long integers (e.g., '123ull')
 - Float literals: Digits with decimal point (e.g., '3.14')
   - Can have 'f' suffix for float type (e.g., '3.14f')
   - Can have 'd' suffix for double type (e.g., '3.14d')
@@ -50,6 +51,8 @@ The language reserves the following keywords:
 - Float literals must have at least one digit after the decimal point ('5.' is invalid, must be '5.0')
 - String literals: Text surrounded by double quotes (e.g., "Hello, world!")
   - Support escape sequences: \n, \t, \r, \", \\
+
+Note that all suffixes and hex literals support only lowercase.
 
 ### 1.4 Comments
 - C++-style single-line comments beginning with '//'
@@ -68,7 +71,7 @@ Primitive Types:
   - 'ulong': Long unsigned integer (64-bit)
   - 'longlong': Long long signed integer (64-bit)
   - 'ulonglong': Long long unsigned integer (64-bit)
-  
+
 - Fixed-size Integer Types:
   - 'i8', 'u8': 8-bit signed/unsigned
   - 'i16', 'u16': 16-bit signed/unsigned
