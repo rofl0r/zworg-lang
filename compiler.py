@@ -461,10 +461,22 @@ class Parser:
         return True
 
     def error(self, message):
-        token_type_name = token_name(self.token.type)
-        raise CompilerException("%s at line %d, column %d. Token: %s (%s)" %
-                       (message, self.token.line, self.token.column,
-                        self.token.value, token_type_name))
+        """Raise a compiler exception with current token information"""
+        raise CompilerException(message, self.token)
+
+    def type_mismatch_error(self, context, from_type, to_type):
+        """Generate consistent type mismatch error messages"""
+        self.error("%s: cannot convert %s to %s" % 
+                  (context, var_type_to_string(from_type), var_type_to_string(to_type)))
+
+    def type_mismatch_assignment_error(self, var_name, expr_type, var_type):
+        """Generate type mismatch error for assignment operations"""
+        self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
+                  (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
+
+    def already_declared_error(self, var_name):
+        """Generate error for already declared variables"""
+        self.error("Variable '%s' is already declared in this scope" % var_name)
 
     def advance(self):
         self.prev_token = self.token
@@ -505,15 +517,35 @@ class Parser:
         var_type = self.get_variable_type(var_name)
 
         if var_type is not None and var_type != TYPE_UNKNOWN and expr_type != TYPE_UNKNOWN and not can_promote(expr_type, var_type):
-            self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
-                      (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
+            self.type_mismatch_assignment_error(var_name, expr_type, var_type)
 
     def check_argument_types(self, args, params, context_name):
         """Check if argument types match parameter types"""
         for i, ((param_name, param_type), arg) in enumerate(zip(params, args)):
             if not can_promote(arg.expr_type, param_type):
-                self.error("Type mismatch for argument %d of %s: expected %s, got %s" % 
-                          (i+1, context_name, var_type_to_string(param_type), var_type_to_string(arg.expr_type)))
+                self.type_mismatch_error("Type mismatch for argument %d of %s" % (i+1, context_name), 
+                                         arg.expr_type, param_type)
+
+    def check_arg_count(self, func_name, params, args):
+        """Helper to check argument count against parameter count"""
+        if len(args) != len(params):
+            self.error("%s expects %d arguments, got %d" %
+                      (func_name, len(params), len(args)))
+
+    def parse_args(self, args):
+        """Helper to parse argument lists for function/method calls"""
+        if self.token.type != TT_RPAREN:
+            args.append(self.expression(0))
+            while self.token.type == TT_COMMA:
+                self.advance()  # Skip comma
+                args.append(self.expression(0))
+        return args
+
+    def check_field_compatibility(self, from_type, to_type):
+        """Helper to check field assignment type compatibility"""
+        if not can_promote(from_type, to_type):
+            self.error("Type mismatch: cannot assign %s to field of type %s" % 
+                      (var_type_to_string(from_type), var_type_to_string(to_type)))
 
     def parse_member_access(self, obj_node):
         """
@@ -549,21 +581,11 @@ class Parser:
 
             # Parse arguments
             args = []
-            if self.token.type != TT_RPAREN:
-                args.append(self.expression(0))
-
-                while self.token.type == TT_COMMA:
-                    self.advance()  # Skip ','
-                    args.append(self.expression(0))
-
+            self.parse_args(args)
             self.consume(TT_RPAREN)
 
             # Type check arguments
-            if len(args) != len(method.params):
-                self.error("Method '%s' expects %d arguments, got %d" % 
-                          (member_name, len(method.params), len(args)))
-
-            # Refactored argument type checking using check_argument_types
+            self.check_arg_count("Method '%s'" % member_name, method.params, args)
             self.check_argument_types(args, method.params, "method '%s'" % member_name)
 
             return MethodCallNode(obj_node, member_name, args, method.return_type)
@@ -825,13 +847,7 @@ class Parser:
 
                     # Parse constructor args
                     args = []
-                    if self.token.type != TT_RPAREN:
-                        args.append(self.expression(0))
-
-                        while self.token.type == TT_COMMA:
-                            self.advance()  # Skip ','
-                            args.append(self.expression(0))
-
+                    self.parse_args(args)
                     self.consume(TT_RPAREN)
 
                     # Create struct initialization
@@ -883,25 +899,14 @@ class Parser:
 
             # Parse constructor arguments
             self.advance()  # Skip '('
-
-            if self.token.type != TT_RPAREN:
-                args.append(self.expression(0))
-
-                while self.token.type == TT_COMMA:
-                    self.advance()  # Skip ','
-                    args.append(self.expression(0))
-
+            self.parse_args(args)
             self.consume(TT_RPAREN)
 
             # Check if init method exists for the struct
             init_method = type_registry.get_method(struct_name, "init")
             if init_method:
                 # Check argument count
-                if len(args) != len(init_method.params):
-                    self.error("Constructor for '%s' expects %d arguments, got %d" % 
-                              (struct_name, len(init_method.params), len(args)))
-
-                # Type check arguments using the helper function
+                self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args)
                 self.check_argument_types(args, init_method.params, "constructor for '%s'" % struct_name)
 
             # Create heap allocated struct
@@ -949,9 +954,7 @@ class Parser:
             right = self.expression(0)
 
             # Check type compatibility
-            if not can_promote(right.expr_type, left.expr_type):
-                self.error("Type mismatch: cannot assign %s to member of type %s" % 
-                          (var_type_to_string(right.expr_type), var_type_to_string(left.expr_type)))
+            self.check_field_compatibility(right.expr_type, left.expr_type)
 
             # Create a special binary operation that models the assignment
             return BinaryOpNode('=', left, right, left.expr_type)
@@ -962,8 +965,7 @@ class Parser:
             # Determine the result type based on operand types
             result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
             if result_type is None:
-                self.error("Type mismatch in binary operation: %s and %s" %
-                          (var_type_to_string(left.expr_type), var_type_to_string(right.expr_type)))
+                self.type_mismatch_error("Type mismatch in binary operation", left.expr_type, right.expr_type)
 
             return BinaryOpNode(t.value, left, right, result_type)
 
@@ -973,8 +975,7 @@ class Parser:
             # But operands must be compatible types
             result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
             if result_type is None:
-                self.error("Type mismatch in comparison: %s and %s" %
-                          (var_type_to_string(left.expr_type), var_type_to_string(right.expr_type)))
+                self.type_mismatch_error("Type mismatch in comparison", left.expr_type, right.expr_type)
             return CompareNode(t.value, left, right)
 
         elif t.type in [TT_AND, TT_OR]:
@@ -985,7 +986,7 @@ class Parser:
         elif t.type in [TT_XOR, TT_BITOR, TT_BITAND]:
             right = self.expression(self.lbp(t))
             # Both operands must be integer types
-            if not is_float_type(left.expr_type) and not is_float_type(right.expr_type):
+            if is_integer_type(left.expr_type) and is_integer_type(right.expr_type):
                 result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
                 if result_type is not None:
                     return BitOpNode(t.value, left, right)
@@ -1049,21 +1050,14 @@ class Parser:
 
         # Parse arguments
         args = []
-        if self.token.type != TT_RPAREN:
-                args.append(self.expression(0))
-                while self.token.type == TT_COMMA:
-                        self.advance()  # Skip comma
-                        args.append(self.expression(0))
-
+        self.parse_args(args)
         self.consume(TT_RPAREN)
 
         # Type checking for function call
         func_params, func_return_type = self.functions[func_name]
 
         # Check number of arguments
-        if len(args) != len(func_params):
-                self.error("Function '%s' expects %d arguments, got %d" %
-                          (func_name, len(func_params), len(args)))
+        self.check_arg_count("Function '%s'" % func_name, func_params, args)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
         return FunctionCallNode(func_name, args, func_return_type)
 
@@ -1114,8 +1108,7 @@ class Parser:
 
             # Check that return expression type matches function return type
             if not can_promote(expr.expr_type, func_return_type):
-                self.error("Type mismatch in return: cannot return %s from function returning %s" % 
-                          (var_type_to_string(expr.expr_type), var_type_to_string(func_return_type)))
+                self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
 
             self.check_statement_end()
             return ReturnNode(expr)
@@ -1206,19 +1199,17 @@ class Parser:
                     if expr.expr_type == TYPE_INT:
                         # Allow int literals to initialize any numeric type, but not string nor structs
                         if var_type not in FLOAT_TYPES and var_type not in UNSIGNED_TYPES and var_type not in SIGNED_TYPES:
-                            self.error("Type mismatch in initialization: can't assign %s to %s (type %s)" % 
-                                      (var_type_to_string(expr.expr_type), var_name, var_type_to_string(var_type)))
+                            self.type_mismatch_error("Type mismatch in initialization", expr.expr_type, var_type)
                     elif expr.expr_type == TYPE_DOUBLE and var_type == TYPE_FLOAT:
                         # Allow double literals to initialize float variables
                         pass
                 elif expr.expr_type != TYPE_UNKNOWN and var_type != expr.expr_type and not can_promote(expr.expr_type, var_type):
-                    self.error("Type mismatch in initialization: can't assign %s to %s (type %s)" % 
-                              (var_type_to_string(expr.expr_type), var_name, var_type_to_string(var_type)))
+                    self.type_mismatch_error("Type mismatch in initialization", expr.expr_type, var_type)
             else:
                 self.error("Variable declaration must include an initialization")
             # Register the variable as defined in the current scope
             if var_name in self.variables[self.current_scope()]:
-                self.error("Variable '%s' is already declared in this scope" % var_name)
+                self.already_declared_error(var_name)
 
             # Declare the variable in current scope
             self.declare_variable(var_name, var_type, decl_type == TT_LET)
@@ -1276,9 +1267,7 @@ class Parser:
                     expr = self.expression(0)
 
                     # Check type compatibility
-                    if not can_promote(expr.expr_type, member_node.expr_type):
-                        self.error("Type mismatch: cannot assign %s to field of type %s" % 
-                                  (var_type_to_string(expr.expr_type), var_type_to_string(member_node.expr_type)))
+                    self.check_field_compatibility(expr.expr_type, member_node.expr_type)
 
                     # Create binary op node for the assignment
                     node = BinaryOpNode('=', member_node, expr, member_node.expr_type)
