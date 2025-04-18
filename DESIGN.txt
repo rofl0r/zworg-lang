@@ -14,15 +14,20 @@ The language is a statically-typed imperative language with primitive types, var
 ### 1.2 Keywords
 The language reserves the following keywords:
 - 'var': Variable declaration
-- 'let': Constant declaration
+- 'let': Constant declaration [TODO will be replaced with const]
 - 'if', 'else', 'end': Conditional statements
 - 'while', 'do': Looping construct
+[TODO - for loop will come in the future once we figured out the details for container semantics]
 - 'break', 'continue': Loop control
 - 'and', 'or', 'xor': Logical operators
 - 'bitnot': Unary bitwise NOT
 - 'shl', 'shr': Shift operators
 - 'print': Output statement
-- 'int', 'float', 'uint', 'long', 'ulong', 'string': Type specifiers
+- Type specifiers:
+  - Integer types: 'int', 'uint', 'long', 'ulong', 'longlong', 'ulonglong'
+  - Fixed-size integers: 'i8', 'u8', 'i16', 'u16', 'i32', 'u32', 'i64', 'u64'
+  - Float types: 'float', 'double'
+  - Other: 'string'
 - 'def': Function declaration
 - 'return': Return statement
 - 'struct': Struct definition
@@ -31,40 +36,71 @@ The language reserves the following keywords:
 
 ### 1.3 Literals
 - Integer literals: Sequence of digits (e.g., '123')
+  - Can be decimal or hexadecimal (0x or 0X prefix)
+  [TODO add 0b for bits and octal and thousand separators using _ like 1_000]
 - Integer literals can have the following suffixes:
   - 'u' for unsigned integers (e.g., '123u')
   - 'l' for long integers (e.g., '123l')
   - 'ul', 'lu', for unsigned long integers (e.g., '123ul')
+  [TODO need to support llu too!]
 - Float literals: Digits with decimal point (e.g., '3.14')
+  - Can have 'f' suffix for float type (e.g., '3.14f')
+  - Can have 'd' suffix for double type (e.g., '3.14d')
+  - No suffix defaults to double type
 - Float literals must have at least one digit after the decimal point ('5.' is invalid, must be '5.0')
 - String literals: Text surrounded by double quotes (e.g., "Hello, world!")
+  - Support escape sequences: \n, \t, \r, \", \\
 
 ### 1.4 Comments
 - C++-style single-line comments beginning with '//'
+- C-style block comments between /* and */
 
 ## 2. Types
 
 ### 2.1 Type System
-The language has a static, manifest typing system with the following primitive types:
-- 'int': Signed integer values
-- 'float': Floating-point values
-- 'uint': Unsigned integer values
-- 'long': Long (machine-dependent) signed integer values
-- 'ulong': Long (machine-dependent) unsigned integer values
-- 'string': Text string values
+The language has a static, manifest typing system with the following types:
 
-Additional type constructors include:
-- References: Pointers to heap-allocated objects
+Primitive Types:
+- Integer Types:
+  - 'int': Default signed integer (32-bit)
+  - 'uint': Default unsigned integer (32-bit)
+  - 'long': Long signed integer (64-bit)
+  - 'ulong': Long unsigned integer (64-bit)
+  - 'longlong': Long long signed integer (64-bit)
+  - 'ulonglong': Long long unsigned integer (64-bit)
+  
+- Fixed-size Integer Types:
+  - 'i8', 'u8': 8-bit signed/unsigned
+  - 'i16', 'u16': 16-bit signed/unsigned
+  - 'i32', 'u32': 32-bit signed/unsigned
+  - 'i64', 'u64': 64-bit signed/unsigned
+
+- Floating Point Types:
+  - 'float': Single precision (32-bit)
+  - 'double': Double precision (64-bit)
+
+- Other Types:
+  - 'string': Text string values
+
+Composite Types:
 - Struct types: User-defined composite types
+- Reference types: Created when allocating structs with 'new'
 
-### 2.2 Type Compatibility
-- Type checking is strict - only same types can be assigned to each other
-- Implicit conversions are not allowed
-- Type promotion follows this precedence: float > ulong > long > uint > int
-- Integer literals can be promoted to any type during declaration
+### 2.2 Type Compatibility and Promotion
+- String type compatibility is strict - only same types can be assigned directly.
+- Type promotion rules for numeric types follow C - anything is allowed.
+  [TODO] Though I'm open to improve upon it if good a good case can be made for
+  specific situations where this is suboptimal.
+- For struct types:
+  - Value types (stack allocated) require exact type matches
+  - [TODO] Reference types (heap allocated) allow derived-to-base conversion
 
 ### 2.3 Type Inference
 - Types can be inferred from initializers using the ':=' operator
+- The compiler determines the most specific type that can hold the initializer value
+- [TODO] untyped function parameters in function declarations shall act as a poor man's
+  generics replacement - such a function shall be specialized to the type of the specific
+  arguments that's passed in at the call-site.
 
 ## 3. Declarations
 
@@ -84,6 +120,7 @@ var s := "Hello";      // Type inferred as string
 
 ### 3.2 Constant Declarations
 Constants are declared with 'let' and must have an initializer:
+[TODO] Change to 'const'.
 
 EXAMPLE:
 let <identifier> [: <type>] := <expression>;  // Type inferred
@@ -100,9 +137,13 @@ def <function_name>([<param_name>: <param_type>, ...]) [: <return_type>] do
 end
 
 - Parameters must have explicit type annotations
+  [TODO: in the future, allow usecase for generics as mentioned earlier]
 - Return type is optional (defaults to 'void' if not specified)
-- All functions must end with 'end'
-
+  The 'void' type cannot be explicitly used, only implicitly by omitting the return type.
+- All functions must require a 'do' ... 'end' block.
+[TODO in the future it shall be possible to have optional parameters with a default value
+ at the tail of the parameter list, for example def foo(bar:int, baz:double=0.0, blah:=0)
+ it shall support the type inference operator for those]
 Examples:
 def add(a: int, b: int): int do
     return a + b;
@@ -121,10 +162,24 @@ struct <struct_name> [(<parent_struct>)] do
     // ... more fields
 end
 
+Methods are declared outside the struct:
+def <struct_name>.<method_name>([params])[: return_type] do
+    // method body with access to 'self'
+end
+
+Special Methods:
+- Constructor: init() - Called when struct is created
+- Destructor: fini() - Called when struct is destroyed
+
 Examples:
 struct Point do
     x: int
     y: int
+end
+
+def Point.init(x_val: int, y_val: int) do
+    self.x = x_val
+    self.y = y_val
 end
 
 struct Circle(Shape) do
@@ -162,11 +217,10 @@ end else if <expression> do
     <statements>
 end
 
-Note: Each 'if' block must be closed with 'end' before an 'else' clause.
-The 'end' keyword closes the block scope that was started with 'do', not the conditional statement itself.
+Note: Each 'if' or 'else' statement must followed by a block scope.
 
 ### 4.3 Loop Statements
-Loops use 'while' with a 'do' keyword and must end with 'end':
+Loops use 'while' followed by a condition expression and a block scope.
 
 EXAMPLE:
 while <expression> do
@@ -180,28 +234,23 @@ Loops can be controlled with:
 
 ### 4.5 Print Statement
 Output is done with the 'print' keyword:
+[TODO] This exists only during the prototype stage and will be removed once a stdlib is born.
 
 EXAMPLE:
 print <expression>;
 
-### 4.6 Empty Statement
-A lone semicolon represents an empty statement:
-
-EXAMPLE:
-;
-
-### 4.7 Return Statement
+### 4.6 Return Statement
 Functions use the 'return' statement to provide a return value:
 
 EXAMPLE:
 return <expression>;  // For functions with a return type
 return;               // For void functions
 
-### 4.8 Memory Management Statements
+### 4.7 Memory Management Statements
 Heap allocation and deallocation:
 
 EXAMPLE:
-var obj := new StructName(args);  // Allocate on heap
+var obj := new StructName(args);  // Allocate on heap - creates reference type
 del obj;                          // Deallocate and call destructor
 
 ## 5. Expressions
@@ -241,10 +290,20 @@ del obj;                          // Deallocate and call destructor
 - Shift left: 'shl'
 - Shift right: 'shr'
 
+Bitwise operations:
+- Only allowed on integer types
+- Result is masked to the size of the largest operand type
+- Sign-extended for signed types in right shifts
+- Zero-extended for unsigned types in right shifts
+TL;DR - should behave exactly as in C. If not, it's a bug.
+
 ### 5.6 Member Access Operators
 - Dot operator: '.'  (for accessing struct fields and methods)
 
 ### 5.7 Operator Precedence
+This is modelled after python, since C's precedence rules are b0rked.
+And (almost) everybody knows python, and they got this right (IMO).
+If something here actually differs from python, it's a bug.
 From lowest to highest:
 1. Assignment operators ('=', '+=', '-=', etc.)
 2. Logical OR ('or')
@@ -266,25 +325,27 @@ From lowest to highest:
 
 ### 6.2 Type Rules
 - Binary operations between two values of the same type result in that type
-- No implicit type promotions are allowed between different types
+- Type promotions follow the precedence rules defined in section 2.2
 - Comparison and logical operations always return an 'int' (0 or 1)
-- Bitwise operations require integer operands and return an 'int'
-- Type precedence for promotion: float > ulong > long > uint > int
+- Bitwise operations require integer operands and return an integer type
 - String concatenation is performed with the '+' operator when both operands are strings
+TL;DR: C rules, except for the string type which C doesn't have.
 
 ### 6.3 Division
-- Division between two 'int' values performs integer division (truncation)
-- Division with at least one 'float' operand performs floating-point division
+- Division between two integer values performs integer division (truncation)
+- Division with at least one floating point operand performs floating-point division
 - Division between signed integers follows C rules for truncation toward zero
 - Division between unsigned integers performs unsigned division
+TL;DR: C rules.
 
 ## 7. Scope Rules
 
 - Variables must be declared before use
 - Variables cannot be redeclared in the same scope
-- The 'do ... end' blocks create new block scopes
+- The 'do ... end' blocks create new block scopes [TODO check wether variables created in deep scopes actually aren't visible in parent scopes]
 - Functions have their own scope
 - Structs define a scope for their fields and methods
+- Child structs have access to parent fields through inheritance
 
 ## 8. Error Handling
 
@@ -317,7 +378,10 @@ The language reports various errors:
   end
   
 - The 'self' keyword refers to the struct instance in method bodies
+- 'self' is always treated as a reference type in methods
 - Methods can access fields and other methods of the struct
+[TODO we need to make sure this is always passed by reference! (i.e. adding the reference type bit)]
+[TODO add testcases checking the semantics of struct args by-ref vs by-value in function arguments - more in another TODO]
 
 ### 9.2 Inheritance
 - Structs can inherit from a parent struct using the syntax:
@@ -326,33 +390,49 @@ The language reports various errors:
       // additional fields
   end
   
-- Child structs inherit all fields and methods from parent structs
+- Child structs inherit all fields and methods from parent structs.
+  - Member fields of the parent are inserted at the top of the struct to allow casting in the future C backend.
 - Method overriding is supported (a child can define a method with the same name as a parent)
+- Reference types support polymorphic assignment (derived to base)
+- Value types require exact type matches for assignment
 
 ### 9.3 Constructors and Destructors
 - Constructors are defined as methods named 'init'
 - Destructors are defined as methods named 'fini'
-- Constructors are called when a struct is instantiated
-- Destructors are called when a heap-allocated object is deallocated with 'del' or if is goes out of scope
+- Constructors are called automatically when:
+  - A struct is stack allocated with direct initialization
+  - A struct is heap allocated with 'new'
+- Destructors are called automatically when:
+  - A heap-allocated object is deallocated with 'del' [TODO in future when it's no longer referenced too]
+  - A stack-allocated object goes out of scope
 
 ### 9.4 Memory Management
 - Stack allocation: var obj := StructName(args);
+  - Object lifetime tied to scope
+  - Value semantics for assignment [TODO figure out how we can pass both value-type structs and ref-structs to functions taking that type once we have the C backend, so only one function copy needs to be emitted for both usecases. probably easiest to make an explicit copy on the stack and pass a pointer to that in the value-type scenario]
+  - Exact type matching required
 - Heap allocation: var obj := new StructName(args);
-- Heap deallocation: del obj;
-- Reference types are created by heap allocation with 'new'
+  - Creates a reference type
+  - Reference semantics for assignment
+  - Supports polymorphic assignment
+  - Must be explicitly deallocated with 'del' [TODO this will be relaxed in the future once refcounting is implemented - then del CAN be used, but the object will be deallocated when no refs exist]
 
 ## 10. Semantics Highlights
 
-- **Static Typing**: All variables have a determined type at compile time
-- **Type Inference**: Types can be inferred from initializers
-- **No Implicit Conversions**: Strict type checking with no automatic type promotions
-- **Boolean Representation**: Boolean values are represented as integers (0=false, non-zero=true)
-- **Mandatory Initialization**: All variables must be initialized at declaration
+- **Static Typing**: All variables have a determined type at compile time [TODO this will be relaxed by allowing to omit the type, in which case the backend shall use a dynamic type unless the type can be infered during the program flow at compile time.]
+- **Type Inference**: Types can be inferred from initializers [TODO plus more in the future, see above]
+- **No Implicit Conversions**: Type promotions only follow defined rules (Yeah, C's :-)
+- **Boolean Representation**: Boolean values are represented as integers (0=false, non-zero=true) [TODO we might add those later]
+- **Mandatory Initialization**: All variables must be initialized at declaration [TODO will probably also be relaxed]
 - **Statement Termination**: Statements on the same line must be separated by semicolons
 - **Control Flow Nesting**: Proper nesting of control structures with explicit 'do ... end' blocks
-- **Extended Type System**: Support for unsigned integers, long integers, and strings
+- **Extended Type System**: Support for fixed-size integers, unsigned types, and double precision floats
 - **C-Style Type Semantics**: Division, comparison, and other operations follow C language rules
-- **Comments**: C++-style single-line comments starting with '//'
-- **Function Declarations**: Functions with type-checked parameters and return values
-- **Object-Oriented Programming**: Structs, methods, constructors, destructors, and inheritance
-- **Memory Management**: Manual memory management with new/del operations
+- **All of those were selected to make C interop as painless as possible.
+- **Object-Oriented Features**: 
+  - Structs with methods
+  - Single inheritance
+  - Constructors and destructors
+  - Reference/value type distinction
+  - Polymorphism for reference types
+- **Memory Management**: Manual memory management with deterministic cleanup [TODO ref-counting is planned for future, though manual new/del will be allowed regardless]
