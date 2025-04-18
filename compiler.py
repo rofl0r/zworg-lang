@@ -1126,7 +1126,7 @@ class Parser:
             return DelNode(expr)
 
         # Handle variable declarations (var and let)
-        if self.token.type in [TT_VAR, TT_LET]:
+        if self.token.type in [TT_VAR, TT_CONST]:
             decl_type = self.token.type  # Save the declaration type (var or let)
             self.advance()
 
@@ -1212,7 +1212,7 @@ class Parser:
                 self.already_declared_error(var_name)
 
             # Declare the variable in current scope
-            self.declare_variable(var_name, var_type, decl_type == TT_LET)
+            self.declare_variable(var_name, var_type, decl_type == TT_CONST)
             self.check_statement_end()
             return VarDeclNode(decl_type, var_name, var_type, expr)
 

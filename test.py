@@ -194,8 +194,8 @@ def test():
             "expected_env": {"y": 2.718}
         },
         {
-            # Tests let with type inference
-            "code": "def main() do let x := 42; end",
+            # Tests const with type inference
+            "code": "def main() do const x := 42; end",
             "expected_env": {"x": 42}
         },
         {
@@ -528,7 +528,7 @@ def test():
             # Tests global variables
             "code": """
                 var global_rw:=0
-                let global_r:=42
+                const global_r:=42
                 def main() do global_rw=10; var x:=global_rw + global_r
                 end
             """,
@@ -563,7 +563,7 @@ def test():
         },
         {
             # Tests error when using variable without declaration
-            "code": "def main() do x = 5; end",  # Missing var or let declaration
+            "code": "def main() do x = 5; end",  # Missing var or const declaration
             "expected_error": "Variable 'x' is not declared"
         },
         {
@@ -597,13 +597,13 @@ def test():
             "expected_error": "Expected semicolon between statements"
         },
         {
-            # Tests error when reassigning to a let-declared constant
-            "code": "def main() do let x := 5; x = 10; end",
+            # Tests error when reassigning to a const-declared constant
+            "code": "def main() do const x := 5; x = 10; end",
             "expected_error": "Cannot reassign to constant 'x'"
         },
         {
-            # Tests error when using compound assignment on a let-declared constant
-            "code": "def main() do let x := 5; x += 10; end",
+            # Tests error when using compound assignment on a const-declared constant
+            "code": "def main() do const x := 5; x += 10; end",
             "expected_error": "Cannot reassign to constant 'x'"
         },
         {

@@ -14,7 +14,7 @@ The language is a statically-typed imperative language with primitive types, var
 ### 1.2 Keywords
 The language reserves the following keywords:
 - 'var': Variable declaration
-- 'let': Constant declaration [TODO will be replaced with const]
+- 'const': Constant declaration
 - 'if', 'else', 'end': Conditional statements
 - 'while', 'do': Looping construct
 [TODO - for loop will come in the future once we figured out the details for container semantics]
@@ -122,12 +122,11 @@ var w : long = 42l;    // Type explicitly as long
 var s := "Hello";      // Type inferred as string
 
 ### 3.2 Constant Declarations
-Constants are declared with 'let' and must have an initializer:
-[TODO] Change to 'const'.
+Constants are declared with 'const' and must have an initializer:
 
 EXAMPLE:
-let <identifier> [: <type>] := <expression>;  // Type inferred
-let <identifier> : <type> = <expression>;     // Type explicitly specified
+const <identifier> [: <type>] := <expression>;  // Type inferred
+const <identifier> : <type> = <expression>;     // Type explicitly specified
 
 Constants cannot be reassigned after declaration.
 

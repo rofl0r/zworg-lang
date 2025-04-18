@@ -43,7 +43,7 @@ TT_SHL = 38
 TT_SHR = 39
 # Variable declarations
 TT_VAR = 40
-TT_LET = 41
+TT_CONST = 41
 # Type system additions
 TT_COLON = 42
 TT_TYPE_ASSIGN = 43  # :=
@@ -221,7 +221,7 @@ KEYWORDS = {
     'shl': TT_SHL,
     'shr': TT_SHR,
     'var': TT_VAR,  # Variable declaration
-    'let': TT_LET,  # Constant declaration
+    'const': TT_CONST,  # Constant declaration
     'int': TT_TYPE_INT,  # Int type
     'float': TT_TYPE_FLOAT,  # Float type
     'uint': TT_TYPE_UINT,  # Unsigned Int type
@@ -361,7 +361,7 @@ TOKEN_NAMES = {
     TT_SHL: "TT_SHL",
     TT_SHR: "TT_SHR",
     TT_VAR: "TT_VAR",
-    TT_LET: "TT_LET",
+    TT_CONST: "TT_CONST",
     TT_COLON: "TT_COLON",
     TT_TYPE_ASSIGN: "TT_TYPE_ASSIGN",
     TT_TYPE_INT: "TT_TYPE_INT",
