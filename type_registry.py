@@ -151,30 +151,3 @@ def get_struct_name(type_id):
             return name
     return None
 
-def is_derived_from(child_name, parent_name):
-    """Check if child struct is derived from parent struct"""
-    if not struct_exists(child_name) or not struct_exists(parent_name):
-        return False
-
-    parent_id = _struct_registry[parent_name][0]
-
-    current_name = child_name
-    while current_name:
-        _, parent_id, _, _ = _struct_registry[current_name]
-
-        if parent_id is None:
-            return False
-
-        # Get parent struct name
-        parent_name = None
-        for name, (tid, _, _, _) in _struct_registry.items():
-            if tid == parent_id:
-                parent_name = name
-                break
-
-        if parent_name == parent_name:
-            return True
-
-        current_name = parent_name
-
-    return False

@@ -592,19 +592,10 @@ class Interpreter(object):
         self.environment.enter_scope()
 
         # Evaluate arguments and bind to parameters
-        if len(node.args) != len(func.params):
-            self.environment.leave_scope()  # Clean up before raising exception
-            raise CompilerException("Function '%s' expects %d arguments, got %d" % 
-                                  (node.name, len(func.params), len(node.args)))
-
-        for (param_name, param_type), arg in zip(func.params, node.args):
-            arg_value = self.evaluate(arg)
-            if not can_promote(arg.expr_type, param_type):
-                self.environment.leave_scope()
-                raise CompilerException("Type mismatch in argument to function '%s': cannot convert %s to %s" %
-                                      (node.name, var_type_to_string(arg.expr_type), var_type_to_string(param_type)))
-            self.environment.set(param_name, arg_value)
-
+        args = [self.evaluate(arg) for arg in node.args]
+        self.check_and_set_params(
+            "Function '%s'" % node.name, func.params, args, node.args
+        )
         result = None  # Default return value for void functions
 
         try:

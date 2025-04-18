@@ -497,7 +497,7 @@ def promote_literal_if_needed(value, from_type, to_type):
     if is_integer_type(from_type) and is_integer_type(to_type):
         # For unsigned types, mask to appropriate size
         if is_unsigned_type(to_type):
-            return truncate_to_unsigned(to_type)
+            return truncate_to_unsigned(value, to_type)
         return value
 
     # Handle float/double promotions
