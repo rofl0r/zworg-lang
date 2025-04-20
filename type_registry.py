@@ -133,13 +133,6 @@ def add_field(struct_name, field_name, field_type, token=None):
 
     fields.append((field_name, field_type))
 
-def add_method(struct_name, method_name, method_node, token=None):
-    """Add a method to a struct definition"""
-    if struct_name not in _struct_registry:
-        raise CompilerException("Struct '%s' is not defined" % struct_name, token)
-
-    return None  # We don't need to return anything
-
 def get_struct_id(struct_name):
     """Get the type ID for a struct"""
     if struct_name not in _struct_registry:

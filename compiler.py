@@ -679,7 +679,6 @@ class Parser:
         type_registry.set_function_ast_node(self.current_function, node)
 
         if struct_name:
-            type_registry.add_method(struct_name, name, node)
             # Add implicit 'self' parameter of struct type
             self.declare_variable("self", struct_id)
 
