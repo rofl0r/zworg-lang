@@ -16,7 +16,8 @@ _next_funcid = 1  # Start with positive numbers so -1 can mean "not found"
 _func_map = {}  # (struct_id, func_name) -> funcid  # struct_id=-1 for regular functions
 
 # Global registry of structs
-_struct_registry = {}  # name -> (type_id, parent_id, fields, methods)
+_struct_registry = {}  # name -> (type_id, parent_id, fields)
+_struct_id_to_name = {}  # type_id -> name (reverse lookup)
 _next_struct_id = TYPE_STRUCT_BASE
 
 def register_function(name, return_type, params, parent_struct_id=-1, ast_node=None):
@@ -91,8 +92,9 @@ def reset_functions():
 
 def reset_registry():
     """Reset the type registry to initial state"""
-    global _struct_registry, _next_struct_id
+    global _struct_registry, _struct_id_to_name, _next_struct_id
     _struct_registry.clear()
+    _struct_id_to_name.clear()
     _next_struct_id = TYPE_STRUCT_BASE
     reset_functions()
 
@@ -112,8 +114,9 @@ def register_struct(name, parent_name=None, token=None):
             raise CompilerException("Parent struct '%s' is not defined" % parent_name, token)
         parent_id = _struct_registry[parent_name][0]  # Get parent's type_id
 
-    # (type_id, parent_id, fields, methods)
-    _struct_registry[name] = (type_id, parent_id, [], {})
+    # (type_id, parent_id, fields)
+    _struct_registry[name] = (type_id, parent_id, [])
+    _struct_id_to_name[type_id] = name
     return type_id
 
 def add_field(struct_name, field_name, field_type, token=None):
@@ -121,7 +124,7 @@ def add_field(struct_name, field_name, field_type, token=None):
     if struct_name not in _struct_registry:
         raise CompilerException("Struct '%s' is not defined" % struct_name, token)
 
-    _, _, fields, _ = _struct_registry[struct_name]
+    _, _, fields = _struct_registry[struct_name]
 
     # Check for duplicate field
     for name, _ in fields:
@@ -135,13 +138,7 @@ def add_method(struct_name, method_name, method_node, token=None):
     if struct_name not in _struct_registry:
         raise CompilerException("Struct '%s' is not defined" % struct_name, token)
 
-    _, _, _, methods = _struct_registry[struct_name]
-
-    # Check for duplicate method
-    if method_name in methods:
-        raise CompilerException("Method '%s' is already defined in struct '%s'" % (method_name, struct_name), token)
-
-    methods[method_name] = method_node
+    return None  # We don't need to return anything
 
 def get_struct_id(struct_name):
     """Get the type ID for a struct"""
@@ -157,11 +154,8 @@ def get_struct_parent(struct_name):
     if parent_id is None:
         return None
 
-    # Find parent name from ID
-    for name, (type_id, _, _, _) in _struct_registry.items():
-        if type_id == parent_id:
-            return name
-    return None
+    # Use the reverse lookup table
+    return _struct_id_to_name.get(parent_id, None)
 
 def get_all_fields(struct_name):
     """Get all fields including those from parent structs"""
@@ -176,7 +170,7 @@ def get_all_fields(struct_name):
         fields.extend(get_all_fields(parent_name))
 
     # Add fields from the current struct
-    _, _, struct_fields, _ = _struct_registry[struct_name]
+    _, _, struct_fields = _struct_registry[struct_name]
     fields.extend(struct_fields)
 
     return fields
@@ -193,34 +187,19 @@ def has_method(struct_name, method_name):
     if struct_name not in _struct_registry:
         return False
 
-    # Check current struct
-    _, _, _, methods = _struct_registry[struct_name]
-    if method_name in methods:
-        return True
-
-    # Check parent struct
-    parent_name = get_struct_parent(struct_name)
-    if parent_name:
-        return has_method(parent_name, method_name)
-
-    return False
+    struct_id = get_struct_id(struct_name)
+    return lookup_function(method_name, struct_id) != -1
 
 def get_method(struct_name, method_name):
     """Get a method from a struct or its parents"""
     if struct_name not in _struct_registry:
         return None
 
-    # Check current struct
-    _, _, _, methods = _struct_registry[struct_name]
-    if method_name in methods:
-        return methods[method_name]
-
-    # Check parent struct
-    parent_name = get_struct_parent(struct_name)
-    if parent_name:
-        return get_method(parent_name, method_name)
-
-    return None
+    struct_id = get_struct_id(struct_name)
+    func_id = lookup_function(method_name, struct_id)
+    if func_id == -1:
+        return None
+    return _functions[func_id].ast_node
 
 def struct_exists(struct_name):
     """Check if a struct exists"""
@@ -230,9 +209,6 @@ def get_struct_name(type_id):
     """Get struct name from type ID"""
     # Handle reference types
     base_type = get_base_type(type_id)
-
-    for name, (tid, _, _, _) in _struct_registry.items():
-        if tid == base_type:
-            return name
-    return None
-
+    
+    # Use the reverse lookup table
+    return _struct_id_to_name.get(base_type, None)
