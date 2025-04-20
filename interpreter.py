@@ -296,7 +296,8 @@ class Interpreter(object):
             AST_NODE_MEMBER_ACCESS: self.visit_member_access,
             AST_NODE_METHOD_CALL: self.visit_method_call,
             AST_NODE_NEW: self.visit_new,
-            AST_NODE_DEL: self.visit_del
+            AST_NODE_DEL: self.visit_del,
+            AST_NODE_TUPLE: self.visit_tuple,
         }
 
     def reset(self):
@@ -845,6 +846,21 @@ class Interpreter(object):
         # Mark object as deleted (set to None)
         # In a real implementation, this would free memory
         return None
+
+    def visit_tuple(self, node):
+        """Evaluate a tuple expression"""
+        # Evaluate all elements
+        element_values = [self.evaluate(elem) for elem in node.elements]
+
+        # Create a struct instance representing the tuple
+        struct_name = type_registry.get_struct_name(node.expr_type)
+        instance = StructInstance(node.expr_type, struct_name)
+
+        # Set field values
+        for i, value in enumerate(element_values):
+            instance.fields["_%d" % i] = value
+
+        return instance
 
 # Custom exceptions for control flow
 class BreakException(Exception):

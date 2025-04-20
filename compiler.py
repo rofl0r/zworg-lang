@@ -326,6 +326,18 @@ class DelNode(ASTNode):
     def __repr__(self):
         return "Del(%s)" % repr(self.expr)
 
+class TupleNode(ASTNode):
+    def __init__(self, elements):
+        ASTNode.__init__(self, AST_NODE_TUPLE)
+        self.elements = elements  # List of expression nodes
+        self.element_types = [elem.expr_type for elem in elements]
+        # Will be set later by the parser
+        self.expr_type = TYPE_UNKNOWN
+
+    def __repr__(self):
+        elements_str = ", ".join(repr(e) for e in self.elements)
+        return "Tuple(%s)" % elements_str
+
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
     return node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING]
@@ -735,7 +747,12 @@ class Parser:
         return (name, param_type)
 
     def parse_type_reference(self):
-        """Parse a type reference (primitive or struct)"""
+        """Parse a type reference (tuple, primitive or struct)"""
+        # Check for tuple types: (type1, type2, ...)
+        if self.token.type == TT_LPAREN:
+            return self.parse_tuple_type()
+
+        # Regular types (primitive or struct)
         if self.token.type in TYPE_TOKEN_MAP:
             type_id = TYPE_TOKEN_MAP[self.token.type]
             self.advance()
@@ -827,6 +844,154 @@ class Parser:
             self.error("Type mismatch: cannot operate on values of different types")
         return left_type
 
+    def is_tuple_expression(self):
+        """
+        Check if the current token sequence represents a tuple expression
+        Uses a token-by-token approach that respects nested parentheses
+        """
+        if self.token.type != TT_LPAREN:
+            return False
+
+        # Save current position
+        saved_token = self.token
+        saved_prev_token = self.prev_token
+        saved_pos = self.lexer.pos
+        saved_line = self.lexer.line
+        saved_col = self.lexer.column
+        saved_curr_char = self.lexer.current_char
+
+        self.advance()  # Skip '('
+
+        # Empty tuple () is not supported
+        if self.token.type == TT_RPAREN:
+            # Restore state and return
+            self.token = saved_token
+            self.lexer.pos = saved_pos
+            self.lexer.line = saved_line
+            self.lexer.column = saved_col
+            return False
+
+        # Skip the first expression while respecting nested parentheses
+        paren_level = 0
+        result = False  # Default is not a tuple
+
+        while self.token.type != TT_EOF:
+            if self.token.type == TT_LPAREN:
+                paren_level += 1
+            elif self.token.type == TT_RPAREN:
+                if paren_level == 0:
+                    # We reached the end of the outer parentheses without finding a comma
+                    break
+                paren_level -= 1
+            elif self.token.type == TT_COMMA and paren_level == 0:
+                # Found a comma at the top level - it's a tuple!
+                result = True
+                break
+            self.advance()
+
+        # Restore lexer position
+        self.token = saved_token
+        self.prev_token = saved_prev_token
+        self.lexer.pos = saved_pos
+        self.lexer.line = saved_line
+        self.lexer.column = saved_col
+        self.lexer.current_char = saved_curr_char
+        return result
+
+    def generate_tuple_type_name(self, element_types):
+        """Generate a unique name for a tuple type based on its element types"""
+        elements_str = "_".join(var_type_to_string(t) for t in element_types)
+        return "_tuple_%d_%s" % (len(element_types), elements_str)
+
+    def register_tuple_type(self, element_types, is_type_annotation=False):
+        """
+        Register a tuple type with the given element types
+        Works for both tuple expressions and tuple type annotations
+
+        Args:
+            element_types: List of type IDs for tuple fields
+
+        Returns:
+            The struct ID for the tuple type
+        """
+        # Generate a unique struct type name for this tuple
+        if is_type_annotation:
+            # Element types are already type IDs (from type annotations)
+            type_list = element_types
+            elements_str = "_".join(var_type_to_string(t) for t in element_types)
+        else:
+            # Element types are from expressions, need to extract the expr_type
+            type_list = [e.expr_type for e in element_types]
+            elements_str = "_".join(var_type_to_string(t) for t in type_list)
+
+        struct_name = "_tuple_%d_%s" % (len(element_types), elements_str)
+
+        # Register the tuple as an anonymous struct if not already registered
+        if not type_registry.struct_exists(struct_name):
+            struct_id = type_registry.register_struct(struct_name, None, self.token)
+            for i, element_type in enumerate(type_list):
+                type_registry.add_field(struct_name, "_%d" % i, element_type)
+        else:
+            struct_id = type_registry.get_struct_id(struct_name)
+
+        return struct_id
+
+    def parse_tuple_type(self):
+        """Parse a tuple type annotation: (type1, type2, ...)"""
+        self.advance()  # Skip '('
+
+        element_types = []
+
+        # Parse first element type
+        element_types.append(self.parse_type_reference())
+
+        # Parse remaining element types
+        while self.token.type == TT_COMMA:
+            self.advance()  # Skip comma
+            element_types.append(self.parse_type_reference())
+
+        self.consume(TT_RPAREN)
+
+        # Register and return the tuple type ID
+        return self.register_tuple_type(element_types, is_type_annotation=True)
+
+    def parse_tuple_expression(self):
+        """Parse a tuple expression: (expr1, expr2, ...)"""
+        self.advance()  # Skip '('
+
+        elements = []
+
+        # Empty tuple not allowed
+        if self.token.type == TT_RPAREN:
+            self.error("Empty tuples are not supported")
+
+        # Parse first element
+        elements = [self.expression(0)]
+
+        # Parse remaining elements
+        while True:
+            # Check if we've reached the end of the tuple
+            if self.token.type != TT_COMMA:
+                break
+
+            self.advance()  # Skip comma
+
+            # Parse the next element
+            elements.append(self.expression(0))
+
+        self.consume(TT_RPAREN)
+
+        # Create tuple node
+        tuple_node = TupleNode(elements)
+
+        # Register and get the tuple type
+        struct_id = self.register_tuple_type(elements, is_type_annotation=False)
+        
+        # Set the type of the tuple node
+        tuple_node.expr_type = struct_id
+        
+        return tuple_node
+
     def nud(self, t):
         # Handle number literals using the type mapping
         if t.type in TOKEN_TO_TYPE_MAP:
@@ -873,8 +1038,12 @@ class Parser:
             return UnaryOpNode(t.value, expr, expr.expr_type)
 
         if t.type == TT_LPAREN:
-            expr = self.expression(0)
-            self.consume(TT_RPAREN)
+            # Check if this is a tuple expression or just parenthesized expression
+            if self.is_tuple_expression():
+                expr = self.parse_tuple_expression()
+            else:
+                expr = self.expression(0)
+                self.consume(TT_RPAREN)
             return expr
 
         if t.type == TT_NEW:
@@ -1090,7 +1259,11 @@ class Parser:
                 return ReturnNode(None)
 
             # Return with value
-            expr = self.expression(0)
+            # Special handling for tuple expressions in return statements
+            if self.token.type == TT_LPAREN and self.is_tuple_expression():
+                expr = self.parse_tuple_expression()
+            else:
+                expr = self.expression(0)
 
             # Check if return type matches function return type
             func_return_type = None
@@ -1107,9 +1280,14 @@ class Parser:
             if func_return_type == TYPE_VOID:
                 self.error("Void function '%s' cannot return a value" % self.current_function)
 
-            # Check that return expression type matches function return type
-            if not can_promote(expr.expr_type, func_return_type):
-                self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
+            # If we're returning a tuple, make sure it matches the function's return type
+            if expr.node_type == AST_NODE_TUPLE:
+                if not is_struct_type(func_return_type):
+                    self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
+            else:
+                # Check that return expression type matches function return type
+                if not can_promote(expr.expr_type, func_return_type):
+                    self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
 
             self.check_statement_end()
             return ReturnNode(expr)

@@ -2,30 +2,24 @@
 from interpreter import Interpreter
 import os, sys
 
-def printc(color, text, file=sys.stdout):
-	cols = {
-		"default": 98,
-		"white" : 97,
-		"cyan" : 96,
-		"magenta" : 95,
-		"blue" : 94,
-		"yellow" : 93,
-		"green" : 92,
-		"red" : 91,
-		"gray" : 90,
-		"end" : 0
-	}
-	colstr = "\033[%dm"
-	file.write( "%s%s%s" % (colstr%cols[color], text, colstr%cols['end']) )
-
 def test():
     # Test cases with expected final env state
     test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
-    {
-        "name": "Method with incorrect return type",
-        "code": """
+        {
+           "name": "test tuple 1",
+           "code": """
+                def divmod(a:int, b:int):(int, int) do return (a/b, a%b); end
+                def main() do var result:(int, int) = divmod(3, 2)
+                var x:=result._0 ; var y:=result._1; end
+           """,
+           "expected_env": {"x": 1, "y": 1}
+        },
+
+        {
+            "name": "Method with incorrect return type",
+            "code": """
             struct Point do
                 x: int
             end
@@ -36,9 +30,9 @@ def test():
 
             def main() do
             end
-        """,
-        "expected_error": "Type mismatch"
-    },
+            """,
+            "expected_error": "Type mismatch"
+        },
         {
            "name": "test struct 1",
            "code": """
@@ -976,6 +970,22 @@ def test():
     print("Total tests: %d" % len(test_cases))
     print("Failed test IDs: %s" % (", ".join(str(num) for num in failed_tests) if failed_tests else "None"))
     print("All tests passed: %s" % ("No" if failed_tests else "Yes"))
+
+def printc(color, text, file=sys.stdout):
+	cols = {
+		"default": 98,
+		"white" : 97,
+		"cyan" : 96,
+		"magenta" : 95,
+		"blue" : 94,
+		"yellow" : 93,
+		"green" : 92,
+		"red" : 91,
+		"gray" : 90,
+		"end" : 0
+	}
+	colstr = "\033[%dm"
+	file.write( "%s%s%s" % (colstr%cols[color], text, colstr%cols['end']) )
 
 if __name__ == '__main__':
     test()

@@ -117,6 +117,7 @@ AST_NODE_MEMBER_ACCESS = 26 # field/method access
 AST_NODE_METHOD_CALL = 27   # method call
 AST_NODE_NEW = 28           # heap allocation with 'new'
 AST_NODE_DEL = 29           # heap deallocation with 'del'
+AST_NODE_TUPLE = 30         # tuple
 
 # Variable types - We depend on the order in interpreter.py when taking the max(type1, type2)
 TYPE_UNKNOWN = 0
@@ -473,6 +474,7 @@ def ast_node_type_to_string(node_type):
         AST_NODE_METHOD_CALL: "METHOD_CALL",
         AST_NODE_NEW: "NEW",
         AST_NODE_DEL: "DEL",
+        AST_NODE_TUPLE: "TUPLE",
     }
     return type_names.get(node_type, "UNKNOWN")
 
