@@ -51,10 +51,35 @@ def set_function_ast_node(funcid, ast_node):
     _functions[funcid].ast_node = ast_node
 
 # Unified lookup function returning -1 if not found
-def lookup_function(name, struct_id=-1):
-    """Look up a function ID by name and optional struct ID"""
+def lookup_function(name, struct_id=-1, check_parents=True):
+    """
+    Look up a function ID by name and optional struct ID
+
+    Args:
+        name: Function/method name
+        struct_id: Struct ID for methods, -1 for global functions
+        check_parents: Whether to check parent structs recursively
+
+    Returns:
+        Function ID or -1 if not found
+    """
+    # Try direct lookup first
     key = (struct_id, name)
-    return _func_map.get(key, -1)  # Return -1 if not found
+    func_id = _func_map.get(key, -1)
+
+    # If found or this is a global function, return the result
+    if func_id != -1 or struct_id == -1 or not check_parents:
+        return func_id
+
+    # If not found and this is a struct, check parent structs
+    struct_name = get_struct_name(struct_id)
+    if struct_name:
+        parent_name = get_struct_parent(struct_name)
+        if parent_name:
+            parent_id = get_struct_id(parent_name)
+            return lookup_function(name, parent_id, check_parents)
+
+    return -1  # Not found anywhere
 
 # Reset registry (for testing)
 def reset_functions():

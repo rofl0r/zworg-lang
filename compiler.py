@@ -666,7 +666,7 @@ class Parser:
                 if len(params) > 0:
                     self.error("Destructor 'fini' cannot have parameters")
 
-        if type_registry.lookup_function(name, struct_id) != -1:
+        if type_registry.lookup_function(name, struct_id, check_parents=False) != -1:
                 self.error("Function '%s' is already defined" % name if not struct_name else "%s.%s"%(struct_name, name))
 
         # Enter function/method scope
