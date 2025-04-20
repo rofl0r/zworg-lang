@@ -4,6 +4,54 @@
 
 The language is a statically-typed imperative language with primitive types, variables and constants, control flow statements, functions, structs, object-oriented features, and expressions with operator precedence.
 
+The end goal is a lightweight language that's easy on the eye, easy and fun to
+write in, with a concise and logically consistent syntax.
+But the most important point is that it will transpile to portable standalone
+C code.
+
+Targeting C has the following benefits:
+
+- existing codegen backends for any architecture in existence
+- very high speed thanks to decades of C compiler tuning when using e.g. GCC
+- the resulting code can be shipped as one or more C files to the consumer,
+  who doesn't need to install yet another compiler for yet another exotic new
+  language.
+- the easiest possible way to benefit from the huge library ecosystem writing
+  in, or using the C ABI.
+- with tinycc, there's an extremely fast (regarding its own execution speed)
+  C compiler available that can be used for a fast development cycle.
+  It's almost as fast as Turbo Pascal in the DOS days was, which was written in
+  hand-optimized assembly for a 16-bit CPU.
+
+There's a number of other languages using C as a backend, but they typically
+emit non-portable code with lots of target specific assumptions, so if one
+wants to circumvent the need to have a compiler for the language in question
+installed on the target machine, one has to pre-generate different C code for
+every possible arch/OS/libc combination in existence.
+They also often depend on a big amount of auxiliary files installed in compiler-
+specific directories. Zwörg instead will likely offer a way to generate a single
+C file with all used "stdlib" dependencies included, so one could literally
+share an entire program using nothing but a pastebin site.
+
+The vision is that the language is about as simple to use as python, but with
+the speed of a compiled language and the portability of C.
+And a C coder who wants well-performing portable code can use it to benefit
+from modern comforts such as concatenating strings with the + operator, or some
+built-in data structures like hashmaps and dynamic arrays.
+
+Python 2.7 was chosen as the current implementation language because writing
+a compiler is a huge task and it's far easier to achieve in a dynamic language.
+Eventually, when the language is more mature, we might make the compiler
+self-hosted, which unlike in the case of rust, java, and others, will be easy
+to bootstrap because of the portable C it outputs.
+
+Currently only a slow interpreter is implemented to verify the correctness of
+the compiler.
+
+Garbage collection is planned in the form of reference counting, but it might
+turn out that manual memory management can be made so simple it's no longer
+a chore.
+
 ## 1. Lexical Elements
 
 ### 1.1 Identifiers
@@ -16,7 +64,7 @@ The language reserves the following keywords:
 - 'var': Variable declaration
 - 'const': Constant declaration
 - 'if', 'else', 'end': Conditional statements
-- 'while', 'do': Looping construct
+- 'while': Looping construct
 [TODO - for loop will come in the future once we figured out the details for container semantics]
 - 'break', 'continue': Loop control
 - 'and', 'or', 'xor': Logical operators
@@ -159,7 +207,7 @@ end
 Structs are declared with the 'struct' keyword:
 
 EXAMPLE:
-struct <struct_name> [(<parent_struct>)] do
+struct <struct_name> [:<parent_struct>] do
     <field_name>: <field_type>
     // ... more fields
 end
@@ -184,7 +232,7 @@ def Point.init(x_val: int, y_val: int) do
     self.y = y_val
 end
 
-struct Circle(Shape) do
+struct Circle:Shape do
     radius: float
 end
 

@@ -360,7 +360,7 @@ class Parser:
             return TYPE_STRING if type1 == type2 else None
 
         # Handle struct types - they must be identical
-        if type1 >= TYPE_STRUCT_BASE or type2 >= TYPE_STRUCT_BASE:
+        if is_struct_type(type1) or is_struct_type(type2):
             return type1 if type1 == type2 else None
 
         # If either operand is floating point, result is the highest precision float
@@ -482,14 +482,16 @@ class Parser:
         self.prev_token = self.token
         self.token = self.lexer.next_token()
 
-    def consume(self, token_type):
+    def consume(self, token_type, emessage=None):
         if self.token.type == token_type:
             self.advance()
         else:
             expected_type_name = token_name(token_type)
             actual_type_name = token_name(self.token.type)
-            self.error('Expected %s but got %s' %
-                      (expected_type_name, actual_type_name))
+            if not emessage: emessage = 'Expected %s but got %s'%(
+                      expected_type_name, actual_type_name)
+            self.error(emessage)
+
 
     def lbp(self, t):
         return BINARY_PRECEDENCE.get(t.type, 0)
@@ -750,7 +752,7 @@ class Parser:
             self.error("Expected a type")
 
     def struct_definition(self):
-        """Parse a struct definition: struct Name [(ParentName)] do ... end"""
+        """Parse a struct definition: struct Name [:ParentName] do ... end"""
         self.advance()  # Skip 'struct' keyword
 
         if self.token.type != TT_IDENT:
@@ -761,11 +763,11 @@ class Parser:
 
         # Check for parent struct (inheritance)
         parent_name = None
-        if self.token.type == TT_LPAREN:
-            self.advance()  # Skip '('
+        if self.token.type == TT_COLON:
+            self.advance()  # Skip ':'
 
             if self.token.type != TT_IDENT:
-                self.error("Expected parent struct name after '('")
+                self.error("Expected parent struct name after ':'")
 
             parent_name = self.token.value
 
@@ -774,7 +776,6 @@ class Parser:
                 self.error("Parent struct '%s' is not defined" % parent_name)
 
             self.advance()
-            self.consume(TT_RPAREN)
 
         # Register the struct
         struct_id = type_registry.register_struct(struct_name, parent_name, self.token)

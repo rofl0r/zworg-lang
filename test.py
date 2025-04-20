@@ -82,7 +82,7 @@ def test():
         return self.name;
     end
 
-    struct Circle(Shape) do
+    struct Circle:Shape do
         radius: float;
     end
 
@@ -786,7 +786,7 @@ def test():
     {
         "name": "Invalid parent struct",
         "code": """
-            struct Child(NonExistentParent) do
+            struct Child:NonExistentParent do
                 x: int
             end
 
