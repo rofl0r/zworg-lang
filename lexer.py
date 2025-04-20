@@ -27,6 +27,8 @@ class Lexer:
             '.': TT_DOT,
             '&': TT_BITAND,
             '|': TT_BITOR,
+            '{': TT_LBRACE,
+            '}': TT_RBRACE,
         }
 
         # Tokens that might be followed by '=' to form a compound token

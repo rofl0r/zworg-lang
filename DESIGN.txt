@@ -74,6 +74,7 @@ The language reserves the following keywords:
 - Type specifiers:
   - Integer types: 'int', 'uint', 'long', 'ulong', 'longlong', 'ulonglong'
   - Fixed-size integers: 'i8', 'u8', 'i16', 'u16', 'i32', 'u32', 'i64', 'u64'
+  - Tuple types: Composite types represented as {type1, type2, ...}
   - Float types: 'float', 'double'
   - Other: 'string'
 - 'def': Function declaration
@@ -135,6 +136,7 @@ Primitive Types:
 
 Composite Types:
 - Struct types: User-defined composite types
+- Tuple types: Anonymous composite types with ordered fields
 - Reference types: Created when allocating structs with 'new'
 
 ### 2.2 Type Compatibility and Promotion
@@ -142,6 +144,7 @@ Composite Types:
 - Type promotion rules for numeric types follow C - anything is allowed.
   [TODO] Though I'm open to improve upon it if good a good case can be made for
   specific situations where this is suboptimal.
+- Tuples require exact type matches for each component.
 - For struct types:
   - Value types (stack allocated) require exact type matches
   - [TODO] Reference types (heap allocated) allow derived-to-base conversion
@@ -236,6 +239,25 @@ struct Circle:Shape do
     radius: float
 end
 
++### 3.5 Tuple Declarations
+Tuples represent ordered collections of values with different types.
+They are implemented as anonymous structs with sequentially numbered fields.
+
+Tuple type declarations:
+def function_name(): {type1, type2, ...} do
+    // Returns a tuple
+end
+
+var x: {int, float};  // Variable with tuple type
+
+Tuple Creation:
+return {value1, value2};  // Return a tuple from a function
+var coords := {10, 20};   // Create a tuple with type inference
+var point: {int, int} = {30, 40};  // Create a tuple with explicit type
+const x_coord:= point._0;  // access first tuple element
+
+Tuple types can be used anywhere a type is expected.
+
 ## 4. Statements
 
 ### 4.1 Expression Statements
@@ -304,6 +326,13 @@ var obj := new StructName(args);  // Allocate on heap - creates reference type
 del obj;                          // Deallocate and call destructor
 
 ## 5. Expressions
+
+### 5.0 Tuple Expressions
+Tuples are created using curly braces containing comma-separated expressions:
+{expr1, expr2, ...}
+
+Elements of a tuple can be accessed using struct-like field syntax.
+The first element is `._0`, the second `._1`, etc.
 
 ### 5.1 Arithmetic Operators
 - Addition: '+'
@@ -486,3 +515,31 @@ The language reports various errors:
   - Reference/value type distinction
   - Polymorphism for reference types
 - **Memory Management**: Manual memory management with deterministic cleanup [TODO ref-counting is planned for future, though manual new/del will be allowed regardless]
+
+## 11. Collection Types and Initializers
+
+### 11.1 Tuples
+- Tuples are lightweight, fixed-size collections of heterogeneous values
+- Implemented as anonymous structs with sequentially numbered fields
+- Created using curly brace syntax: {value1, value2, ...}
+- Type notation uses the same syntax: {type1, type2, ...}
+- Unlike structs, tuple fields are referenced by position rather than name
+
+### 11.2 Collection Initializers
+Curly braces are used consistently across different collection types:
+
+- Tuples: {value1, value2, ...}
+- Struct initializers: {.field1=value1, .field2=value2} [TODO]
+- Array initializers: {value1, value2, value3}          [TODO]
+
+Similarities and differences:
+- All use curly braces {} for consistent syntax
+- Struct initializers use field names with dot prefix
+- Tuples and arrays use positional initialization
+- Type inference works with all forms
+
+Examples:
+var point := {10, 20};                  // Tuple with inferred type {int, int}
+var p: Point = {.x=1, .y=2};            // Struct with named fields
+var fixed: int[10] = {1, 2, 3, 4, 5};   // Fixed-size array, remaining elements initialized to 0
+

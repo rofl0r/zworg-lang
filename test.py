@@ -10,8 +10,8 @@ def test():
         {
            "name": "test tuple 1",
            "code": """
-                def divmod(a:int, b:int):(int, int) do return (a/b, a%b); end
-                def main() do var result:(int, int) = divmod(3, 2)
+                def divmod(a:int, b:int):{int, int} do return {a/b, a%b}; end
+                def main() do var result:= divmod(3, 2)
                 var x:=result._0 ; var y:=result._1; end
            """,
            "expected_env": {"x": 1, "y": 1}

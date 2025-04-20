@@ -748,8 +748,8 @@ class Parser:
 
     def parse_type_reference(self):
         """Parse a type reference (tuple, primitive or struct)"""
-        # Check for tuple types: (type1, type2, ...)
-        if self.token.type == TT_LPAREN:
+        # Check for tuple types: {type1, type2, ...}
+        if self.token.type == TT_LBRACE:
             return self.parse_tuple_type()
 
         # Regular types (primitive or struct)
@@ -844,60 +844,6 @@ class Parser:
             self.error("Type mismatch: cannot operate on values of different types")
         return left_type
 
-    def is_tuple_expression(self):
-        """
-        Check if the current token sequence represents a tuple expression
-        Uses a token-by-token approach that respects nested parentheses
-        """
-        if self.token.type != TT_LPAREN:
-            return False
-
-        # Save current position
-        saved_token = self.token
-        saved_prev_token = self.prev_token
-        saved_pos = self.lexer.pos
-        saved_line = self.lexer.line
-        saved_col = self.lexer.column
-        saved_curr_char = self.lexer.current_char
-
-        self.advance()  # Skip '('
-
-        # Empty tuple () is not supported
-        if self.token.type == TT_RPAREN:
-            # Restore state and return
-            self.token = saved_token
-            self.lexer.pos = saved_pos
-            self.lexer.line = saved_line
-            self.lexer.column = saved_col
-            return False
-
-        # Skip the first expression while respecting nested parentheses
-        paren_level = 0
-        result = False  # Default is not a tuple
-
-        while self.token.type != TT_EOF:
-            if self.token.type == TT_LPAREN:
-                paren_level += 1
-            elif self.token.type == TT_RPAREN:
-                if paren_level == 0:
-                    # We reached the end of the outer parentheses without finding a comma
-                    break
-                paren_level -= 1
-            elif self.token.type == TT_COMMA and paren_level == 0:
-                # Found a comma at the top level - it's a tuple!
-                result = True
-                break
-            self.advance()
-
-        # Restore lexer position
-        self.token = saved_token
-        self.prev_token = saved_prev_token
-        self.lexer.pos = saved_pos
-        self.lexer.line = saved_line
-        self.lexer.column = saved_col
-        self.lexer.current_char = saved_curr_char
-        return result
-
     def generate_tuple_type_name(self, element_types):
         """Generate a unique name for a tuple type based on its element types"""
         elements_str = "_".join(var_type_to_string(t) for t in element_types)
@@ -938,7 +884,7 @@ class Parser:
 
     def parse_tuple_type(self):
         """Parse a tuple type annotation: (type1, type2, ...)"""
-        self.advance()  # Skip '('
+        self.advance()  # Skip '{'
 
         element_types = []
 
@@ -950,19 +896,19 @@ class Parser:
             self.advance()  # Skip comma
             element_types.append(self.parse_type_reference())
 
-        self.consume(TT_RPAREN)
+        self.consume(TT_RBRACE)
 
         # Register and return the tuple type ID
         return self.register_tuple_type(element_types, is_type_annotation=True)
 
     def parse_tuple_expression(self):
         """Parse a tuple expression: (expr1, expr2, ...)"""
-        self.advance()  # Skip '('
+        self.consume(TT_LBRACE)  # Skip '{'
 
         elements = []
 
         # Empty tuple not allowed
-        if self.token.type == TT_RPAREN:
+        if self.token.type == TT_RBRACE:
             self.error("Empty tuples are not supported")
 
         # Parse first element
@@ -979,7 +925,7 @@ class Parser:
             # Parse the next element
             elements.append(self.expression(0))
 
-        self.consume(TT_RPAREN)
+        self.consume(TT_RBRACE)
 
         # Create tuple node
         tuple_node = TupleNode(elements)
@@ -1037,13 +983,12 @@ class Parser:
             expr = self.expression(UNARY_PRECEDENCE)
             return UnaryOpNode(t.value, expr, expr.expr_type)
 
+        if t.type == TT_LBRACE:
+            return self.parse_tuple_expression()
+
         if t.type == TT_LPAREN:
-            # Check if this is a tuple expression or just parenthesized expression
-            if self.is_tuple_expression():
-                expr = self.parse_tuple_expression()
-            else:
-                expr = self.expression(0)
-                self.consume(TT_RPAREN)
+            expr = self.expression(0)
+            self.consume(TT_RPAREN)
             return expr
 
         if t.type == TT_NEW:
@@ -1260,7 +1205,7 @@ class Parser:
 
             # Return with value
             # Special handling for tuple expressions in return statements
-            if self.token.type == TT_LPAREN and self.is_tuple_expression():
+            if self.token.type == TT_LBRACE:
                 expr = self.parse_tuple_expression()
             else:
                 expr = self.expression(0)
