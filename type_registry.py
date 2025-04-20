@@ -1,15 +1,75 @@
 # Type registry for struct types
 from shared import *
 
+# In type_registry.py
+class Function:
+    def __init__(self, name, return_type, params, parent_struct_id=-1, ast_node=None):
+        self.name = name # this is the "qualified name" containing struct, prefix in case of a method
+        self.return_type = return_type
+        self.params = params  # List of (name, type) tuples
+        self.parent_struct_id = parent_struct_id  # -1 for global functions
+        self.ast_node = ast_node  # Store AST nodes directly
+
+# Function Storage
+_functions = {}  # funcid -> Function object
+_next_funcid = 1  # Start with positive numbers so -1 can mean "not found"
+_func_map = {}  # (struct_id, func_name) -> funcid  # struct_id=-1 for regular functions
+
 # Global registry of structs
 _struct_registry = {}  # name -> (type_id, parent_id, fields, methods)
 _next_struct_id = TYPE_STRUCT_BASE
+
+def register_function(name, return_type, params, parent_struct_id=-1, ast_node=None):
+    global _next_funcid
+    funcid = _next_funcid
+    _next_funcid += 1
+
+    # Create qualified name for methods (for debugging)
+    qualified_name = name
+    if parent_struct_id != -1:
+        struct_name = get_struct_name(parent_struct_id)
+        qualified_name = "%s.%s" % (struct_name, name)
+
+    func = Function(qualified_name, return_type, params, parent_struct_id, ast_node)
+    _functions[funcid] = func
+
+    # Add to unified lookup map
+    _func_map[(parent_struct_id, name)] = funcid
+
+    return funcid
+
+def get_func_from_id(funcid):
+    return _functions[funcid]
+
+# Helper functions that fail fast
+def is_method(funcid):
+    """Check if a function ID represents a method"""
+    return _functions[funcid].parent_struct_id != -1
+
+def set_function_ast_node(funcid, ast_node):
+    """Set the body AST nodes of a function by ID"""
+    _functions[funcid].ast_node = ast_node
+
+# Unified lookup function returning -1 if not found
+def lookup_function(name, struct_id=-1):
+    """Look up a function ID by name and optional struct ID"""
+    key = (struct_id, name)
+    return _func_map.get(key, -1)  # Return -1 if not found
+
+# Reset registry (for testing)
+def reset_functions():
+    """Reset the function registry"""
+    global _next_funcid, _functions, _func_map
+    _functions = {}
+    _next_funcid = 1
+    _func_map = {}
 
 def reset_registry():
     """Reset the type registry to initial state"""
     global _struct_registry, _next_struct_id
     _struct_registry.clear()
     _next_struct_id = TYPE_STRUCT_BASE
+    reset_functions()
 
 def register_struct(name, parent_name=None, token=None):
     """Register a new struct type, return its ID"""

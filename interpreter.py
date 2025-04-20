@@ -284,20 +284,19 @@ class Interpreter(object):
             AST_NODE_EXPR_STMT: self.visit_expr_stmt,
             AST_NODE_VAR_DECL: self.visit_var_decl,
             AST_NODE_FUNCTION_DECL: self.visit_function_decl,
-            AST_NODE_FUNCTION_CALL: self.visit_function_call,
+            AST_NODE_CALL: self.visit_call,
             AST_NODE_RETURN: self.visit_return,
             AST_NODE_COMPARE: self.visit_compare,
             AST_NODE_LOGICAL: self.visit_logical,
             AST_NODE_BITOP: self.visit_bitop,
             # Struct-related nodes
             AST_NODE_STRUCT_DEF: self.visit_struct_def,
-            AST_NODE_METHOD_DEF: self.visit_method_def,
             AST_NODE_STRUCT_INIT: self.visit_struct_init,
             AST_NODE_MEMBER_ACCESS: self.visit_member_access,
-            AST_NODE_METHOD_CALL: self.visit_method_call,
             AST_NODE_NEW: self.visit_new,
             AST_NODE_DEL: self.visit_del,
             AST_NODE_TUPLE: self.visit_tuple,
+            AST_NODE_STRUCT_INITIALIZER: self.visit_struct_initializer,
         }
 
     def reset(self):
@@ -319,11 +318,6 @@ class Interpreter(object):
             # First process struct definitions
             for node in program:
                 if node.node_type == AST_NODE_STRUCT_DEF:
-                    interpreter.evaluate(node)
-
-            # Then process method definitions
-            for node in program:
-                if node.node_type == AST_NODE_METHOD_DEF:
                     interpreter.evaluate(node)
 
             # Execute global variable declarations
@@ -579,49 +573,6 @@ class Interpreter(object):
         self.environment.register_function(node.name, node)
         return 0
 
-    def visit_function_call(self, node):
-        """Evaluate a function call node"""
-        # Get function from function map
-        if not self.environment.has_function(node.name):
-            raise CompilerException("Function '%s' is not defined" % node.name)
-
-        func = self.environment.get_function(node.name)
-        if not hasattr(func, 'node_type') or func.node_type != AST_NODE_FUNCTION_DECL:
-            raise CompilerException("'%s' is not a function" % node.name)
-
-        # Enter a new scope for function execution
-        self.environment.enter_scope()
-
-        # Evaluate arguments and bind to parameters
-        args = [self.evaluate(arg) for arg in node.args]
-        self.check_and_set_params(
-            "Function '%s'" % node.name, func.params, args, node.args
-        )
-        result = None  # Default return value for void functions
-
-        try:
-            # Execute function body
-            for stmt in func.body:
-                self.evaluate(stmt)
-
-            # If no return statement was encountered and function is not void,
-            # we should raise an error
-            if func.return_type != TYPE_VOID:
-                self.environment.leave_scope()  # Clean up before raising exception
-                raise CompilerException("Function '%s' has non-void return type but reached end of function without return" % node.name)
-
-        except ReturnException as ret:
-            # Check return value type against function's return type
-            if func.return_type == TYPE_VOID and ret.value is not None:
-                self.environment.leave_scope()  # Clean up before raising exception
-                raise CompilerException("Void function '%s' returned a value" % node.name)
-
-            result = ret.value
-
-        # Leave function scope
-        self.environment.leave_scope()
-        return result
-
     def visit_return(self, node):
         """Evaluate a return statement node"""
         value = None if node.expr is None else self.evaluate(node.expr)
@@ -692,11 +643,6 @@ class Interpreter(object):
         # Struct definitions are handled at parse time
         return None
 
-    def visit_method_def(self, node):
-        """Visit a method definition node - Nothing to do at runtime"""
-        # Method definitions are handled at parse time
-        return None
-
     def visit_struct_init(self, node):
         """Visit a struct initialization node"""
         # Create a new struct instance
@@ -758,51 +704,74 @@ class Interpreter(object):
 
         return obj.fields[node.member_name]
 
-    def visit_method_call(self, node):
-        """Visit a method call node (obj.method())"""
-        # Evaluate the object
-        obj = self.evaluate(node.obj)
+    def visit_call(self, node):
+        """Unified handler for function and method calls using only the type registry"""
+        # Determine if this is a method call (has an object context)
+        is_method_call = node.obj is not None
 
-        # Handle nil reference
-        if obj is None:
-            raise CompilerException("Attempt to call method '%s' on a nil reference" % node.method_name)
+        if is_method_call:
+            # Evaluate the object
+            obj = self.evaluate(node.obj)
 
-        # Make sure it's a struct instance
-        if not isinstance(obj, StructInstance):
-            raise CompilerException("Cannot call method '%s' on non-struct value" % node.method_name)
+            # Handle nil reference
+            if obj is None:
+                raise CompilerException("Attempt to call method '%s' on a nil reference" % node.name)
 
-        # Get the method
-        method = type_registry.get_method(obj.struct_name, node.method_name)
-        if not method:
-            raise CompilerException("Method '%s' not found in struct '%s'" % (node.method_name, obj.struct_name))
+            # Make sure it's a struct instance
+            if not isinstance(obj, StructInstance):
+                raise CompilerException("Cannot call method '%s' on non-struct value" % node.name)
 
-        # Create a new scope for method execution
-        self.environment.enter_scope()
+            # Get the method ID from registry
+            method_id = type_registry.lookup_function(node.name, obj.struct_id)
+            if method_id == -1:
+                raise CompilerException("Method '%s' not found in struct '%s'" % (node.name, obj.struct_name))
 
-        # Set 'self' to the object instance
-        self.environment.set("self", obj)
+            # Create context description for error messages
+            context_name = "Method '%s'" % node.name
 
-        # Evaluate and pass method arguments
+            # Enter method scope and set 'self'
+            self.environment.enter_scope()
+            self.environment.set("self", obj)
+        else:
+            # Get function ID from registry
+            method_id = type_registry.lookup_function(node.name)
+            if method_id == -1:
+                raise CompilerException("Function '%s' is not defined" % node.name)
+
+            # Create context description for error messages
+            context_name = "Function '%s'" % node.name
+
+            # Enter function scope
+            self.environment.enter_scope()
+
+        # Get function details from registry
+        func_obj = type_registry.get_func_from_id(method_id)
+
+        # Evaluate arguments
         args = [self.evaluate(arg) for arg in node.args]
-        self.check_and_set_params("Method '%s'" % node.method_name, method.params, args, node.args)
 
-        # Execute method body
+        # Bind parameters
+        self.check_and_set_params(context_name, func_obj.params, args, node.args)
+
+        # Default return value for void functions
         result = None
+
         try:
-            for stmt in method.body:
+            # Execute body
+            for stmt in func_obj.ast_node.body:
                 self.evaluate(stmt)
 
-            # If we reach here without a return and the method isn't void, it's an error
-            if method.return_type != TYPE_VOID:
-                self.environment.leave_scope()
-                raise CompilerException("Method '%s' has non-void return type but reached end without returning" % 
-                                      (node.method_name))
+            # If no return and non-void return type, that's an error
+            if func_obj.return_type != TYPE_VOID:
+                self.environment.leave_scope()  # Clean up before raising exception
+                raise CompilerException("%s has non-void return type but reached end without returning" % context_name)
 
         except ReturnException as ret:
-            # Check return value type against method's return type
-            if method.return_type == TYPE_VOID and ret.value is not None:
-                self.environment.leave_scope()
-                raise CompilerException("Void method '%s' returned a value" % node.method_name)
+            # Check return value type against function's return type
+            if func_obj.return_type == TYPE_VOID and ret.value is not None:
+                self.environment.leave_scope()  # Clean up before raising exception
+                raise CompilerException("Void %s returned a value" % 
+                                      ("method" if is_method_call else "function"))
 
             result = ret.value
 
@@ -848,18 +817,62 @@ class Interpreter(object):
         return None
 
     def visit_tuple(self, node):
-        """Evaluate a tuple expression"""
-        # Evaluate all elements
-        element_values = [self.evaluate(elem) for elem in node.elements]
-
-        # Create a struct instance representing the tuple
+        """Visit a tuple expression node"""
+        # Since tuples are implemented as anonymous structs, we need to:
+        # 1. Get the tuple's struct type name from its expr_type
+        # 2. Create a struct instance
+        # 3. Set each field (_0, _1, etc.) to its corresponding value
+        
+        # Get struct name from type registry
         struct_name = type_registry.get_struct_name(node.expr_type)
+        if not struct_name:
+            raise CompilerException("Unknown tuple type")
+            
+        # Create a struct instance for the tuple
         instance = StructInstance(node.expr_type, struct_name)
+        
+        # Evaluate each element and set the corresponding field
+        for i, elem in enumerate(node.elements):
+            field_name = "_%d" % i
+            value = self.evaluate(elem)
+            instance.fields[field_name] = value
+            
+        return instance
 
-        # Set field values
-        for i, value in enumerate(element_values):
-            instance.fields["_%d" % i] = value
+    def visit_struct_initializer(self, node):
+        """Visit a struct initializer with named fields {.field1=value1, ...}"""
+        # Create a new struct instance of the appropriate type
+        if node.struct_type is None:
+            raise CompilerException("Struct type not set for initializer")
+            
+        struct_name = type_registry.get_struct_name(node.struct_type)
+        if not struct_name:
+            raise CompilerException("Unknown struct type")
+            
+        # Create the struct instance
+        instance = StructInstance(node.struct_type, struct_name)
+        
+        # Initialize all fields with default values first
+        all_fields = type_registry.get_all_fields(struct_name)
+        for field_name, field_type in all_fields:
+            # Set default value based on type
+            if is_struct_type(field_type):
+                instance.fields[field_name] = None
+            elif field_type == TYPE_STRING:
+                instance.fields[field_name] = ""
+            elif is_float_type(field_type):
+                instance.fields[field_name] = 0.0
+            else:
+                instance.fields[field_name] = 0
 
+        # Now set the specified field values
+        for field_name, field_expr in node.field_initializers:
+            # Evaluate the field value
+            value = self.evaluate(field_expr)
+            
+            # Set the field value
+            instance.fields[field_name] = value
+            
         return instance
 
 # Custom exceptions for control flow

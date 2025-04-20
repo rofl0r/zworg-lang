@@ -169,20 +169,24 @@ class VarDeclNode(ASTNode):
         )
 
 class FunctionDeclNode(ASTNode):
-    def __init__(self, name, params, return_type, body):
+    def __init__(self, name, params, return_type, body, parent_struct_id=-1):
         ASTNode.__init__(self, AST_NODE_FUNCTION_DECL)
         self.name = name
         self.params = params  # List of (name, type) tuples
         self.return_type = return_type
         self.body = body
-        self.expr_type = return_type
+        self.expr_type = TYPE_VOID # a function decl can't be used in expression context
+        self.parent_struct_id = parent_struct_id  # -1 for global functions
 
     def __repr__(self):
+        name = self.name if self.parent_struct_id == -1 else "%s.%s"%(type_registry.get_struct_name(self.parent_struct_id), self.name)
+        func_or_method = "Function" if self.parent_struct_id == -1 else "Method"
         params_str = ", ".join(["%s:%s" % (name, var_type_to_string(ptype)) for name, ptype in self.params])
-        return "Function(%s(%s):%s, [%s])" % (
-            self.name, 
-            params_str, 
-            var_type_to_string(self.return_type), 
+        return "%s(%s(%s):%s, [%s])" % (
+            func_or_method,
+            name,
+            params_str,
+            var_type_to_string(self.return_type),
             ", ".join(repr(stmt) for stmt in self.body),
         )
 
@@ -197,17 +201,6 @@ class ReturnNode(ASTNode):
             return "Return(%s)" % repr(self.expr)
         else:
             return "Return()"
-
-class FunctionCallNode(ASTNode):
-    def __init__(self, name, args, expr_type = TYPE_UNKNOWN):
-        ASTNode.__init__(self, AST_NODE_FUNCTION_CALL)
-        self.name = name
-        self.args = args
-        self.expr_type = expr_type  # Will be set during type checking
-
-    def __repr__(self):
-        args_str = ", ".join(repr(arg) for arg in self.args)
-        return "Call(%s(%s))" % (self.name, args_str)
 
 class CompareNode(ASTNode):
     def __init__(self, operator, left, right):
@@ -256,24 +249,6 @@ class StructDefNode(ASTNode):
         fields_str = ", ".join(["%s:%s" % (name, var_type_to_string(type_)) for name, type_ in self.fields])
         return "StructDef(%s%s, [%s])" % (self.name, parent_str, fields_str)
 
-class MethodDefNode(ASTNode):
-    def __init__(self, struct_name, method_name, params, return_type, body):
-        ASTNode.__init__(self, AST_NODE_METHOD_DEF)
-        self.struct_name = struct_name
-        self.method_name = method_name
-        self.params = params  # [(name, type), ...]
-        self.return_type = return_type
-        self.body = body
-        self.expr_type = TYPE_VOID
-
-    def __repr__(self):
-        params_str = ", ".join(["%s:%s" % (name, var_type_to_string(type_)) for name, type_ in self.params])
-        body_str = ", ".join(repr(stmt) for stmt in self.body)
-        return "MethodDef(%s.%s(%s):%s, [%s])" % (
-            self.struct_name, self.method_name, params_str, 
-            var_type_to_string(self.return_type), body_str
-        )
-
 class StructInitNode(ASTNode):
     def __init__(self, struct_name, struct_id, args=None):
         ASTNode.__init__(self, AST_NODE_STRUCT_INIT)
@@ -296,17 +271,23 @@ class MemberAccessNode(ASTNode):
     def __repr__(self):
         return "MemberAccess(%s.%s)" % (repr(self.obj), self.member_name)
 
-class MethodCallNode(ASTNode):
-    def __init__(self, obj, method_name, args, return_type):
-        ASTNode.__init__(self, AST_NODE_METHOD_CALL)
-        self.obj = obj  # Object expression
-        self.method_name = method_name
+class CallNode(ASTNode):
+    def __init__(self, name, args, return_type, obj=None):
+        ASTNode.__init__(self, AST_NODE_CALL)
+        self.name = name
         self.args = args
         self.expr_type = return_type
+        self.obj = obj  # None for regular functions, object expr for methods
+
+    def is_method_call(self):
+        return self.obj is not None
 
     def __repr__(self):
         args_str = ", ".join(repr(arg) for arg in self.args)
-        return "MethodCall(%s.%s(%s))" % (repr(self.obj), self.method_name, args_str)
+        if self.obj:
+            return "Call(%s.%s(%s))" % (repr(self.obj), self.name, args_str)
+        else:
+            return "Call(%s(%s))" % (self.name, args_str)
 
 class NewNode(ASTNode):
     def __init__(self, struct_init):
@@ -355,9 +336,7 @@ class Parser:
 
         # Track if we've seen functions - used to enforce globals-before-functions rule
         self.seen_main_function = False
-
-        self.functions = {}     # Track function declarations (name -> (params, return_type))
-        self.current_function = None  # Track current function for return checking
+        self.current_function = -1  # Track current function for return checking
 
         # Track current struct for method definitions
         self.current_struct = None
@@ -431,9 +410,6 @@ class Parser:
     def current_scope(self):
         """Get the current scope name"""
         return self.scopes[-1]
-
-    def is_function_declared(self, var_name):
-        return var_name in self.functions
 
     def is_variable_declared(self, var_name):
         """Check if a variable is declared in any accessible scope"""
@@ -565,7 +541,7 @@ class Parser:
         """
         Parse member access for an object (obj.member)
         Handles both field access and method calls
-        Returns a MemberAccessNode or MethodCallNode
+        Returns a MemberAccessNode or CallNode
         """
         # Get object type
         obj_type = obj_node.expr_type
@@ -602,7 +578,7 @@ class Parser:
             self.check_arg_count("Method '%s'" % member_name, method.params, args)
             self.check_argument_types(args, method.params, "method '%s'" % member_name)
 
-            return MethodCallNode(obj_node, member_name, args, method.return_type)
+            return CallNode(member_name, args, method.return_type, obj_node)
         else:
             # Field access
             field_type = type_registry.get_field_type(struct_name, member_name)
@@ -613,6 +589,10 @@ class Parser:
 
     def function_declaration(self):
         """Parse a function declaration or method definition"""
+
+        if self.current_function != -1:
+            self.error("Nested function declarations are not allowed")
+
         self.advance()  # Skip 'def'
 
         # Parse function/method name
@@ -620,15 +600,12 @@ class Parser:
             self.error("Expected name after 'def'")
 
         name = self.token.value
-        is_method = False
         struct_name = None
-        method_name = None
 
         self.advance()
 
         # Check if it's a method (has a dot after struct name)
         if self.token.type == TT_DOT:
-            is_method = True
             struct_name = name
 
             # Verify struct exists
@@ -640,13 +617,10 @@ class Parser:
             if self.token.type != TT_IDENT:
                 self.error("Expected method name after '.'")
 
-            method_name = self.token.value
-            name = struct_name + "." + method_name  # Store full name for scope
+            name = self.token.value
             self.advance()
-        elif self.current_function is not None and not is_method:
-            self.error("Nested function declarations are not allowed")
 
-        if name == "main":
+        elif name == "main":
             self.seen_main_function = True
 
         # Parse parameters
@@ -657,7 +631,7 @@ class Parser:
             tmp = self.parameter()
 
             # For methods, check if parameter name is 'self'
-            if is_method and tmp[0] == "self":
+            if struct_name and tmp[0] == "self":
                 self.error("Cannot use 'self' as a parameter name, it is reserved")
 
             for n, _ in params:
@@ -679,36 +653,34 @@ class Parser:
             self.advance()
             return_type = self.parse_type_reference()
 
+        struct_id = -1
         # Special checks for methods
-        if is_method:
+        if struct_name:
+            struct_id = type_registry.get_struct_id(struct_name)
             # Check constructor and destructor constraints
-            if method_name == "init" and return_type != TYPE_VOID:
+            if name == "init" and return_type != TYPE_VOID:
                 self.error("Constructor 'init' must have void return type")
-            elif method_name == "fini":
+            elif name == "fini":
                 if return_type != TYPE_VOID:
                     self.error("Destructor 'fini' must have void return type")
                 if len(params) > 0:
                     self.error("Destructor 'fini' cannot have parameters")
-        else:
-            # Regular function - register it
-            if name in self.functions:
-                self.error("Function '%s' is already defined" % name)
-            self.functions[name] = (params, return_type)
+
+        if type_registry.lookup_function(name, struct_id) != -1:
+                self.error("Function '%s' is already defined" % name if not struct_name else "%s.%s"%(struct_name, name))
 
         # Enter function/method scope
         self.enter_scope(name)
         prev_function = self.current_function
-        prev_struct = self.current_struct
-        self.current_function = name
+        self.current_function = type_registry.register_function(name, return_type, params, parent_struct_id=struct_id)
+        # create a new node with empty body - we'll add it later
+        # That's needed so type checking inside the body can find it
+        node = FunctionDeclNode(name, params, return_type, body=None, parent_struct_id=struct_id)
+        type_registry.set_function_ast_node(self.current_function, node)
 
-        if is_method:
-            self.current_struct = struct_name
+        if struct_name:
+            type_registry.add_method(struct_name, name, node)
             # Add implicit 'self' parameter of struct type
-            struct_id = type_registry.get_struct_id(struct_name)
-            # Create and register the method node with empty body first
-            # so type checking inside the body can find it
-            temp_method = MethodDefNode(struct_name, method_name, params, return_type, [])
-            type_registry.add_method(struct_name, method_name, temp_method)
             self.declare_variable("self", struct_id)
 
         # Add parameters to scope
@@ -721,14 +693,10 @@ class Parser:
         # Restore previous context
         self.leave_scope()
         self.current_function = prev_function
-        self.current_struct = prev_struct
 
-        # Create and return the appropriate node
-        if is_method:
-            temp_method.body = body
-            return temp_method
-        else:
-            return FunctionDeclNode(name, params, return_type, body)
+        # update the node body and return it
+        node.body = body
+        return node
 
     def parameter(self):
         """Parse a function parameter (name:type)"""
@@ -967,8 +935,14 @@ class Parser:
 
             # For a variable in an expression context:
             # Could be a function name.
-            if self.is_function_declared(var_name):
-                _, return_type = self.functions[var_name]
+            # FIXME: we actually need to check whether the var_name token is
+            # a struct name or "self" followed by TT_DOT and used inside a
+            # method, then derive
+            # the full struct_name + function_name "tuple" for full function
+            # lookup in type_registry
+            func_id = type_registry.lookup_function(var_name)
+            if func_id != -1:
+                return_type = type_registry.get_func_from_id(func_id).return_type
                 return VariableNode(var_name, return_type)
 
             # It's a variable name, see if it's declared
@@ -1157,8 +1131,9 @@ class Parser:
             return IfNode(condition, then_body, else_body)
 
     def funccall(self, func_name, consume_lparen=True):
-        """Parse a function call and return a FunctionCallNode"""
-        if not self.is_function_declared(func_name):
+        """Parse a function call and return a CallNode"""
+        func_id = type_registry.lookup_function(func_name)
+        if func_id == -1:
                 self.error("'%s' is not a function" % func_name)
 
         if consume_lparen: self.consume(TT_LPAREN)
@@ -1169,12 +1144,14 @@ class Parser:
         self.consume(TT_RPAREN)
 
         # Type checking for function call
-        func_params, func_return_type = self.functions[func_name]
+	func_obj = type_registry.get_func_from_id(func_id)
+        func_params = func_obj.params
+        func_return_type = func_obj.return_type
 
         # Check number of arguments
         self.check_arg_count("Function '%s'" % func_name, func_params, args)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
-        return FunctionCallNode(func_name, args, func_return_type)
+        return CallNode(func_name, args, func_return_type)
 
     def statement(self):
         self.skip_separators()
@@ -1182,7 +1159,7 @@ class Parser:
         # Handle struct definitions
         if self.token.type == TT_STRUCT:
             # Only allowed in global scope
-            if self.current_function is not None:
+            if self.current_function != -1:
                 self.error("Struct definitions are not allowed inside functions")
             return self.struct_definition()
 
@@ -1193,7 +1170,7 @@ class Parser:
         # Handle return statements
         if self.token.type == TT_RETURN:
             # Must be inside a function
-            if self.current_function is None:
+            if self.current_function == -1:
                 self.error("'return' statement outside function")
 
             self.advance()
@@ -1211,19 +1188,12 @@ class Parser:
                 expr = self.expression(0)
 
             # Check if return type matches function return type
-            func_return_type = None
-            # Handle return in methods
-            if "." in self.current_function:
-                struct_name, method_name = self.current_function.split(".")
-                method = type_registry.get_method(struct_name, method_name)
-                if method:
-                    func_return_type = method.return_type
-            # Regular function return
-            else:
-                func_return_type = self.functions[self.current_function][1]
+            current_func_obj = type_registry.get_func_from_id(self.current_function)
+            func_return_type = current_func_obj.return_type
 
             if func_return_type == TYPE_VOID:
-                self.error("Void function '%s' cannot return a value" % self.current_function)
+                fn = type_registry.get_func_from_id(self.current_function).name
+                self.error("Void function '%s' cannot return a value" % fn)
 
             # If we're returning a tuple, make sure it matches the function's return type
             if expr.node_type == AST_NODE_TUPLE:
@@ -1273,10 +1243,10 @@ class Parser:
                 expr = self.expression(0)
 
                 # In global scope, ensure only literal initializers
-                if self.current_function is None and self.seen_main_function:
+                if self.current_function == -1 and self.seen_main_function:
                     self.error("Global variables must be declared before main function")
 
-                if self.current_function is None and not is_literal_node(expr):
+                if self.current_function == -1 and not is_literal_node(expr):
                     self.error("Global variables can only be initialized with literals")
 
                 # Infer the type from expression
@@ -1311,10 +1281,10 @@ class Parser:
                 expr = self.expression(0)
 
                 # In global scope, ensure only literal initializers
-                if self.current_function is None and self.seen_main_function:
+                if self.current_function == -1 and self.seen_main_function:
                     self.error("Global variables must be declared before main function")
 
-                if self.current_function is None and not is_literal_node(expr):
+                if self.current_function == -1 and not is_literal_node(expr):
                     self.error("Global variables can only be initialized with literals")
 
                 # Check type compatibility with expression type
@@ -1454,7 +1424,7 @@ class Parser:
             return ExprStmtNode(expr)
 
         # If we're in global scope and not at a var/let/function declaration, error
-        if self.current_function is None:
+        if self.current_function == -1:
             self.error("Only variable declarations and function declarations are allowed in global scope")
 
         token_type_name = token_name(self.token.type)
@@ -1482,3 +1452,7 @@ class Parser:
         while self.token.type != TT_EOF:
             statements.append(self.statement())
         return statements
+
+
+### END OF COMPILER.PY
+
