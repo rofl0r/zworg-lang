@@ -181,7 +181,7 @@ class FunctionDeclNode(ASTNode):
     def __repr__(self):
         name = self.name if self.parent_struct_id == -1 else "%s.%s"%(type_registry.get_struct_name(self.parent_struct_id), self.name)
         func_or_method = "Function" if self.parent_struct_id == -1 else "Method"
-        params_str = ", ".join(["%s:%s" % (name, var_type_to_string(ptype)) for name, ptype in self.params])
+        params_str = ", ".join(["%s:%s" % (pname, var_type_to_string(ptype)) for pname, ptype in self.params])
         return "%s(%s(%s):%s, [%s])" % (
             func_or_method,
             name,
