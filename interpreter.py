@@ -325,17 +325,12 @@ class Interpreter(object):
                 if node.node_type == AST_NODE_VAR_DECL:
                     interpreter.evaluate(node)
 
-            # Register functions in the function map (but don't execute them)
-            for node in program:
-                if node.node_type == AST_NODE_FUNCTION_DECL:
-                    interpreter.environment.register_function(node.name, node)
+            main_func_id = type_registry.lookup_function("main")
 
-            # Check if main function exists
-            if not interpreter.environment.has_function("main"):
+            if main_func_id == -1:
                 return {'success': False, 'error': "No 'main' function defined", 'ast': ast}
 
-            # Get main function
-            main_func = interpreter.environment.get_function("main")
+            main_func = type_registry.get_func_from_id(main_func_id).ast_node
 
             # Make sure main has no parameters
             if len(main_func.params) > 0:
@@ -569,8 +564,7 @@ class Interpreter(object):
 
     def visit_function_decl(self, node):
         """Evaluate a function declaration node"""
-        # Store function in the environment
-        self.environment.register_function(node.name, node)
+        # Functions are already registered in the type registry during parsing
         return 0
 
     def visit_return(self, node):
@@ -894,7 +888,6 @@ class EnvironmentStack:
     def reset(self):
         self.stack = [{}]  # Start with global scope at index 0
         self.stackptr = 0
-        self.function_map = {}  # Map of function names to function nodes
 
     def __init__(self):
         self.reset()
@@ -932,14 +925,3 @@ class EnvironmentStack:
         """Set a variable in the current scope"""
         self.stack[self.stackptr][name] = value
 
-    def register_function(self, name, func_node):
-        """Register a function in the function map"""
-        self.function_map[name] = func_node
-
-    def has_function(self, name):
-        """Check if a function exists in the function map"""
-        return name in self.function_map
-
-    def get_function(self, name):
-        """Get a function from the function map"""
-        return self.function_map[name]
