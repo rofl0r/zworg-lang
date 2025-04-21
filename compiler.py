@@ -198,7 +198,7 @@ class ReturnNode(ASTNode):
 
     def __repr__(self):
         if self.expr:
-            return "Return(%s)" % repr(self.expr)
+            return "Return(%s) -> %s" %(repr(self.expr), var_type_to_string(self.expr_type))
         else:
             return "Return()"
 
