@@ -2,11 +2,114 @@
 from interpreter import Interpreter
 import os, sys
 
+"""
+        {
+           "name": "",
+           "code": "",
+           "expected_env": {"x": 1}
+        },
+"""
+
 def test():
     # Test cases with expected final env state
     test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
+        {
+           "name": "calling methods on temporary struct instance",
+           "code": """
+        struct Vector do x: int; y: int ; end
+
+        def Vector.init(a: int, b: int) do
+            self.x = a; self.y = b;
+        end
+
+        def Vector.add(other: Vector): Vector do
+            return Vector(self.x + other.x, self.y + other.y);
+        end
+
+        def Vector.length(): int do
+            return self.x * self.x + self.y * self.y;
+        end
+
+        def main() do
+            var v1 := Vector(3, 4);
+            var v2 := Vector(1, 2);
+            // Method call on the result of a parenthesized expression
+            // nud() sees the opening parenthesis
+            var len := (v1.add(v2)).length();
+        end
+           """,
+           "expected_env": {"len": 52}
+        },
+        {
+           "name": "nested method call 1",
+           "code": """
+                struct Vector do
+                    x: int
+                    y: int
+                end
+
+                def Vector.init(a: int, b: int) do
+                    self.x = a
+                    self.y = b
+                end
+
+                def Vector.length(): int do
+                    return self.x * self.x + self.y * self.y
+                end
+
+                struct Point do
+                    pos: Vector
+                    label: string
+                end
+
+                def Point.init(x: int, y: int, name: string) do
+                    self.pos = Vector(x, y);
+                    self.label = name;
+                end
+
+                def main() do
+                    var p := Point(3, 4, "origin")
+                    var len := p.pos.length()
+                end
+           """,
+           "expected_env": {"len": 25}
+        },
+
+        {
+           "name": "chained method calls",
+           "code": """
+        struct Counter do
+            value: int
+        end
+
+        def Counter.init(start: int) do
+            self.value = start;
+        end
+
+        def Counter.inc(): Counter do
+            self.value = self.value + 1;
+            return self;
+        end
+
+        def Counter.dec(): Counter do
+            self.value = self.value - 1;
+            return self;
+        end
+
+        def Counter.get(): int do
+            return self.value;
+        end
+
+        def main() do
+            var c := Counter(5);
+            var result := c.inc().inc().dec().get();
+        end
+           """,
+           "expected_env": {"result": 6}
+        },
+
         {
            "name": "test tuple 1",
            "code": """
