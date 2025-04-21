@@ -1059,6 +1059,9 @@ def test():
                     print("  Expected env: %s" % test_case["expected_env"])
                     print("  Actual env: %s" % env)
                     failed_tests.append(test_num)
+                    if result.get('ast'):
+                        print("AST dump: %s" % result['ast'])
+
             else:
                 printc("red", "Failed! Error: %s" % result['error'])
                 if os.getenv("DEBUG"):
