@@ -16,6 +16,15 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "recursion",
+           "code": """
+		def fib(n:int):int do if n <= 1 do return n; end
+			return fib(n-1) + fib(n-2) ; end
+		def main() do var result:= fib(10); end
+           """,
+           "expected_env": {"result": 55}
+        },
+        {
            "name": "chaining test",
            "code": """
 		struct Foo do x:int; end;
