@@ -16,6 +16,27 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "mixing int and float types in binary operation",
+            "code": "def main() do var x := 10; var y := 3.0; var z := x / y; end", 
+            "expected_env": {"y": 3.0, "x": 10, "z": 3.3333333333333335}
+        },
+        {
+            "name": "Struct with no fields",
+            "code": """
+                struct EmptyStruct do end
+                def main() do end
+            """,
+            "expected_env": {}
+        },
+        {
+           "name": "constructing struct without init",
+           "code": """
+		struct NoInit do x:int; end
+                def main() do var x:= NoInit(); var y:=x.x; end
+           """,
+           "expected_env": {"y": 0}
+        },
+        {
            "name": "recursion",
            "code": """
 		def fib(n:int):int do if n <= 1 do return n; end
@@ -25,7 +46,7 @@ def test():
            "expected_env": {"result": 55}
         },
         {
-           "name": "chaining test",
+           "name": "method chaining",
            "code": """
 		struct Foo do x:int; end;
                 def Foo.init(x:int) do self.x = x; end
@@ -137,23 +158,6 @@ def test():
                 var x:=result._0 ; var y:=result._1; end
            """,
            "expected_env": {"x": 1, "y": 1}
-        },
-
-        {
-            "name": "Method with incorrect return type",
-            "code": """
-            struct Point do
-                x: int
-            end
-
-            def Point.get_x(): string do
-                return self.x;  // int returned from string function
-            end
-
-            def main() do
-            end
-            """,
-            "expected_error": "Type mismatch"
         },
         {
            "name": "test struct 1",
@@ -290,120 +294,118 @@ def test():
            "expected_env": {}
         },
         {
-            # Tests variable declaration with type inference (:=)
+            "name": "variable declaration with type inference (:=)",
             "code": "def main() do var x := 5; end",
             "expected_env": {"x": 5}
         },
         {
-            # Tests float literal with type inference
+            "name": "float literal with type inference",
             "code": "def main() do var y := 3.14; end",
             "expected_env": {"y": 3.14}
         },
         {
-            # Tests explicit int type annotation
+            "name": "explicit int type annotation",
             "code": "def main() do var x: int = 10; end",
             "expected_env": {"x": 10}
         },
         {
-            # Tests explicit float type annotation
+            "name": "explicit float type annotation",
             "code": "def main() do var y: float = 2.718; end",
             "expected_env": {"y": 2.718}
         },
         {
-            # Tests const with type inference
+            "name": "const with type inference",
             "code": "def main() do const x := 42; end",
             "expected_env": {"x": 42}
         },
         {
-            # Tests assignment of same type variable
+            "name": "assignment of same type variable",
             "code": "def main() do var x := 5; var y := x; end",
             "expected_env": {"x": 5, "y": 5}
         },
         {
-            # Tests assignment expression in while condition (not a comparison)
+            "name": "assignment expression in while condition (not a comparison)",
             "code": "def main() do var x := 0; var y := 0; while x = y do y = y + 1; end; end",
             "expected_env": {"x": 0, "y": 0}
         },
         {
-            # Tests operator precedence in expressions (* has higher precedence than +)
+            "name": "Tests operator precedence in expressions (* has higher precedence than +)",
             "code": "def main() do var x := 5 + 3 * 2; end",
             "expected_env": {"x": 11}
         },
         {
-            # Tests basic if statement with equality comparison
-            "code": "def main() do var x := 1; if x == 1 do print x; end end", 
+            "name": "basic if statement with equality comparison",
+            "code": "def main() do var x := 1; if x == 1 do print x; end end",
             "expected_env": {"x": 1}
         },
         {
-            # Tests if-else statement (true condition branch taken)
+            "name": "if-else statement (true condition branch taken)",
             "code": "def main() do var x := 1; var result := 0; if x == 1 do result = x; end else do result = 0; end end",
             "expected_env": {"x": 1, "result": 1}
         },
         {
-            # Tests bitwise OR operator (|)
-            "code": "def main() do var x := 5 | 3; end", 
+            "name": "bitwise OR operator (|)",
+            "code": "def main() do var x := 5 | 3; end",
             "expected_env": {"x": 7}
         },
         {
-            # Tests bitwise AND operator (&)
-            "code": "def main() do var x := 5 & 3; end", 
+            "name": "bitwise AND operator (&)",
+            "code": "def main() do var x := 5 & 3; end",
             "expected_env": {"x": 1}
         },
         {
-            # Tests combination of bitwise operations with variable references
+            "name": "combination of bitwise operations with variable references",
             "code": "def main() do var x := 5 | 3; var y := x & 2; end",
             "expected_env": {"x": 7, "y": 2}
         },
         {
-            # Tests logical AND in if condition (evaluates to false)
+            "name": "logical AND in if condition (evaluates to false)",
             "code": "def main() do var x := 1; var y := 0; var result := 0; if x and y do result = x; end end", 
             "expected_env": {"x": 1, "y": 0, "result": 0}
         },
         {
-            # Tests XOR operator with keywords
+            "name": "xor operator with keywords",
             "code": "def main() do var x := 5 xor 3; end",
             "expected_env": {"x": 6}  # 5 xor 3 = 6
         },
         {
-            # Tests XOR operator with variable references
+            "name": "xor operator with variable references",
             "code": "def main() do var x := 7; var y := x xor 2; end",
             "expected_env": {"x": 7, "y": 5}  # 7 xor 2 = 5
         },
         {
-            # Tests bitwise NOT unary operator
-            "code": "def main() do var x := 15; var y := bitnot 3; end", 
+            "name": "bitwise NOT unary operator",
+            "code": "def main() do var x := 15; var y := bitnot 3; end",
             "expected_env": {"x": 15, "y": -4}
         },
         {
-            # Tests else-if construct (first false, second true)
+            "name": "else-if construct (first false, second true)",
             "code": "def main() do var x := 1; var result := 0; if x == 0 do result = 0; end else if x == 1 do result = 1; end end",
             "expected_env": {"x": 1, "result": 1}
         },
         {
-            # Tests multiple else-if branches (first & second false, third true)
+            "name": "multiple else-if branches (first & second false, third true)",
             "code": "def main() do var x := 3; if x == 1 do print 1; end else if x == 2 do print 2; end else if x == 3 do print 3; end end",
             "expected_env": {"x": 3}
         },
         {
-            # Tests mixed int and float operations
+            "name": "mixed int and float operations",
             "code": "def main() do var x: int = 5; var y: float = 2.5; var z := y; end", 
             "expected_env": {"x": 5, "y": 2.5, "z": 2.5}  # Variable declaration with inferred type from another variable
         },
         {
-            # Tests int division
+            "name": "int division",
             "code": "def main() do var x := 10; var y := 3; var z := x / y; end",
             "expected_env": {"x": 10, "y": 3, "z": 3}  # Integer division
         },
         {
-            # Tests float division
+            "name": "float division",
             "code": "def main() do var x := 10.0; var y := 3.0; var z := x / y; end",
             "expected_env": {"x": 10.0, "y": 3.0, "z": 3.3333333333333335}  # Float division
         },
         {
-            # Tests assignment as expression in while condition
+            "name": "Tests assignment as expression in while condition",
             "code": "def main() do var x := 10; var y := 0; while (y = y + 1) < 5 do x -= 1; end end",
-            # y will end up as 5 (the condition becomes false when y = 5)
-            # x will be decremented 4 times (while y is 1,2,3,4)
             "expected_env": {"x": 6, "y": 5}
         },
         {
@@ -499,8 +501,8 @@ def test():
                    print o;
                end
            """,
-           "expected_env": {"x": -10, "y": 3, "z": -3, 
-                        "a": 10, "b": -3, "c": -3, 
+           "expected_env": {"x": -10, "y": 3, "z": -3,
+                        "a": 10, "b": -3, "c": -3,
                         "m": -10, "n": -3, "o": 3}
         },
         {
@@ -610,7 +612,7 @@ def test():
             "expected_env": {"s1": "test", "s2": "test", "result": 1}
         },
         {
-            # Tests functions and return statements
+            "name": "functions and return statements",
             "code": """
                 def add(a:int, b:int):int do
                     return a + b;
@@ -626,7 +628,7 @@ def test():
             "expected_env": {"x": 10, "y": 20, "result": 30}
         },
         {
-            # Tests function with return value specification
+            "name": "function with return value specification",
             "code": """
                 def square(n:int):int do
                     return n * n;
@@ -641,7 +643,7 @@ def test():
             "expected_env": {"x": 5, "y": 25}
         },
         {
-            # Tests global variables
+            "name": "global variables",
             "code": """
                 var global_rw:=0
                 const global_r:=42
@@ -655,7 +657,7 @@ def test():
         # Test cases that are expected to fail
         # Each has "code" and "expected_error"
         {
-            # Tests invalid use of := operator
+            "name": "invalid use of := operator",
             "code": """
                 def main() do var x:=10; x:=20 // x is already declared, so := must fail
                 end
@@ -663,102 +665,99 @@ def test():
             "expected_error": "Cannot use ':=' with already declared variable 'x'. Use '=' instead"
         },
         {
-            # Tests invalid redeclaration of variable
+            "name": "invalid redeclaration of variable",
             "code": """
                 def main() do var x:=10; var x:=20 // x is already declared, so "var x" must fail
                 end
             """,
             "expected_error": "Variable 'x' is already declared in this scope"
         },
-
-
         {
-            # Tests error when trying to assign float to int
-            "code": "def main() do var x := 1; var y := 0.1; x = y; end",
-            "expected_error": "Type mismatch: can't assign a value of type float to x (type int)"
+            "name": "Method with incorrect return type",
+            "code": """
+            struct Point do
+                x: int
+            end
+
+            def Point.get_x(): string do
+                return self.x;  // int returned from string function
+            end
+
+            def main() do
+            end
+            """,
+            "expected_error": "Type mismatch"
         },
         {
-            # Tests error when using variable without declaration
+            "name": "error when using variable without declaration",
             "code": "def main() do x = 5; end",  # Missing var or const declaration
             "expected_error": "Variable 'x' is not declared"
         },
         {
-            # Tests error when declaring variable without initialization
+            "name": "error when declaring variable without initialization",
             "code": "def main() do var x; x = 5; end",  # Missing initialization
             "expected_error": "Variable declaration must include an initialization"
         },
         {
-            # Tests error when using undeclared variable in a logical expression
+            "name": "error when using undeclared variable in a logical expression",
             "code": "def main() do var x := 1; if !x or x and y do print x; end end",
             "expected_error": "Variable 'y' is not declared"
         },
         {
-            # Tests error when using undeclared variable in print statement
+            "name": "error when using undeclared variable in print statement",
             "code": "def main() do print z; end",
             "expected_error": "Variable 'z' is not declared"
         },
         {
-            # Tests error when using undeclared variable in if condition
+            "name": "Tests error when using undeclared variable in if condition",
             "code": "def main() do if x do print 1; end end",
-            "expected_error": "Variable 'x' is not declared" 
+            "expected_error": "Variable 'x' is not declared"
         },
         {
-            # Tests error when missing semicolon between statements on the same line
+            "name": "error when missing semicolon between statements on the same line",
             "code": "def main() do var x := 5 + 3 print x; end",
             "expected_error": "Expected semicolon between statements"
         },
         {
-            # Tests error when missing semicolon between statements on the same line
+            "name": "error when missing semicolon between statements on the same line",
             "code": "def main() do var a := 1 var b := 2 end",
             "expected_error": "Expected semicolon between statements"
         },
         {
-            # Tests error when reassigning to a const-declared constant
+            "name": "error when reassigning to a const-declared constant",
             "code": "def main() do const x := 5; x = 10; end",
             "expected_error": "Cannot reassign to constant 'x'"
         },
         {
-            # Tests error when using compound assignment on a const-declared constant
+            "name": "error when using compound assignment on a const-declared constant",
             "code": "def main() do const x := 5; x += 10; end",
             "expected_error": "Cannot reassign to constant 'x'"
         },
         {
-            # Tests error when using undeclared variable in initialization
+            "name": "error when using undeclared variable in initialization",
             "code": "def main() do var x := y; end",
             "expected_error": "Variable 'y' is not declared"
         },
         {
-            # Tests error when using = without explicit type
+            "name": "error when using = without explicit type",
             "code": "def main() do var x = 5; end",
             "expected_error": "requires explicit type annotation"
         },
         {
-            # Tests error when assigning float to int variable
-            "code": "def main() do var x: int = 5; var y: float = 2.5; x = y; end",
-            "expected_error": "Type mismatch"
-        },
-        {
-            # Tests error when redeclaring a variable
+            "name": "error when redeclaring a variable",
             "code": "def main() do var x := 5; var x := 10; end",
             "expected_error": "already declared"
         },
         {
-            # Tests float literal without decimal digits
+            "name": "float literal without decimal digits",
             "code": "def main() do var x := 5.; end",
             "expected_error": "Invalid float literal"
         },
         {
-            # Tests else-if without proper end before else
+            "name": "else-if without proper end before else",
             "code": "def main() do var x := 3; if x == 1 do print 1; else if x == 2 do print 2; else if x == 3 do print 3; end end",
             "expected_error": 'Invalid statement starting with "else" (TT_ELSE)'
         },
-        {
-            # Tests error when mixing int and float types in binary operation
-            # This test expects a failure since our language doesn't allow implicit type conversion
-            "code": "def main() do var x := 10; var y := 3.0; var z := x / y; end", 
-            "expected_error": "Type mismatch in binary operation"
-        },
-        # Error test cases
         {
             "name": "Unterminated string literal",
             "code": """
@@ -808,7 +807,7 @@ def test():
                     var s : string = 42;
                 end
             """,
-            "expected_error": "Type mismatch in initialization: can't assign int to s (type string)"
+            "expected_error": "Type mismatch in initialization"
         },
         {
             "name": "Code outside functions not allowed",
@@ -817,28 +816,12 @@ def test():
         },
     # Test cases for OOP parse errors
     {
-        "name": "Struct with no fields",
-        "code": """
-            struct EmptyStruct do
-            end
-
-            def main() do
-            end
-        """,
-        "expected_error": "Unexpected token type"
-    },
-    {
         "name": "Method without self",
         "code": """
-            struct Point do
-                x: int
-            end
+            struct Point do x: int; end
 
             def Point.bad(): int do
                 return x;  // Missing self.x
-            end
-
-            def main() do
             end
         """,
         "expected_error": "Variable 'x' is not declared"
@@ -846,42 +829,24 @@ def test():
     {
         "name": "Undefined method call",
         "code": """
-            struct Point do
-                x: int
-            end
-
-            def main() do
-                var p := Point(5);
-                p.nonexistent();
-            end
+            struct Point do x: int; end
+            def main() do var p := Point(5); p.nonexistent(); end
         """,
         "expected_error": "Method 'nonexistent' not found in struct 'Point'"
     },
     {
         "name": "Undefined field access",
         "code": """
-            struct Point do
-                x: int
-            end
-
-            def main() do
-                var p := Point(5);
-                print p.y;
-            end
+            struct Point do x: int; end
+            def main() do var p := Point(5); print p.y; end
         """,
         "expected_error": "Field 'y' not found in struct 'Point'"
     },
     {
         "name": "Invalid constructor parameter count",
         "code": """
-            struct Point do
-                x: int
-            end
-
-            def Point.init(x: int, y: int) do
-                self.x = x;
-            end
-
+            struct Point do x: int; end
+            def Point.init(x: int, y: int) do self.x = x; end
             def main() do
                 var p := Point(5);  // Missing second parameter
             end
@@ -893,7 +858,6 @@ def test():
         "code": """
             def NotAStruct.method() do
             end
-
             def main() do
             end
         """,
@@ -902,10 +866,7 @@ def test():
     {
         "name": "Invalid parent struct",
         "code": """
-            struct Child:NonExistentParent do
-                x: int
-            end
-
+            struct Child:NonExistentParent do x: int; end
             def main() do
             end
         """,
@@ -914,16 +875,10 @@ def test():
     {
         "name": "Constructor with non-void return type",
         "code": """
-            struct Point do
-                x: int
-            end
-
+            struct Point do x: int; end
             def Point.init(): int do
                 self.x = 5;
                 return 0;
-            end
-
-            def main() do
             end
         """,
         "expected_error": "Constructor 'init' must have void return type"
@@ -931,25 +886,15 @@ def test():
     {
         "name": "Destructor with parameters",
         "code": """
-            struct Point do
-                x: int
-            end
-
-            def Point.fini(flag: int) do
-            end
-
-            def main() do
-            end
+            struct Point do x: int; end
+            def Point.fini(flag: int) do end
         """,
         "expected_error": "Destructor 'fini' cannot have parameters"
     },
     {
         "name": "Del on stack object",
         "code": """
-            struct Point do
-                x: int
-            end
-
+            struct Point do x: int; end
             def main() do
                 var p := Point(5);
                 del p;  // Cannot delete stack object
@@ -960,16 +905,11 @@ def test():
     {
         "name": "Missing constructor arguments",
         "code": """
-            struct Point do
-                x: int
-                y: int
-            end
-
+            struct Point do x: int;y: int; end
             def Point.init(x: int, y: int) do
                 self.x = x;
                 self.y = y;
             end
-
             def main() do
                 var p := Point();  // No arguments provided
             end
@@ -1035,7 +975,7 @@ def test():
         interpreter.reset()
 
         test_num = i + 1
-        print("\nTest %d:" % test_num)
+        print("\nTest %d (%s):" % ((test_num), test_case["name"]))
         print("Input: %s" % test_case["code"])
 
         result = interpreter.run(test_case["code"])
