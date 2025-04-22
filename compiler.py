@@ -564,10 +564,12 @@ class Parser:
             # Method call
             self.advance()  # Skip '('
 
-            # Get method details
-            method = type_registry.get_method(struct_name, member_name)
-            if not method:
+            # Get method details directly from registry
+            method_id = type_registry.lookup_function(member_name, base_type)
+            if method_id == -1:
                 self.error("Method '%s' not found in struct '%s'" % (member_name, struct_name))
+
+            func_obj = type_registry.get_func_from_id(method_id)
 
             # Parse arguments
             args = []
@@ -575,10 +577,10 @@ class Parser:
             self.consume(TT_RPAREN)
 
             # Type check arguments
-            self.check_arg_count("Method '%s'" % member_name, method.params, args)
-            self.check_argument_types(args, method.params, "method '%s'" % member_name)
+            self.check_arg_count("Method '%s'" % member_name, func_obj.params, args)
+            self.check_argument_types(args, func_obj.params, "method '%s'" % member_name)
 
-            return CallNode(member_name, args, method.return_type, obj_node)
+            return CallNode(member_name, args, func_obj.return_type, obj_node)
         else:
             # Field access
             field_type = type_registry.get_field_type(struct_name, member_name)
