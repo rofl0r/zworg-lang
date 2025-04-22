@@ -151,7 +151,9 @@ class Interpreter(object):
             raise CompilerException("%s expects %d arguments, got %d" % 
                                   (method_name, len(method_params), len(args)))
 
-        for i, ((param_name, param_type), arg_value) in enumerate(zip(method_params, args)):
+        for i in range(len(method_params)):
+            param_name, param_type = method_params[i]
+            arg_value = args[i]
             if not can_promote(arg_nodes[i].expr_type, param_type):
                 self.environment.leave_scope()
                 raise CompilerException("Type mismatch in %s argument: cannot convert %s to %s" %

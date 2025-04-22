@@ -511,7 +511,13 @@ class Parser:
 
     def check_argument_types(self, args, params, context_name):
         """Check if argument types match parameter types"""
-        for i, ((param_name, param_type), arg) in enumerate(zip(params, args)):
+        for i in range(len(params)):
+            # This should never happen as we check arg count before this
+            if i >= len(args): break
+
+            param_name, param_type = params[i]
+            arg = args[i]
+
             if not can_promote(arg.expr_type, param_type):
                 self.type_mismatch_error("Type mismatch for argument %d of %s" % (i+1, context_name), 
                                          arg.expr_type, param_type)
