@@ -16,6 +16,16 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "chaining test",
+           "code": """
+		struct Foo do x:int; end;
+                def Foo.init(x:int) do self.x = x; end
+                def Foo.inc(n:int):Foo do return Foo(self.x + n); end
+                def main() do var x:= Foo(1).inc(1).inc(1).inc(1).x; end
+           """,
+           "expected_env": {"x": 4}
+        },
+        {
            "name": "calling methods on temporary struct instance",
            "code": """
         struct Vector do x: int; y: int ; end
