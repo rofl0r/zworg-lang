@@ -1009,7 +1009,7 @@ class Parser:
             struct_init = StructInitNode(struct_name, struct_id, args)
             return NewNode(struct_init)
 
-        raise CompilerException('Unexpected token type %d' % t.type, t)
+        raise CompilerException('Unexpected token %s' % token_name(t), t)
 
     def led(self, t, left):
         # Handle dot operator for member access
