@@ -1002,11 +1002,12 @@ def test():
                     print("Function returned: %s" % result['result'])
 
                 # Get environment from main function
-		env = result['main_env']
+                env = result['main_env']
 
                 # Check if environment values match
                 env_match = True
-                for k, v in test_case["expected_env"].iteritems():
+                for k in test_case["expected_env"].keys():
+                    v = test_case["expected_env"][k]
                     if k not in env or env[k] != v:
                         env_match = False
                         break

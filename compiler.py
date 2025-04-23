@@ -1151,7 +1151,7 @@ class Parser:
         self.consume(TT_RPAREN)
 
         # Type checking for function call
-	func_obj = type_registry.get_func_from_id(func_id)
+        func_obj = type_registry.get_func_from_id(func_id)
         func_params = func_obj.params
         func_return_type = func_obj.return_type
 
