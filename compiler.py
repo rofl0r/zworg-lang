@@ -494,13 +494,6 @@ class Parser:
             left = self.led(t, left)
         return left
 
-    def token_type_to_var_type(self, token_type):
-        """Convert token type to variable type"""
-        # Use the token-to-type mapping or raise an error for unknown types
-        if token_type not in TOKEN_TO_TYPE_MAP:
-            self.error("Unknown token type for variable type conversion: %s" % str(token_type))
-        return TOKEN_TO_TYPE_MAP[token_type]
-
     def check_type_compatibility(self, var_name, expr_type):
         """Check if the expression's type is compatible with the variable's type"""
         # Get variable type from the appropriate scope
@@ -812,17 +805,6 @@ class Parser:
         self.advance()  # Skip 'end'
 
         return StructDefNode(struct_name, parent_name, fields, struct_id)
-
-    def determine_result_type(self, left_type, right_type):
-        """Determine the result type of a binary operation based on operand types"""
-        if left_type != right_type:
-            self.error("Type mismatch: cannot operate on values of different types")
-        return left_type
-
-    def generate_tuple_type_name(self, element_types):
-        """Generate a unique name for a tuple type based on its element types"""
-        elements_str = "_".join(var_type_to_string(t) for t in element_types)
-        return "_tuple_%d_%s" % (len(element_types), elements_str)
 
     def register_tuple_type(self, element_types, is_type_annotation=False):
         """
