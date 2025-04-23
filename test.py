@@ -16,6 +16,178 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "operations involving signed and unsigned integers",
+            "code": """
+		// results havent been verified, they're for coverage testing
+		def main() do
+			var f1:= 10; var f2:= 2;
+			var d1:uint=10; var d2:uint=2
+			var frl1 := f1 + f2;
+			var frr1 := f2 + f1;
+			var mrl1 := f1 + d2;
+			var mrr1 := d1 + f2;
+			var dr1  := d1 + d2;
+			var frl2 := f1 - f2;
+			var frr2 := f2 - f1;
+			var mrl2 := f1 - d2;
+			var mrr2 := d1 - f2;
+			var dr2  := d1 - d2;
+			var frl3 := f1 * f2;
+			var frr3 := f2 * f1;
+			var mrl3 := f1 * d2;
+			var mrr3 := d1 * f2;
+			var dr3  := d1 * d2;
+			var frl4 := f1 / f2;
+			var frr4 := f2 / f1;
+			var mrl4 := f1 / d2;
+			var mrr4 := d1 / f2;
+			var dr4  := d1 / d2;
+			var frl5 := f1 % f2;
+			var frr5 := f2 % f1;
+			var mrl5 := f1 % d2;
+			var mrr5 := d1 % f2;
+			var dr5  := d1 % d2;
+			var frl6 := f1 == f2;
+			var frr6 := f2 == f1;
+			var mrl6 := f1 == d2;
+			var mrr6 := d1 == f2;
+			var dr6  := d1 == d2;
+			var frl7 := f1 != f2;
+			var frr7 := f2 != f1;
+			var mrl7 := f1 != d2;
+			var mrr7 := d1 != f2;
+			var dr7  := d1 != d2;
+			var frl8 := f1 > f2;
+			var frr8 := f2 > f1;
+			var mrl8 := f1 > d2;
+			var mrr8 := d1 > f2;
+			var dr8  := d1 > d2;
+			var frl9 := f1 >= f2;
+			var frr9 := f2 >= f1;
+			var mrl9 := f1 >= d2;
+			var mrr9 := d1 >= f2;
+			var dr9  := d1 >= d2;
+			var frl10 := f1 < f2;
+			var frr10 := f2 < f1;
+			var mrl10 := f1 < d2;
+			var mrr10 := d1 < f2;
+			var dr10  := d1 < d2;
+			var frl11 := f1 <= f2;
+			var frr11 := f2 <= f1;
+			var mrl11 := f1 <= d2;
+			var mrr11 := d1 <= f2;
+			var dr11  := d1 <= d2;
+			var frl12 := f1 shr f2;
+			var frr12 := f2 shr f1;
+			var mrl12 := f1 shr d2;
+			var mrr12 := d1 shr f2;
+			var dr12  := d1 shr d2;
+			var frl13 := f1 shl f2;
+			var frr13 := f2 shl f1;
+			var mrl13 := f1 shl d2;
+			var mrr13 := d1 shl f2;
+			var dr13  := d1 shl d2;
+			var frl14 := bitnot f1;
+			var frr14 := bitnot f2;
+			var mrl14 := bitnot d1;
+			var mrr14 := bitnot d2;
+			//var dr14  := d1 shl d2;
+			var frl15 := f1 | f2;
+			var frr15 := f2 | f1;
+			var mrl15 := f1 | d2;
+			var mrr15 := d1 | f2;
+			var dr15  := d1 | d2;
+			var frl16 := f1 & f2;
+			var frr16 := f2 & f1;
+			var mrl16 := f1 & d2;
+			var mrr16 := d1 & f2;
+			var dr16  := d1 & d2;
+			var frl17 := f1 xor f2;
+			var frr17 := f2 xor f1;
+			var mrl17 := f1 xor d2;
+			var mrr17 := d1 xor f2;
+			var dr17  := d1 xor d2;
+			var frl18 := f1 or f2;
+			var frr18 := f2 or f1;
+			var mrl18 := f1 or d2;
+			var mrr18 := d1 or f2;
+			var dr18  := d1 or d2;
+			var frl19 := f1 and f2;
+			var frr19 := f2 and f1;
+			var mrl19 := f1 and d2;
+			var mrr19 := d1 and f2;
+			var dr19  := d1 and d2;
+		end
+            """,
+            "expected_env": {'frr10': 1, 'frr11': 1, 'frr12': 0, 'frr13': 2048, 'frr14': -3, 'frr15': 10, 'frr16': 2, 'frr17': 8, 'frr18': 1, 'mrl1': 12, 'dr2': 8, 'mrl2': 8, 'd2': 2, 'd1': 10, 'frr2': -8, 'frr3': 20, 'frr1': 12, 'frr6': 0, 'frr7': 1, 'frr4': 0, 'frr5': 2, 'frr8': 0, 'frr9': 0, 'frr19': 1, 'dr9': 1, 'dr8': 1, 'mrl9': 1, 'mrl8': 1, 'dr1': 12, 'mrl4': 5, 'dr3': 20, 'mrl6': 0, 'dr5': 0, 'dr4': 5, 'dr7': 1, 'dr6': 0, 'frl1': 12, 'frl2': 8, 'frl3': 20, 'frl4': 5, 'frl5': 0, 'frl6': 0, 'frl7': 1, 'frl8': 1, 'frl9': 1, 'dr15': 10, 'dr17': 8, 'dr16': 2, 'dr11': 0, 'dr10': 0, 'dr13': 40, 'dr12': 2, 'dr19': 1, 'dr18': 1, 'mrr17': 8, 'mrr16': 2, 'mrr15': 10, 'mrr14': 4294967293, 'mrr13': 40, 'mrr12': 2, 'mrr11': 0, 'mrr10': 0, 'mrr19': 1, 'mrr18': 1, 'mrr3': 20, 'mrr2': 8, 'mrr1': 12, 'mrr7': 1, 'mrr6': 0, 'mrr5': 0, 'mrr4': 5, 'mrr9': 1, 'mrr8': 1, 'frl18': 1, 'frl19': 1, 'frl12': 2, 'frl13': 40, 'frl10': 0, 'frl11': 0, 'frl16': 2, 'frl17': 8, 'frl14': -11, 'frl15': 10, 'f1': 10, 'f2': 2, 'mrl3': 20, 'mrl19': 1, 'mrl18': 1, 'mrl15': 10, 'mrl14': 4294967285, 'mrl17': 8, 'mrl16': 2, 'mrl11': 0, 'mrl10': 0, 'mrl13': 40, 'mrl12': 2, 'mrl5': 0, 'mrl7': 1}
+        },
+        {
+            "name": "operations involving double and float",
+            "code": """
+		// results havent been verified, they're for coverage testing
+		def main() do
+			var f1:= 10.0; var f2:= 2.0;
+			var d1:double = 10.0; var d2:double=2.0
+			var frl1 := f1 + f2;
+			var frr1 := f2 + f1;
+			var mrl1 := f1 + d2;
+			var mrr1 := d1 + f2;
+			var dr1  := d1 + d2;
+			var frl2 := f1 - f2;
+			var frr2 := f2 - f1;
+			var mrl2 := f1 - d2;
+			var mrr2 := d1 - f2;
+			var dr2  := d1 - d2;
+			var frl3 := f1 * f2;
+			var frr3 := f2 * f1;
+			var mrl3 := f1 * d2;
+			var mrr3 := d1 * f2;
+			var dr3  := d1 * d2;
+			var frl4 := f1 / f2;
+			var frr4 := f2 / f1;
+			var mrl4 := f1 / d2;
+			var mrr4 := d1 / f2;
+			var dr4  := d1 / d2;
+			//var frl5 := f1 % f2;
+			//var frr5 := f2 % f1;
+			//var mrl5 := f1 % d2;
+			//var mrr5 := d1 % f2;
+			//var dr5  := d1 % d2;
+			var frl6 := f1 == f2;
+			var frr6 := f2 == f1;
+			var mrl6 := f1 == d2;
+			var mrr6 := d1 == f2;
+			var dr6  := d1 == d2;
+			var frl7 := f1 != f2;
+			var frr7 := f2 != f1;
+			var mrl7 := f1 != d2;
+			var mrr7 := d1 != f2;
+			var dr7  := d1 != d2;
+			var frl8 := f1 > f2;
+			var frr8 := f2 > f1;
+			var mrl8 := f1 > d2;
+			var mrr8 := d1 > f2;
+			var dr8  := d1 > d2;
+			var frl9 := f1 >= f2;
+			var frr9 := f2 >= f1;
+			var mrl9 := f1 >= d2;
+			var mrr9 := d1 >= f2;
+			var dr9  := d1 >= d2;
+			var frl10 := f1 < f2;
+			var frr10 := f2 < f1;
+			var mrl10 := f1 < d2;
+			var mrr10 := d1 < f2;
+			var dr10  := d1 < d2;
+			var frl11 := f1 <= f2;
+			var frr11 := f2 <= f1;
+			var mrl11 := f1 <= d2;
+			var mrr11 := d1 <= f2;
+			var dr11  := d1 <= d2;
+		end
+            """,
+            "expected_env": {'frr10': 1, 'f1': 10.0, 'f2': 2.0, 'mrl6': 0, 'frr11': 1, 'dr4': 5.0, 'frr9': 0, 'dr7': 1, 'mrr11': 0, 'mrr10': 0, 'dr6': 0, 'd2': 2.0, 'd1': 10.0, 'frr2': -8.0, 'frr3': 20.0, 'frr1': 12.0, 'frr6': 0, 'frr7': 1, 'frr4': 0.2, 'frl1': 12.0, 'dr1': 12.0, 'mrl4': 5.0, 'dr3': 20.0, 'dr2': 8.0, 'mrl1': 12.0, 'mrr1': 12.0, 'mrl3': 20.0, 'mrl2': 8.0, 'mrr3': 20.0, 'mrr2': 8.0, 'frl2': 8.0, 'frl3': 20.0, 'frl4': 5.0, 'mrr6': 0, 'frl6': 0, 'mrr4': 5.0, 'frl8': 1, 'mrr7': 1, 'mrr9': 1, 'mrr8': 1, 'dr9': 1, 'dr8': 1, 'frl7': 1, 'mrl11': 0, 'mrl10': 0, 'frl9': 1, 'mrl9': 1, 'mrl8': 1, 'frl10': 0, 'frl11': 0, 'frr8': 0, 'dr11': 0, 'dr10': 0, 'mrl7': 1}
+        },
+        {
             "name": "mixing int and float types in binary operation",
             "code": "def main() do var x := 10; var y := 3.0; var z := x / y; end", 
             "expected_env": {"y": 3.0, "x": 10, "z": 3.3333333333333335}
