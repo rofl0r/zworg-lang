@@ -686,3 +686,30 @@ class EnvironmentStack:
         """Set a variable in the current scope"""
         self.stack[self.stackptr][name] = value
 
+# runtime emulation of C promotions.
+# TODO coverage says the first branch is always taken.
+# investigate why that is so, and remove if the promotions
+# already take place elsewhere.
+def promote_literal_if_needed(value, from_type, to_type):
+    """Promote a literal value to a new type if needed"""
+    # If types are the same, no promotion needed
+    if from_type == to_type:
+        return value
+
+    # Handle integer promotions
+    if is_integer_type(from_type) and is_integer_type(to_type):
+        # For unsigned types, mask to appropriate size
+        if is_unsigned_type(to_type):
+            return truncate_to_unsigned(value, to_type)
+        return value
+
+    # Handle float/double promotions
+    if is_float_type(from_type) and is_float_type(to_type):
+        return float(value)
+
+    # Handle int to float promotions
+    if is_integer_type(from_type) and is_float_type(to_type):
+        return float(value)
+
+    return value
+

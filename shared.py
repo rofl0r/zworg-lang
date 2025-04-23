@@ -493,31 +493,6 @@ def can_promote(from_type, to_type):
     # Everything else is not allowed
     return False
 
-# used from interpreter.py only TODO: move there
-# this is ONLY for runtime emulation of C promotions.
-def promote_literal_if_needed(value, from_type, to_type):
-    """Promote a literal value to a new type if needed"""
-    # If types are the same, no promotion needed
-    if from_type == to_type:
-        return value
-
-    # Handle integer promotions
-    if is_integer_type(from_type) and is_integer_type(to_type):
-        # For unsigned types, mask to appropriate size
-        if is_unsigned_type(to_type):
-            return truncate_to_unsigned(value, to_type)
-        return value
-
-    # Handle float/double promotions
-    if is_float_type(from_type) and is_float_type(to_type):
-        return float(value)
-
-    # Handle int to float promotions
-    if is_integer_type(from_type) and is_float_type(to_type):
-        return float(value)
-
-    return value
-
 # Base class for compiler exceptions
 class CompilerException(Exception):
     """Base class for compiler exceptions"""
