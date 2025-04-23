@@ -42,11 +42,6 @@ def register_function(name, return_type, params, parent_struct_id=-1, ast_node=N
 def get_func_from_id(funcid):
     return _functions[funcid]
 
-# Helper functions that fail fast
-def is_method(funcid):
-    """Check if a function ID represents a method"""
-    return _functions[funcid].parent_struct_id != -1
-
 def set_function_ast_node(funcid, ast_node):
     """Set the body AST nodes of a function by ID"""
     _functions[funcid].ast_node = ast_node
@@ -174,14 +169,6 @@ def get_field_type(struct_name, field_name):
         if name == field_name:
             return type_
     return None
-
-def has_method(struct_name, method_name):
-    """Check if a struct has a method (including parent methods)"""
-    if struct_name not in _struct_registry:
-        return False
-
-    struct_id = get_struct_id(struct_name)
-    return lookup_function(method_name, struct_id) != -1
 
 def get_method(struct_name, method_name):
     """Get a method from a struct or its parents"""
