@@ -270,11 +270,11 @@ BINARY_PRECEDENCE = {
     TT_SHR: 90,
     TT_LPAREN: 100,  # needed for function calls only
     # Member access has highest precedence
-    TT_DOT: 110,     # Member access
+    TT_DOT: 120,     # Member access - must be even higher than unary!
 }
 
 # Unary operator precedence (higher than binary operators)
-UNARY_PRECEDENCE = 120
+UNARY_PRECEDENCE = 110
 
 FLOAT_TYPES = {TYPE_FLOAT, TYPE_DOUBLE}
 UNSIGNED_TYPES = {TYPE_UINT, TYPE_ULONG, TYPE_ULONGLONG, TYPE_U8, TYPE_U16, TYPE_U32, TYPE_U64}
@@ -407,7 +407,6 @@ def token_name(token_type):
     """Convert a token type number to its name for better debugging"""
     return TOKEN_NAMES.get(token_type, str(token_type))
 
-
 # Type helpers for struct and reference types
 def is_struct_type(type_):
     """Check if a type is a struct type"""
@@ -492,6 +491,17 @@ def can_promote(from_type, to_type):
 
     # Everything else is not allowed
     return False
+
+COMPOUND_ASSIGN_TO_OP_MAP = {
+    TT_PLUS_ASSIGN: '+',
+    TT_MINUS_ASSIGN: '-',
+    TT_MULT_ASSIGN: '*',
+    TT_DIV_ASSIGN: '/',
+    TT_MOD_ASSIGN: '%'
+}
+
+def get_operator_for_compound_assign(ttype):
+    return COMPOUND_ASSIGN_TO_OP_MAP[ttype]
 
 # Base class for compiler exceptions
 class CompilerException(Exception):

@@ -16,6 +16,258 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "operator precedence - unary op vs member access",
+            "code": """
+                struct BitHolder do value: int; end
+                def BitHolder.init(initial: int) do self.value = initial; end
+                def BitHolder.apply_not(): int do
+                    return bitnot self.value  // This should apply bitnot to self.value, not to self
+                end
+                def BitHolder.nested_test(): int do
+                    self.value = 5
+                    return bitnot self.value & 3  // Should be equivalent to (bitnot self.value) & 3, not bitnot (self.value & 3)
+                end
+                def main() do
+                    var b := BitHolder(5)  // value = 5 (binary: 101)
+                    var not_result := b.apply_not()  // bitnot 5 should be -6 (binary: ~101 = 11111...1010)
+                    var nested_result := b.nested_test()  // Should be (bitnot 5) & 3 = -6 & 3 = 2 (binary: ~101 & 11 = 10)
+                end
+            """,
+            "expected_env": {"not_result": -6, "nested_result": 2}
+        },
+        {
+            "name": "binary expression starting with identifier",
+            "code": """
+                def main() do
+                    var a := 10
+                    var b := 20
+                    a + b  // Expression statement with result discarded
+                end
+            """,
+            "expected_env": {"a": 10, "b": 20}
+        },
+        {
+            "name": "minimal compound assignment to field issue",
+            "code": """
+                struct Point do
+                    x: float
+                end
+                def Point.init(val: float) do self.x = val; end
+                def main() do
+                    var p := Point(1.0)
+                    p.x += 2.5
+                    const x := p.x
+                end
+            """,
+            "expected_env": {'x': 3.5}
+        },
+        {
+            "name": "reproducer for method chaining issue in statement",
+            "code": """
+                struct Obj do x: int; end
+                def Obj.init(val: int) do self.x = val; end
+                def Obj.toggle(): Obj do return self; end
+                def main() do
+                    var obj := Obj(1)
+                    obj.toggle().toggle()
+                    const x := obj.x
+                end
+            """,
+            "expected_env": {"x": 1}
+        },
+        {
+            "name": "comprehensive AST node coverage test",
+            "code": """
+                // Struct definition with inheritance
+                struct BaseObject do
+                    id: int
+                end
+
+                def BaseObject.init(id_val: int) do
+                    self.id = id_val
+                end
+
+                def BaseObject.getId(): int do
+                    return self.id
+                end
+
+                struct ComplexObject: BaseObject do
+                    name: string
+                    value: float
+                    enabled: int
+                end
+
+                def ComplexObject.init(id_val: int, name_val: string, value_val: float) do
+                    self.id = id_val
+                    self.name = name_val
+                    self.value = value_val
+                    self.enabled = 1
+                end
+
+                def ComplexObject.toggle(): ComplexObject do
+                    self.enabled = bitnot self.enabled & 1
+                    return self
+                end
+
+                def ComplexObject.fini() do
+                    print "Destroying object with id:";
+                    print self.id;
+                end
+
+                // Global variables
+                var global_counter := 0
+                const PI := 3.14159
+
+                // Helper function returning tuple
+                def divmod(a: int, b: int): {int, int} do
+                    return {a/b, a%b};
+                end
+
+                // Function with multiple parameters and return value
+                def calculate(x: int, y: float, op: string): float do
+                    if op == "add" do
+                        return x + y;
+                    end else if op == "subtract" do
+                        return x - y;
+                    end else if op == "multiply" do
+                        return x * y;
+                    end else if op == "divide" do
+                        if y == 0.0 do
+                            return 0.0;
+                        end
+                        return x / y;
+                    end
+                    return 0.0;
+                end
+
+                def main() do
+                    // Variable declarations with different types
+                    var a := 10
+                    var b: float = 20.5
+                    var c: int = 0
+
+                    // Logical operations
+                    var logical_and := a > 5 and b < 30.0
+                    var logical_or := a < 5 or b > 10.0
+                    var logical_not := !(a == c)
+
+                    // Binary operations
+                    var sum := a + b
+                    var diff := b - a
+                    var product := a * b
+                    var quotient := b / a
+                    var remainder := a % 3
+
+                    // Bitwise operations
+                    var bit_and := a & 3
+                    var bit_or := a | 5
+                    var bit_xor := a xor 7
+                    var bit_not := bitnot a
+                    var bit_shift_left := a shl 2
+                    var bit_shift_right := a shr 1
+                    
+                    // Compound assignments
+                    var compound := 5
+                    compound += 3
+                    compound -= 1
+                    compound *= 2
+                    compound /= 2
+                    compound %= 3
+                    
+                    // While loop with break and continue
+                    var i := 0
+                    var loop_result := 0
+                    while i < 10 do
+                        i += 1
+                        if i == 3 do
+                            continue
+                        end
+                        if i == 8 do
+                            break
+                        end
+                        loop_result += i
+                    end
+                    // Tuple usage
+                    var division_result := divmod(25, 7)
+                    var quotient_from_tuple := division_result._0
+                    var remainder_from_tuple := division_result._1
+
+                    // Function calls with different parameter types
+                    var calc_result := calculate(5, 2.5, "multiply")
+
+                    // Struct initialization and method calls
+                    var obj := ComplexObject(42, "test object", 3.14)
+                    var obj_id := obj.getId()    // Inherited method
+                    var initial_enabled := obj.enabled
+                    obj.toggle()                 // Method call
+                    var toggled_enabled := obj.enabled
+                    obj.toggle().toggle()        // Method chaining
+                    var double_toggled := obj.enabled
+
+                    // Heap allocation and deallocation
+                    var heap_obj := new ComplexObject(99, "heap object", 7.5)
+                    var heap_obj_id := heap_obj.id
+                    var heap_name := heap_obj.name
+                    heap_obj.value += 2.5
+                    var heap_value := heap_obj.value
+                    del heap_obj   // Should trigger fini() method
+
+                    // Global variable access and modification
+                    global_counter += 1
+                    var pi_value := PI
+
+                    // If-else statements
+                    var condition_result := 0
+                    if a > 5 do
+                        condition_result = 1
+                    end else if a < 3 do
+                        condition_result = 2
+                    end else do
+                        condition_result = 3
+                    end
+
+                    // Expression statement
+                    a + b  // Result is discarded
+                    print "End of AstNode coverage test"
+                end
+            """,
+            "expected_env": {
+                "a": 10,
+                "b": 20.5,
+                "c": 0,
+                "logical_and": 1,
+                "logical_or": 1,
+                "logical_not": 1,
+                "sum": 30.5,
+                "diff": 10.5,
+                "product": 205.0,
+                "quotient": 2.05,
+                "remainder": 1,
+                "bit_and": 2,
+                "bit_or": 15,
+                "bit_xor": 13,
+                "bit_not": -11,
+                "bit_shift_left": 40,
+                "bit_shift_right": 5,
+                "compound": 1,
+                "i": 8,
+                "loop_result": 25,
+                "quotient_from_tuple": 3,
+                "remainder_from_tuple": 4,
+                "calc_result": 12.5,
+                "obj_id": 42,
+                "initial_enabled": 1,
+                "toggled_enabled": 0,
+                "double_toggled": 0,
+                "heap_obj_id": 99,
+                "heap_name": "heap object",
+                "heap_value": 10.0,
+                "pi_value": 3.14159,
+                "condition_result": 1,
+                "global_counter": 1
+            }
+        },
+        {
             "name": "operations involving signed and unsigned integers",
             "code": """
 		// results havent been verified, they're for coverage testing
@@ -1148,9 +1400,12 @@ def test():
 
         test_num = i + 1
         print("\nTest %d (%s):" % ((test_num), test_case["name"]))
-        print("Input: %s" % test_case["code"])
+        # don't print the test by default as it's getting too verbose
+        # print("Input: %s" % test_case["code"])
 
         result = interpreter.run(test_case["code"])
+        if result.get('ast'):
+            devnull = "%s"%(result['ast'])  # stringify ast in any case for code coverage
 
         # Check if this test is expected to fail
         if "expected_error" in test_case:
@@ -1159,6 +1414,7 @@ def test():
                 print("Success! Failed with expected error: %s" % result['error'])
             else:
                 printc("red", "Test didn't fail as expected! Result: %s" % result)
+                printc("red", "Input: %s" % test_case["code"])
                 failed_tests.append(test_num)
                 # Add AST dump for unexpected failures
                 if result.get('ast'):
@@ -1177,19 +1433,23 @@ def test():
                 env = result['main_env']
 
                 # Check if environment values match
-                env_match = True
+		mismatches = []
                 for k in test_case["expected_env"].keys():
                     v = test_case["expected_env"][k]
-                    if k not in env or env[k] != v:
-                        env_match = False
-                        break
+                    if k not in env:
+                        mismatches.append("{}: want {} got: None".format(k, v))
+                    elif env[k] != v:
+                        mismatches.append("{}: want {} got: {}".format(k, v, env[k]))
 
-                if env_match:
+                if len(mismatches) == 0:
                     print("Success! Environment matches expectations.")
                 else:
+                    printc("red", "Input: %s" % test_case["code"])
                     print("Test passed but with incorrect environment values:")
                     print("  Expected env: %s" % test_case["expected_env"])
                     print("  Actual env: %s" % env)
+                    print("  Mismatches:")
+                    for m in mismatches: print(m)
                     failed_tests.append(test_num)
                     if result.get('ast'):
                         print("AST dump: %s" % result['ast'])

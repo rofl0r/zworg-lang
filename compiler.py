@@ -1345,22 +1345,51 @@ class Parser:
                 member_node = self.parse_member_access(obj_node)
 
                 # Handle possible assignment for field access
-                if member_node.node_type == AST_NODE_MEMBER_ACCESS and self.token.type == TT_ASSIGN:
-                    self.advance()  # Skip =
+                if member_node.node_type == AST_NODE_MEMBER_ACCESS and self.token.type in [
+                    TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
+                    TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN
+                ]:
+                    # Save the operator type
+                    op = self.token.type
+                    field_type = member_node.expr_type
+
+                    # Advance past the operator
+                    self.advance()
+
+                    # Parse the right-hand expression
                     expr = self.expression(0)
 
                     # Check type compatibility
-                    self.check_field_compatibility(expr.expr_type, member_node.expr_type)
+                    self.check_field_compatibility(expr.expr_type, field_type)
 
-                    # Create binary op node for the assignment
-                    node = BinaryOpNode('=', member_node, expr, member_node.expr_type)
+                    # For compound operators, create a BinaryOpNode with the appropriate operation
+                    if op != TT_ASSIGN:
+                        # Create a binary op that combines the field access and the operation
+                        node = BinaryOpNode('=', member_node,
+                                          BinaryOpNode(get_operator_for_compound_assign(op), member_node, expr, field_type), field_type)
+                    else:
+                        # Regular assignment
+                        node = BinaryOpNode('=', member_node, expr, member_node.expr_type)
+
                     self.check_statement_end()
                     return node
+
+                # Handle method chaining - if we have a method call result followed by a dot
+                if member_node.node_type == AST_NODE_CALL and self.token.type == TT_DOT:
+                    # Continue parsing the chain
+                    expr = member_node
+                    while self.token.type == TT_DOT:
+                        self.advance()  # Skip dot
+                        # Parse next member in the chain
+                        expr = self.parse_member_access(expr)
+
+                    # Now we're at the end of the chain
+                    self.check_statement_end()
+                    return ExprStmtNode(expr)
 
                 # Method call or field access as expression statement
                 self.check_statement_end()
                 return ExprStmtNode(member_node)
-
 
             # Variable reference
             else:
@@ -1375,7 +1404,7 @@ class Parser:
                 # Handle all assignment operators (regular and compound)
                 if self.token.type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN, 
                                        TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
-                    # Check if variable is a constant (declared with 'let')
+                    # Check if variable is a constant (declared with 'const')
                     if self.is_constant(var):
                         self.error("Cannot reassign to constant '%s'" % var)
 
@@ -1401,8 +1430,28 @@ class Parser:
                     return AssignNode(var, expr, var_type)
 
                 # Handle expression statements (e.g., an identifier by itself)
+                # Get variable type for the identifier
                 var_type = self.get_variable_type(var)
-                expr = VariableNode(var, var_type)
+
+                # Create the variable node
+                var_node = VariableNode(var, var_type)
+
+                # Check if this is the start of a binary expression (identifier followed by operator)
+                if self.token.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD,
+                                     TT_EQ, TT_NE, TT_GT, TT_LT, TT_GE, TT_LE]:
+                    # This is a binary operation starting with a variable
+                    op = self.token.value
+                    self.advance()  # Consume the operator token
+
+                    # Parse the right-hand side of the binary operation
+                    right = self.expression(0)
+
+                    # Create the binary operation node
+                    expr = BinaryOpNode(op, var_node, right, var_type)
+                else:
+                    # Just a variable reference on its own
+                    expr = var_node
+
                 self.check_statement_end()
                 return ExprStmtNode(expr)
         elif self.token.type in [TT_INT_LITERAL, TT_UINT_LITERAL, TT_LONG_LITERAL, TT_ULONG_LITERAL, 
