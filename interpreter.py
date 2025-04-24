@@ -417,15 +417,13 @@ class Interpreter(object):
         # Call constructor if it exists and there are args or it's "init"
         init_method = type_registry.get_method(node.struct_name, "init")
         if init_method:
-            # Evaluate and pass constructor arguments
-            # these need to be evaluated BEFORE constructing a new scope!
-            # else self used in an expression ment for other methods calls
-            # now points to the instance.
+            # Create a temporary scope for the constructor
+            self.environment.enter_scope()
+            # we need to evaluate args in the function's scope, so param names dont end up in the parent's scope
+            # BUT we need to do it before setting "self", because evaluating it might accessing the caller's self
             args = [self.evaluate(arg) for arg in node.args]
             self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
 
-            # Create a temporary scope for the constructor
-            self.environment.enter_scope()
             self.environment.set("self", instance)
 
             # Execute constructor body
