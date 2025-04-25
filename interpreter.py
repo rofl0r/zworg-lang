@@ -52,7 +52,6 @@ class Interpreter(object):
             AST_NODE_NEW: self.visit_new,
             AST_NODE_DEL: self.visit_del,
             AST_NODE_GENERIC_INITIALIZER: self.visit_generic_initializer,
-            AST_NODE_STRUCT_INITIALIZER: self.visit_struct_initializer,
         }
 
     def reset(self):
@@ -602,42 +601,6 @@ class Interpreter(object):
         elif node.subtype == INITIALIZER_SUBTYPE_NAMED:
             # Reserved for future C99-style named initializers
             raise CompilerException("Named initializers not yet implemented")
-
-        return instance
-
-    def visit_struct_initializer(self, node):
-        """Visit a struct initializer with named fields {.field1=value1, ...}"""
-        # Create a new struct instance of the appropriate type
-        if node.struct_type is None:
-            raise CompilerException("Struct type not set for initializer")
-
-        struct_name = type_registry.get_struct_name(node.struct_type)
-        if not struct_name:
-            raise CompilerException("Unknown struct type")
-
-        # Create the struct instance
-        instance = StructInstance(node.struct_type, struct_name)
-
-        # Initialize all fields with default values first
-        all_fields = type_registry.get_all_fields(struct_name)
-        for field_name, field_type in all_fields:
-            # Set default value based on type
-            if is_struct_type(field_type):
-                instance.fields[field_name] = None
-            elif field_type == TYPE_STRING:
-                instance.fields[field_name] = ""
-            elif is_float_type(field_type):
-                instance.fields[field_name] = 0.0
-            else:
-                instance.fields[field_name] = 0
-
-        # Now set the specified field values
-        for field_name, field_expr in node.field_initializers:
-            # Evaluate the field value
-            value = self.evaluate(field_expr)
-
-            # Set the field value
-            instance.fields[field_name] = value
 
         return instance
 

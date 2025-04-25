@@ -115,9 +115,7 @@ AST_NODE_STRUCT_INIT = 24   # struct initialization
 AST_NODE_MEMBER_ACCESS = 26 # field/method access
 AST_NODE_NEW = 28           # heap allocation with 'new'
 AST_NODE_DEL = 29           # heap deallocation with 'del'
-AST_NODE_TUPLE = 30         # tuple
 AST_NODE_GENERIC_INITIALIZER = 31
-AST_NODE_STRUCT_INITIALIZER = 32
 
 # Variable types - We depend on the order in interpreter.py when taking the max(type1, type2)
 TYPE_UNKNOWN = 0
@@ -471,9 +469,7 @@ def ast_node_type_to_string(node_type):
         AST_NODE_MEMBER_ACCESS: "MEMBER_ACCESS",
         AST_NODE_NEW: "NEW",
         AST_NODE_DEL: "DEL",
-        AST_NODE_TUPLE: "TUPLE",
         AST_NODE_GENERIC_INITIALIZER: "GENERIC_INITIALIZER",
-        AST_NODE_STRUCT_INITIALIZER: "STRUCT_INITIALIZER",
     }
     return type_names.get(node_type, "UNKNOWN")
 
