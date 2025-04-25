@@ -170,12 +170,11 @@ def get_field_type(struct_name, field_name):
             return type_
     return None
 
-def get_method(struct_name, method_name):
+def get_method(struct_id, method_name):
     """Get a method from a struct or its parents"""
-    if struct_name not in _struct_registry:
+    if struct_id == -1:
         return None
 
-    struct_id = get_struct_id(struct_name)
     func_id = lookup_function(method_name, struct_id)
     if func_id == -1:
         return None

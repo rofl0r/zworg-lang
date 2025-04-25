@@ -1574,7 +1574,19 @@ def test():
             """,
             "expected_error": "Empty initializers are not supported"
         },
-
+        {
+            "name": "initializer for struct with constructor",
+            "code": """
+                struct Point do x:int; y:int end
+                def Point.init(x:int, y:int) do
+                    self.x = x; self.y = y
+                end
+                def main() do
+                    var p:Point = {10, 20}  // Error: can't use initializer when constructor exists
+                end
+            """,
+            "expected_error": "Cannot use initializer for struct 'Point' because it has a constructor"
+        },
     ]
 
     # List to track failing tests

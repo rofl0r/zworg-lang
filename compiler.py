@@ -876,6 +876,10 @@ class Parser:
         if target_type != TYPE_UNKNOWN:
             if is_struct_type(target_type):
                 subtype = INITIALIZER_SUBTYPE_LINEAR
+                # Check if struct has a constructor - if so, initializer is not allowed
+                if type_registry.get_method(target_type, "init"):
+                    struct_name = type_registry.get_struct_name(target_type)
+                    self.error("Cannot use initializer for struct '%s' because it has a constructor" % struct_name)
 
         # Empty initializer not allowed (for now)
         if self.token.type == TT_RBRACE:
@@ -1024,7 +1028,7 @@ class Parser:
             self.consume(TT_RPAREN)
 
             # Check if init method exists for the struct
-            init_method = type_registry.get_method(struct_name, "init")
+            init_method = type_registry.get_method(struct_id, "init")
             if init_method:
                 # Check argument count
                 self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args)

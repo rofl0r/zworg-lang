@@ -414,7 +414,7 @@ class Interpreter(object):
                 instance.fields[field_name] = 0
 
         # Call constructor if it exists and there are args or it's "init"
-        init_method = type_registry.get_method(node.struct_name, "init")
+        init_method = type_registry.get_method(node.struct_id, "init")
         if init_method:
             # Create a temporary scope for the constructor
             self.environment.enter_scope()
@@ -548,7 +548,7 @@ class Interpreter(object):
 
         # Call destructor if it exists
         if isinstance(obj, StructInstance):
-            fini_method = type_registry.get_method(obj.struct_name, "fini")
+            fini_method = type_registry.get_method(obj.struct_id, "fini")
             if fini_method:
                 # Create a temporary scope for the destructor
                 self.environment.enter_scope()
