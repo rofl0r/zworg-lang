@@ -492,6 +492,11 @@ def can_promote(from_type, to_type):
     # Everything else is not allowed
     return False
 
+# Generic initializer subtypes
+INITIALIZER_SUBTYPE_TUPLE = 0     # Type inferred from elements
+INITIALIZER_SUBTYPE_LINEAR = 1    # Positional initialization for structs/arrays
+INITIALIZER_SUBTYPE_NAMED = 2     # C99-style field naming (future)
+
 COMPOUND_ASSIGN_TO_OP_MAP = {
     TT_PLUS_ASSIGN: '+',
     TT_MINUS_ASSIGN: '-',

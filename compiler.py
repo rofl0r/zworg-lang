@@ -307,17 +307,19 @@ class DelNode(ASTNode):
     def __repr__(self):
         return "Del(%s)" % repr(self.expr)
 
-class TupleNode(ASTNode):
-    def __init__(self, elements):
-        ASTNode.__init__(self, AST_NODE_TUPLE)
-        self.elements = elements  # List of expression nodes
-        self.element_types = [elem.expr_type for elem in elements]
-        # Will be set later by the parser
-        self.expr_type = TYPE_UNKNOWN
+class GenericInitializerNode(ASTNode):
+    def __init__(self, elements, subtype, target_type=TYPE_UNKNOWN):
+        ASTNode.__init__(self, AST_NODE_GENERIC_INITIALIZER)
+        self.elements = elements    # List of expressions or nested initializers
+        self.subtype = subtype
+        self.target_type = target_type  # The expected type (struct/array)
+        self.expr_type = target_type    # Result type of this initializer
 
     def __repr__(self):
+        subtype_str = ["TUPLE", "LINEAR", "NAMED"][self.subtype]
         elements_str = ", ".join(repr(e) for e in self.elements)
-        return "Tuple(%s)" % elements_str
+        return "Initializer(%s, %s, [%s])" % (
+            subtype_str, var_type_to_string(self.target_type), elements_str)
 
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
@@ -806,28 +808,33 @@ class Parser:
 
         return StructDefNode(struct_name, parent_name, fields, struct_id)
 
-    def register_tuple_type(self, element_types, is_type_annotation=False):
+    def register_tuple_type(self, elements_or_types, is_type_annotation=False):
         """
-        Register a tuple type with the given element types
-        Works for both tuple expressions and tuple type annotations
+        Register a tuple type with the given elements
+        Works for both initializer expressions and tuple type annotations
 
         Args:
-            element_types: List of type IDs for tuple fields
+            elements_or_types: List of type IDs or expression nodes
+            is_type_annotation: Whether this is a type annotation (True) or expression (False)
 
         Returns:
             The struct ID for the tuple type
         """
-        # Generate a unique struct type name for this tuple
         if is_type_annotation:
             # Element types are already type IDs (from type annotations)
-            type_list = element_types
-            elements_str = "_".join(var_type_to_string(t) for t in element_types)
+            type_list = elements_or_types
         else:
-            # Element types are from expressions, need to extract the expr_type
-            type_list = [e.expr_type for e in element_types]
-            elements_str = "_".join(var_type_to_string(t) for t in type_list)
+            # Elements are expression nodes, extract types
+            type_list = []
+            for elem in elements_or_types:
+                if elem.node_type == AST_NODE_GENERIC_INITIALIZER:
+                    type_list.append(elem.expr_type)
+                else:
+                    type_list.append(elem.expr_type)
 
-        struct_name = "_tuple_%d_%s" % (len(element_types), elements_str)
+        # Generate a unique struct type name for this tuple
+        elements_str = "_".join(var_type_to_string(t) for t in type_list)
+        struct_name = "_tuple_%d_%s" % (len(type_list), elements_str)
 
         # Register the tuple as an anonymous struct if not already registered
         if not type_registry.struct_exists(struct_name):
@@ -840,7 +847,7 @@ class Parser:
         return struct_id
 
     def parse_tuple_type(self):
-        """Parse a tuple type annotation: (type1, type2, ...)"""
+        """Parse a tuple type annotation: {type1, type2, ...}"""
         self.advance()  # Skip '{'
 
         element_types = []
@@ -858,42 +865,78 @@ class Parser:
         # Register and return the tuple type ID
         return self.register_tuple_type(element_types, is_type_annotation=True)
 
-    def parse_tuple_expression(self):
-        """Parse a tuple expression: (expr1, expr2, ...)"""
+    def parse_initializer_expression(self, target_type=TYPE_UNKNOWN):
+        """Parse an initializer expression: {expr1, expr2, ...} or {{...}, {...}}"""
         self.consume(TT_LBRACE)  # Skip '{'
 
         elements = []
+        subtype = INITIALIZER_SUBTYPE_TUPLE  # Default
 
-        # Empty tuple not allowed
+        # Determine subtype based on target_type
+        if target_type != TYPE_UNKNOWN:
+            if is_struct_type(target_type):
+                subtype = INITIALIZER_SUBTYPE_LINEAR
+
+        # Empty initializer not allowed (for now)
         if self.token.type == TT_RBRACE:
-            self.error("Empty tuples are not supported")
+            self.error("Empty initializers are not supported")
 
-        # Parse first element
-        elements = [self.expression(0)]
-
-        # Parse remaining elements
+        # Parse elements recursively
         while True:
-            # Check if we've reached the end of the tuple
+            if self.token.type == TT_LBRACE:
+                # Nested initializer - derive element type based on context
+                element_type = TYPE_UNKNOWN
+                if subtype == INITIALIZER_SUBTYPE_LINEAR:
+                    if is_struct_type(target_type):
+                        # Get field type for the current index
+                        field_index = len(elements)
+                        struct_name = type_registry.get_struct_name(target_type)
+                        fields = type_registry.get_all_fields(struct_name)
+                        if field_index < len(fields):
+                            _, element_type = fields[field_index]
+
+                # Recursively parse nested initializer
+                nested_init = self.parse_initializer_expression(element_type)
+                elements.append(nested_init)
+            else:
+                # Regular expression element
+                elements.append(self.expression(0))
+
+            # Check for end of initializer or comma
             if self.token.type != TT_COMMA:
                 break
 
             self.advance()  # Skip comma
 
-            # Parse the next element
-            elements.append(self.expression(0))
-
         self.consume(TT_RBRACE)
 
-        # Create tuple node
-        tuple_node = TupleNode(elements)
+        # Create initializer node
+        init_node = GenericInitializerNode(elements, subtype, target_type)
 
-        # Register and get the tuple type
-        struct_id = self.register_tuple_type(elements, is_type_annotation=False)
-        
-        # Set the type of the tuple node
-        tuple_node.expr_type = struct_id
-        
-        return tuple_node
+        # Handle type inference for tuple initializers
+        if subtype == INITIALIZER_SUBTYPE_TUPLE:
+            # Register anonymous struct type
+            struct_id = self.register_tuple_type(elements, is_type_annotation=False)
+            init_node.expr_type = struct_id
+
+        # Type validation for LINEAR initializers
+        if subtype == INITIALIZER_SUBTYPE_LINEAR and is_struct_type(target_type):
+            struct_name = type_registry.get_struct_name(target_type)
+            fields = type_registry.get_all_fields(struct_name)
+
+            # Validate field count
+            if len(elements) != len(fields):
+                self.error("Initializer for %s has %d elements, but struct has %d fields" % 
+                          (struct_name, len(elements), len(fields)))
+
+            # Validate field types
+            for i, elem in enumerate(elements):
+                _, field_type = fields[i]
+                if not can_promote(elem.expr_type, field_type):
+                    self.type_mismatch_error("Field %d in %s initializer" % (i+1, struct_name), 
+                                            elem.expr_type, field_type)
+
+        return init_node
 
     def nud(self, t):
         # Handle number literals using the type mapping
@@ -947,7 +990,7 @@ class Parser:
             return UnaryOpNode(t.value, expr, expr.expr_type)
 
         if t.type == TT_LBRACE:
-            return self.parse_tuple_expression()
+            return self.parse_initializer_expression()
 
         if t.type == TT_LPAREN:
             expr = self.expression(0)
@@ -1170,9 +1213,11 @@ class Parser:
                 return ReturnNode(None)
 
             # Return with value
-            # Special handling for tuple expressions in return statements
+            # Special handling for initializers in return statements
             if self.token.type == TT_LBRACE:
-                expr = self.parse_tuple_expression()
+                # Get return type from current function
+                func_return_type = type_registry.get_func_from_id(self.current_function).return_type
+                expr = self.parse_initializer_expression(func_return_type)
             else:
                 expr = self.expression(0)
 
@@ -1184,14 +1229,9 @@ class Parser:
                 fn = type_registry.get_func_from_id(self.current_function).name
                 self.error("Void function '%s' cannot return a value" % fn)
 
-            # If we're returning a tuple, make sure it matches the function's return type
-            if expr.node_type == AST_NODE_TUPLE:
-                if not is_struct_type(func_return_type):
-                    self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
-            else:
-                # Check that return expression type matches function return type
-                if not can_promote(expr.expr_type, func_return_type):
-                    self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
+            # Check that return expression type matches function return type
+            if not can_promote(expr.expr_type, func_return_type):
+                self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
 
             self.check_statement_end()
             return ReturnNode(expr)
@@ -1229,7 +1269,10 @@ class Parser:
                 self.advance()  # Skip the := operator
 
                 # Parse the initializer expression
-                expr = self.expression(0)
+                if self.token.type == TT_LBRACE:
+                    expr = self.parse_initializer_expression()
+                else:
+                    expr = self.expression(0)
 
                 # In global scope, ensure only literal initializers
                 if self.current_function == -1 and self.seen_main_function:
@@ -1253,6 +1296,9 @@ class Parser:
                 elif expr.node_type == AST_NODE_NEW:
                     # Set var_type to reference type
                     var_type = expr.expr_type  # Already a reference type
+                elif expr.node_type == AST_NODE_GENERIC_INITIALIZER:
+                    # For initializers, use the inferred type
+                    var_type = expr.expr_type
                 elif hasattr(expr, 'expr_type'):
                     var_type = expr.expr_type
                 else:
@@ -1266,8 +1312,12 @@ class Parser:
 
                 self.advance()  # Skip the = sign
 
-                # Parse the initializer expression
-                expr = self.expression(0)
+                # Check for initializer syntax
+                if self.token.type == TT_LBRACE:
+                    expr = self.parse_initializer_expression(var_type)
+                else:
+                    # Parse the initializer expression
+                    expr = self.expression(0)
 
                 # In global scope, ensure only literal initializers
                 if self.current_function == -1 and self.seen_main_function:
@@ -1493,4 +1543,3 @@ class Parser:
 
 
 ### END OF COMPILER.PY
-

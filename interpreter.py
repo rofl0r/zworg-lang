@@ -51,7 +51,7 @@ class Interpreter(object):
             AST_NODE_MEMBER_ACCESS: self.visit_member_access,
             AST_NODE_NEW: self.visit_new,
             AST_NODE_DEL: self.visit_del,
-            AST_NODE_TUPLE: self.visit_tuple,
+            AST_NODE_GENERIC_INITIALIZER: self.visit_generic_initializer,
             AST_NODE_STRUCT_INITIALIZER: self.visit_struct_initializer,
         }
 
@@ -569,27 +569,40 @@ class Interpreter(object):
         # In a real implementation, this would free memory
         return None
 
-    def visit_tuple(self, node):
-        """Visit a tuple expression node"""
-        # Since tuples are implemented as anonymous structs, we need to:
-        # 1. Get the tuple's struct type name from its expr_type
-        # 2. Create a struct instance
-        # 3. Set each field (_0, _1, etc.) to its corresponding value
-        
+    def visit_generic_initializer(self, node):
+        """Visit a generic initializer node handling tuples, structs, and arrays"""
         # Get struct name from type registry
         struct_name = type_registry.get_struct_name(node.expr_type)
         if not struct_name:
-            raise CompilerException("Unknown tuple type")
-            
-        # Create a struct instance for the tuple
+            raise CompilerException("Unknown initializer type")
+
+        # Create a struct instance
         instance = StructInstance(node.expr_type, struct_name)
-        
-        # Evaluate each element and set the corresponding field
-        for i, elem in enumerate(node.elements):
-            field_name = "_%d" % i
-            value = self.evaluate(elem)
-            instance.fields[field_name] = value
-            
+
+        # Get struct fields for validation in LINEAR mode
+        all_fields = []
+        if node.subtype == INITIALIZER_SUBTYPE_LINEAR:
+            all_fields = type_registry.get_all_fields(struct_name)
+
+        # Initialize fields based on initializer subtype
+        if node.subtype == INITIALIZER_SUBTYPE_TUPLE:
+            # For tuples, use numerical field names (_0, _1, etc.)
+            for i, elem in enumerate(node.elements):
+                field_name = "_%d" % i
+                value = self.evaluate(elem)
+                instance.fields[field_name] = value
+
+        elif node.subtype == INITIALIZER_SUBTYPE_LINEAR:
+            # For linear initializers, assign values to fields in order
+            for i, (field_name, _) in enumerate(all_fields):
+                if i < len(node.elements):
+                    value = self.evaluate(node.elements[i])
+                    instance.fields[field_name] = value
+
+        elif node.subtype == INITIALIZER_SUBTYPE_NAMED:
+            # Reserved for future C99-style named initializers
+            raise CompilerException("Named initializers not yet implemented")
+
         return instance
 
     def visit_struct_initializer(self, node):
@@ -597,14 +610,14 @@ class Interpreter(object):
         # Create a new struct instance of the appropriate type
         if node.struct_type is None:
             raise CompilerException("Struct type not set for initializer")
-            
+
         struct_name = type_registry.get_struct_name(node.struct_type)
         if not struct_name:
             raise CompilerException("Unknown struct type")
-            
+
         # Create the struct instance
         instance = StructInstance(node.struct_type, struct_name)
-        
+
         # Initialize all fields with default values first
         all_fields = type_registry.get_all_fields(struct_name)
         for field_name, field_type in all_fields:
@@ -622,10 +635,10 @@ class Interpreter(object):
         for field_name, field_expr in node.field_initializers:
             # Evaluate the field value
             value = self.evaluate(field_expr)
-            
+
             # Set the field value
             instance.fields[field_name] = value
-            
+
         return instance
 
 # Custom exceptions for control flow

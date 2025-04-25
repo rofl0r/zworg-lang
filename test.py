@@ -16,6 +16,119 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "tuple initializer with type inference",
+            "code": """
+                def main() do
+                    var t := {1, 2, 3}
+                    var s := {"hello", 42}
+                    var x:= t._0 + t._1 + t._2
+                    var y:= s._0 + " " + "world"
+                    var z:= s._1
+                end
+            """,
+            "expected_env": {"x": 6, "y": "hello world", "z": 42}
+        },
+        {
+            "name": "struct initializer with type annotation",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = {10, 20}
+                    var x:=p.x
+                    var y:=p.y
+                end
+            """,
+            "expected_env": {"x": 10, "y":20}
+        },
+        {
+            "name": "return struct initializer from function",
+            "code": """
+                struct Point do x:int; y:int; end
+                def makePoint(a:int, b:int):Point do
+                    return {a, b}
+                end
+                def main() do
+                    var p := makePoint(10, 20)
+                    var x := p.x
+                    var y := p.y
+                end
+            """,
+            "expected_env": {"x": 10, "y":20}
+        },
+        {
+            "name": "nested initializers",
+            "code": """
+                struct Point do x:int; y:int; end
+                struct Rect do
+                    topleft:Point; bottomright:Point
+                end
+                def main() do
+                    var r:Rect = {{1, 2}, {3, 4}}
+                    var a:= r.topleft.x
+                    var b:= r.topleft.y
+                    var c:= r.bottomright.x
+                    var d:= r.bottomright.y
+                end
+            """,
+            "expected_env": {"a": 1, "b":2, "c":3, "d":4}
+        },
+        {
+            "name": "mixed types in tuple initializer",
+            "code": """
+                def main() do
+                    var t := {1, "hello", 2.5}
+                    var a:= t._0
+                    var b:= t._1
+                    var c:= t._2
+                end
+            """,
+            "expected_env": {"a": 1, "b":"hello", "c":2.5}
+        },
+        {
+            "name": "struct initializer with multiple fields",
+            "code": """
+                struct Person do
+                    name:string
+                    age:int
+                    height:float
+                end
+                def main() do
+                    var p:Person = {"John", 30, 1.85}
+                    var a:= p.name
+                    var b:= p.age
+                    var c:= p.height
+                end
+            """,
+            "expected_env": {"a": "John", "b": 30, "c": 1.85}
+        },
+        {
+            "name": "nested tuple in struct initializer",
+            "code": """
+                struct Container do
+                    data:{int, string}
+                end
+                def main() do
+                    var c:Container = {{1, "hello"}}
+                    var i := c.data._0
+                    var s := c.data._1
+                end
+            """,
+            "expected_env": {"i": 1, "s": "hello"}
+        },
+        {
+            "name": "mixed struct and tuple initializers",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = {10, 20}
+                    var t := {p, "coordinate"}
+                    var x := t._0.x
+                    var s := t._1
+                end
+            """,
+            "expected_env": {"x": 10, "s": "coordinate"}
+        },
+        {
             "name": "operator precedence - unary op vs member access",
             "code": """
                 struct BitHolder do value: int; end
@@ -1386,7 +1499,81 @@ def test():
             end
         """,
         "expected_error": "constructor invocation requires parenthesis"
-    }
+    },
+        {
+            "name": "struct initializer with wrong field count",
+            "code": """
+                struct Point do
+                    x:int
+                    y:int
+                end
+                
+                def main() do
+                    var p:Point = {1, 2, 3}  // Too many values
+                end
+            """,
+            "expected_error": "Initializer for Point has 3 elements, but struct has 2 fields"
+        },
+        {
+            "name": "struct initializer with type mismatch",
+            "code": """
+                struct Point do
+                    x:int
+                    y:string
+                end
+                
+                def main() do
+                    var p:Point = {1, 2}  // y should be string
+                end
+            """,
+            "expected_error": "Field 2 in Point initializer: cannot convert int to string"
+        },
+        {
+            "name": "nested initializer with wrong type",
+            "code": """
+                struct Point do
+                    x:int
+                    y:int
+                end
+                
+                struct Rect do
+                    topleft:Point
+                    bottomright:Point
+                end
+                
+                def main() do
+                    var r:Rect = {{1, 2}, {3, "4"}}  // Should be int, not string
+                end
+            """,
+            "expected_error": "Field 2 in Point initializer: cannot convert string to int"
+        },
+        {
+            "name": "initializer in return with type mismatch",
+            "code": """
+                struct Point do
+                    x:int
+                    y:int
+                end
+                
+                def makePoint():Point do
+                    return {1, "2"}  // y should be int
+                end
+                
+                def main() do
+                    var p := makePoint()
+                end
+            """,
+            "expected_error": "Field 2 in Point initializer: cannot convert string to int"
+        },
+        {
+            "name": "empty initializer",
+            "code": """
+                def main() do
+                    var t := {}
+                end
+            """,
+            "expected_error": "Empty initializers are not supported"
+        },
 
     ]
 
