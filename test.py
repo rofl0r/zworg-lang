@@ -41,6 +41,18 @@ def test():
             "expected_env": {"x": 10, "y":20}
         },
         {
+            "name": "partial struct initializer",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = {10}
+                    var x:=p.x
+                    var y:=p.y
+                end
+            """,
+            "expected_env": {"x": 10, "y":0}
+        },
+        {
             "name": "return struct initializer from function",
             "code": """
                 struct Point do x:int; y:int; end
@@ -71,6 +83,23 @@ def test():
                 end
             """,
             "expected_env": {"a": 1, "b":2, "c":3, "d":4}
+        },
+        {
+            "name": "nested partial initializers",
+            "code": """
+                struct Point do x:int; y:int; end
+                struct Rect do
+                    topleft:Point; bottomright:Point
+                end
+                def main() do
+                    var r:Rect = {{1}}
+                    var a:= r.topleft.x
+                    var b:= r.topleft.y
+                    var c:= r.bottomright.x
+                    var d:= r.bottomright.y
+                end
+            """,
+            "expected_env": {"a": 1, "b":0, "c":0, "d":0}
         },
         {
             "name": "mixed types in tuple initializer",
@@ -1507,12 +1536,11 @@ def test():
                     x:int
                     y:int
                 end
-                
                 def main() do
                     var p:Point = {1, 2, 3}  // Too many values
                 end
             """,
-            "expected_error": "Initializer for Point has 3 elements, but struct has 2 fields"
+            "expected_error": "Initializer for Point has 3 elements, but struct has only 2 fields"
         },
         {
             "name": "struct initializer with type mismatch",
@@ -1521,7 +1549,6 @@ def test():
                     x:int
                     y:string
                 end
-                
                 def main() do
                     var p:Point = {1, 2}  // y should be string
                 end

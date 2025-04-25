@@ -865,6 +865,29 @@ class Parser:
         # Register and return the tuple type ID
         return self.register_tuple_type(element_types, is_type_annotation=True)
 
+    def create_zero_value_node(self, field_type):
+        """Create an AST node with the appropriate zero/default value for a given type"""
+        if field_type == TYPE_STRING:
+            return StringNode("")
+        elif is_float_type(field_type):
+            return NumberNode(0.0, field_type)
+        elif is_struct_type(field_type):
+            # For struct fields, create a zero-filled initializer recursively
+            struct_name = type_registry.get_struct_name(field_type)
+            fields = type_registry.get_all_fields(struct_name)
+            zero_elements = []
+
+            for _, nested_field_type in fields:
+                zero_elements.append(self.create_zero_value_node(nested_field_type))
+
+            # Create initializer with zero elements
+            init_node = GenericInitializerNode(zero_elements, INITIALIZER_SUBTYPE_LINEAR, field_type)
+            init_node.expr_type = field_type
+            return init_node
+        else:
+            # For all other types (int, etc.), use 0
+            return NumberNode(0, field_type)
+
     def parse_initializer_expression(self, target_type=TYPE_UNKNOWN):
         """Parse an initializer expression: {expr1, expr2, ...} or {{...}, {...}}"""
         self.consume(TT_LBRACE)  # Skip '{'
@@ -928,10 +951,16 @@ class Parser:
             struct_name = type_registry.get_struct_name(target_type)
             fields = type_registry.get_all_fields(struct_name)
 
-            # Validate field count
-            if len(elements) != len(fields):
-                self.error("Initializer for %s has %d elements, but struct has %d fields" % 
+            # Validate field count - too many elements is an error
+            if len(elements) > len(fields):
+                self.error("Initializer for %s has %d elements, but struct has only %d fields" % 
                           (struct_name, len(elements), len(fields)))
+
+            # Fill in missing fields with zero values
+            if len(elements) < len(fields):
+                for i in range(len(elements), len(fields)):
+                    _, field_type = fields[i]
+                    elements.append(self.create_zero_value_node(field_type))
 
             # Validate field types
             for i, elem in enumerate(elements):
