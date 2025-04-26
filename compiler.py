@@ -589,6 +589,7 @@ class Parser:
         """
         # Get object type
         obj_type = obj_node.expr_type
+        obj_ref_kind = obj_node.ref_kind  # Get object's reference kind
         # No need to unwrap reference since we track ref_kind separately
         base_type = obj_type
 
@@ -632,7 +633,7 @@ class Parser:
             if field_type is None:
                 self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
 
-            return MemberAccessNode(obj_node, member_name, field_type)
+            return MemberAccessNode(obj_node, member_name, field_type, obj_ref_kind)
 
     def function_declaration(self):
         """Parse a function declaration or method definition"""
