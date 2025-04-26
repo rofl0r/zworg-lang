@@ -12,6 +12,7 @@ class ASTNode(object):
     def __init__(self, node_type=AST_NODE_BASE):
         self.node_type = node_type
         self.expr_type = TYPE_UNKNOWN
+        self.ref_kind = REF_KIND_NONE
 
     def __repr__(self):
         return "%s" % ast_node_type_to_string(self.node_type)
@@ -35,26 +36,28 @@ class StringNode(ASTNode):
         return "String(\"%s\")" % self.value
 
 class VariableNode(ASTNode):
-    def __init__(self, name, var_type):
+    def __init__(self, name, var_type, ref_kind=REF_KIND_NONE):
         ASTNode.__init__(self, AST_NODE_VARIABLE)
         self.name = name
         self.expr_type = var_type
+        self.ref_kind = ref_kind
 
     def __repr__(self):
-        return "Var(%s, %s)" % (self.name, registry.var_type_to_string(self.expr_type))
+        return "Var(%s, %s)" % (self.name, registry.format_type_with_ref_kind(self.expr_type))
 
 class BinaryOpNode(ASTNode):
-    def __init__(self, operator, left, right, result_type):
+    def __init__(self, operator, left, right, result_type, ref_kind=REF_KIND_NONE):
         ASTNode.__init__(self, AST_NODE_BINARY_OP)
         self.operator = operator
         self.left = left
         self.right = right
         self.expr_type = result_type
+        self.ref_kind = ref_kind
 
     def __repr__(self):
         return "BinaryOp(%s, %s, %s) -> %s" % (
             self.operator, repr(self.left), repr(self.right),
-            registry.var_type_to_string(self.expr_type)
+            registry.format_type_with_ref_kind(self.expr_type)
         )
 
 class UnaryOpNode(ASTNode):
@@ -70,29 +73,31 @@ class UnaryOpNode(ASTNode):
         )
 
 class AssignNode(ASTNode):
-    def __init__(self, var_name, expr, var_type):
+    def __init__(self, var_name, expr, var_type, ref_kind=REF_KIND_NONE):
         ASTNode.__init__(self, AST_NODE_ASSIGN)
         self.var_name = var_name
         self.expr = expr
         self.expr_type = var_type
+        self.ref_kind = ref_kind
 
     def __repr__(self):
         return "Assign(%s, %s) -> %s" % (
-            self.var_name, repr(self.expr), registry.var_type_to_string(self.expr_type)
+            self.var_name, repr(self.expr), registry.format_type_with_ref_kind(self.expr_type)
         )
 
 class CompoundAssignNode(ASTNode):
-    def __init__(self, op_type, var_name, expr, var_type):
+    def __init__(self, op_type, var_name, expr, var_type, ref_kind=REF_KIND_NONE):
         ASTNode.__init__(self, AST_NODE_COMPOUND_ASSIGN)
         self.op_type = op_type
         self.var_name = var_name
         self.expr = expr
         self.expr_type = var_type
+        self.ref_kind = ref_kind
 
     def __repr__(self):
         op_name = token_name(self.op_type)
         return "CompoundAssign(%s, %s, %s) -> %s" % (
-            op_name, self.var_name, repr(self.expr), registry.var_type_to_string(self.expr_type)
+            op_name, self.var_name, repr(self.expr), registry.format_type_with_ref_kind(self.expr_type)
         )
 
 class PrintNode(ASTNode):
@@ -158,12 +163,13 @@ class ExprStmtNode(ASTNode):
         return "ExprStmt(%s)" % repr(self.expr)
 
 class VarDeclNode(ASTNode):
-    def __init__(self, decl_type, var_name, var_type, expr):
+    def __init__(self, decl_type, var_name, var_type, expr, ref_kind=REF_KIND_NONE):
         ASTNode.__init__(self, AST_NODE_VAR_DECL)
         self.decl_type = decl_type
         self.var_name = var_name
         self.var_type = var_type
         self.expr = expr
+        self.ref_kind = ref_kind
 
     def __repr__(self):
         decl_type_str = "var" if self.decl_type == TT_VAR else "let"
@@ -265,11 +271,12 @@ class StructInitNode(ASTNode):
         return "StructInit(%s(%s))" % (self.struct_name, args_str)
 
 class MemberAccessNode(ASTNode):
-    def __init__(self, obj, member_name, member_type):
+    def __init__(self, obj, member_name, member_type, ref_kind=REF_KIND_NONE):
         ASTNode.__init__(self, AST_NODE_MEMBER_ACCESS)
         self.obj = obj  # Object expression
         self.member_name = member_name
         self.expr_type = member_type
+        self.ref_kind = ref_kind
 
     def __repr__(self):
         return "MemberAccess(%s.%s)" % (repr(self.obj), self.member_name)
@@ -296,10 +303,11 @@ class NewNode(ASTNode):
     def __init__(self, struct_init):
         ASTNode.__init__(self, AST_NODE_NEW)
         self.struct_init = struct_init
-        self.expr_type = registry.make_ref_type(struct_init.expr_type)
+        self.expr_type = struct_init.expr_type
+        self.ref_kind = REF_KIND_HEAP
 
     def __repr__(self):
-        return "New(%s)" % repr(self.struct_init)
+        return "New(%s) -> heap_ref<%s>" % (repr(self.struct_init), registry.var_type_to_string(self.expr_type))
 
 class DelNode(ASTNode):
     def __init__(self, expr):
@@ -338,6 +346,7 @@ class Parser:
         self.variables = {"global": set()}  # Track declared variables per scope
         self.constants = {"global": set()}  # Track constants (let declarations) per scope
         self.var_types = {"global": {}}     # Track variable types per scope
+        self.var_ref_kinds = {"global": {}} # Track variable reference kinds per scope
 
         # Track if we've seen functions - used to enforce globals-before-functions rule
         self.seen_main_function = False
@@ -406,6 +415,7 @@ class Parser:
         self.variables[scope_name] = set()
         self.constants[scope_name] = set()
         self.var_types[scope_name] = {}
+        self.var_ref_kinds[scope_name] = {}
 
     def leave_scope(self):
         """Leave the current scope"""
@@ -440,7 +450,7 @@ class Parser:
                 return self.var_types[scope][var_name]
         return TYPE_UNKNOWN
 
-    def declare_variable(self, var_name, var_type, is_const=False):
+    def declare_variable(self, var_name, var_type, is_const=False, ref_kind=REF_KIND_NONE):
         """Declare a variable in the current scope"""
         current = self.current_scope()
         # Check if already declared in current scope
@@ -449,9 +459,19 @@ class Parser:
 
         self.variables[current].add(var_name)
         self.var_types[current][var_name] = var_type
+        self.var_ref_kinds[current][var_name] = ref_kind
+
         if is_const:
             self.constants[current].add(var_name)
         return True
+
+    def get_variable_ref_kind(self, var_name):
+        """Get a variable's reference kind from the appropriate scope"""
+        # Check all scopes from current to global
+        for scope in reversed(self.scopes):
+            if var_name in self.var_ref_kinds[scope]:
+                return self.var_ref_kinds[scope][var_name]
+        return REF_KIND_NONE
 
     def error(self, message):
         """Raise a compiler exception with current token information"""
@@ -499,13 +519,31 @@ class Parser:
             left = self.led(t, left)
         return left
 
-    def check_type_compatibility(self, var_name, expr_type):
+    def check_type_compatibility(self, var_name, expr):
         """Check if the expression's type is compatible with the variable's type"""
         # Get variable type from the appropriate scope
         var_type = self.get_variable_type(var_name)
 
-        if var_type is not None and var_type != TYPE_UNKNOWN and expr_type != TYPE_UNKNOWN and not can_promote(expr_type, var_type):
-            self.type_mismatch_assignment_error(var_name, expr_type, var_type)
+        # Retrieve the actual reference kind for the variable
+        var_ref_kind = self.get_variable_ref_kind(var_name)
+
+        if var_type != TYPE_UNKNOWN and expr.expr_type != TYPE_UNKNOWN:
+            # Check type and reference kind compatibility
+            if not self.can_promote_with_ref(expr.expr_type, expr.ref_kind, var_type, var_ref_kind):
+                self.type_mismatch_assignment_error(var_name, expr.expr_type, var_type)
+
+    def can_promote_with_ref(self, from_type, from_ref_kind, to_type, to_ref_kind):
+        """Check if types are compatible considering reference kinds"""
+        # References can't be promoted to non-references
+        if from_ref_kind != REF_KIND_NONE and to_ref_kind == REF_KIND_NONE:
+            return False
+
+        # For references, any ref_kind can be assigned to any other ref_kind
+        # (they're compatible from a typing perspective)
+        # Memory management needs to check ref_kind explicitly for del/cleanup operations
+
+        # Now check the underlying types
+        return can_promote(from_type, to_type)
 
     def check_argument_types(self, args, params, context_name):
         """Check if argument types match parameter types"""
@@ -549,7 +587,8 @@ class Parser:
         """
         # Get object type
         obj_type = obj_node.expr_type
-        base_type = registry.get_base_type(obj_type)  # Unwrap reference if needed
+        # No need to unwrap reference since we track ref_kind separately
+        base_type = obj_type
 
         if not registry.is_struct_type(base_type):
             self.error("Left side of '.' is not a struct type")
@@ -1019,7 +1058,10 @@ class Parser:
 
             # Get the variable type from the appropriate scope
             var_type = self.get_variable_type(var_name)
-            return VariableNode(var_name, var_type)
+            # Get the variable's reference kind
+            ref_kind = self.get_variable_ref_kind(var_name)
+
+            return VariableNode(var_name, var_type, ref_kind)
 
         if t.type in [TT_MINUS, TT_NOT, TT_BITNOT]:  # Unary operators
             expr = self.expression(UNARY_PRECEDENCE)
@@ -1086,6 +1128,7 @@ class Parser:
             # Get variable name from left side
             var_name = left.name
             var_type = self.get_variable_type(var_name)
+            var_ref_kind = self.get_variable_ref_kind(var_name)
 
             # Check if variable is a constant (declared with 'let')
             if self.is_constant(var_name):
@@ -1101,9 +1144,9 @@ class Parser:
                 right_type = self.get_variable_type(right_var)
 
             # Check type compatibility
-            self.check_type_compatibility(var_name, right.expr_type)
+            self.check_type_compatibility(var_name, right)
 
-            return AssignNode(var_name, right, var_type)
+            return AssignNode(var_name, right, var_type, var_ref_kind)
 
         # Handle member assignment (obj.field = value)
         elif t.type == TT_ASSIGN and left.node_type == AST_NODE_MEMBER_ACCESS:
@@ -1277,8 +1320,8 @@ class Parser:
             self.advance()
             expr = self.expression(0)
 
-            # Verify expr is a reference type
-            if not registry.is_ref_type(expr.expr_type):
+            # Verify expr is a heap reference
+            if expr.ref_kind != REF_KIND_HEAP:
                 self.error("'del' can only be used with reference types (created with 'new')")
 
             self.check_statement_end()
@@ -1380,10 +1423,13 @@ class Parser:
             if var_name in self.variables[self.current_scope()]:
                 self.already_declared_error(var_name)
 
+            # If initializing with a reference (from new), keep the reference kind
+            ref_kind = expr.ref_kind
+
             # Declare the variable in current scope
-            self.declare_variable(var_name, var_type, decl_type == TT_CONST)
+            self.declare_variable(var_name, var_type, decl_type == TT_CONST, ref_kind=ref_kind)
             self.check_statement_end()
-            return VarDeclNode(decl_type, var_name, var_type, expr)
+            return VarDeclNode(decl_type, var_name, var_type, expr, ref_kind=ref_kind)
 
         if self.token.type == TT_IF:
             return self.if_statement()
@@ -1504,12 +1550,13 @@ class Parser:
                     expr = self.expression(0)
 
                     # Check type compatibility for assignments
-                    self.check_type_compatibility(var, expr.expr_type)
+                    self.check_type_compatibility(var, expr)
 
                     # For compound operators, use CompoundAssignNode
                     if op != TT_ASSIGN:
+                        var_ref_kind = self.get_variable_ref_kind(var)
                         self.check_statement_end()
-                        return CompoundAssignNode(op, var, expr, var_type)
+                        return CompoundAssignNode(op, var, expr, var_type, var_ref_kind)
 
                     # Regular assignment
                     self.check_statement_end()
