@@ -479,13 +479,15 @@ class Parser:
 
     def type_mismatch_error(self, context, from_type, to_type):
         """Generate consistent type mismatch error messages"""
-        self.error("%s: cannot convert %s to %s" % 
+        self.error("%s: cannot convert %s to %s" %
                   (context, registry.var_type_to_string(from_type), registry.var_type_to_string(to_type)))
 
-    def type_mismatch_assignment_error(self, var_name, expr_type, var_type):
+    def type_mismatch_assignment_error(self, var_name, expr_type, expr_ref_kind, var_type, var_ref_kind):
         """Generate type mismatch error for assignment operations"""
         self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
-                  (registry.var_type_to_string(expr_type), var_name, registry.var_type_to_string(var_type)))
+                  (registry.format_type_with_ref_kind(expr_type, expr_ref_kind),
+                   var_name,
+                   registry.format_type_with_ref_kind(var_type, var_ref_kind)))
 
     def already_declared_error(self, var_name):
         """Generate error for already declared variables"""
@@ -530,7 +532,7 @@ class Parser:
         if var_type != TYPE_UNKNOWN and expr.expr_type != TYPE_UNKNOWN:
             # Check type and reference kind compatibility
             if not self.can_promote_with_ref(expr.expr_type, expr.ref_kind, var_type, var_ref_kind):
-                self.type_mismatch_assignment_error(var_name, expr.expr_type, var_type)
+                self.type_mismatch_assignment_error(var_name, expr.expr_type, expr.ref_kind, var_type, var_ref_kind)
 
     def can_promote_with_ref(self, from_type, from_ref_kind, to_type, to_ref_kind):
         """Check if types are compatible considering reference kinds"""
