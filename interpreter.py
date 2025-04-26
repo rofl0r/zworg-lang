@@ -406,7 +406,7 @@ class Interpreter(object):
         all_fields = registry.get_all_fields(node.struct_name)
         for field_name, field_type in all_fields:
             # Set default value based on type
-            if is_struct_type(field_type):
+            if registry.is_struct_type(field_type):
                 # For now, we don't auto-initialize nested structs
                 instance.fields[field_name] = None
             elif field_type == TYPE_STRING:

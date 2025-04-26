@@ -109,14 +109,14 @@ class TypeRegistry:
     def is_array_type(self, type_id):
         """Check if a type is an array"""
         # Get base type if this is a reference
-        base_type = get_base_type(type_id)
+        base_type = self.get_base_type(type_id)
         descriptor = self._type_descriptors.get(base_type)
         return descriptor and descriptor.kind == self.TYPE_KIND_ARRAY
 
     def get_array_element_type(self, array_type_id):
         """Get element type for an array"""
         # Get base type if this is a reference
-        base_type = get_base_type(array_type_id)
+        base_type = self.get_base_type(array_type_id)
         descriptor = self._type_descriptors.get(base_type)
         if descriptor and descriptor.kind == self.TYPE_KIND_ARRAY:
             return descriptor.element_type_id
@@ -125,7 +125,7 @@ class TypeRegistry:
     def get_array_size(self, array_type_id):
         """Get size for an array (None if dynamic)"""
         # Get base type if this is a reference
-        base_type = get_base_type(array_type_id)
+        base_type = self.get_base_type(array_type_id)
         descriptor = self._type_descriptors.get(base_type)
         if descriptor and descriptor.kind == self.TYPE_KIND_ARRAY:
             return descriptor.size
@@ -162,6 +162,13 @@ class TypeRegistry:
         self._struct_id_to_name[type_id] = name
 
         return type_id
+
+    def is_struct_type(self, type_id):
+        """Check if a type is a struct type using descriptor information"""
+        # Get base type (in case it's a reference)
+        base_type = self.get_base_type(type_id)
+        descriptor = self._type_descriptors.get(base_type)
+        return descriptor is not None and descriptor.kind == self.TYPE_KIND_STRUCT
 
     def add_field(self, struct_name, field_name, field_type, token=None):
         """Add a field to a struct definition"""
@@ -234,7 +241,7 @@ class TypeRegistry:
     def get_struct_name(self, type_id):
         """Get struct name from type ID"""
         # Handle reference types
-        base_type = get_base_type(type_id)
+        base_type = self.get_base_type(type_id)
 
         # Try descriptor system first
         descriptor = self._type_descriptors.get(base_type)
@@ -317,39 +324,65 @@ class TypeRegistry:
         self._next_funcid = 1
         self._func_map = {}
 
+    # This method can be an alias for var_type_to_string for internal usage
     def type_to_string(self, type_id):
-        """Convert type ID to string representation"""
-        # Use existing map for primitive types
-        if type_id in TYPE_TO_STRING_MAP:
-            return TYPE_TO_STRING_MAP[type_id]
+        """Alias for var_type_to_string for backward compatibility"""
+        return self.var_type_to_string(type_id)
 
+    def var_type_to_string(self, var_type):
+        """Convert a type ID to a readable string representation"""
         # Handle reference types
-        base_type = get_base_type(type_id)
-        is_ref = base_type != type_id
+        base_type = self.get_base_type(var_type)
+        is_ref = self.is_ref_type(var_type)
 
-        # Check descriptor system
+        # Basic primitive types
+        if base_type in TYPE_TO_STRING_MAP and not self.is_struct_type(base_type):
+            base_name = TYPE_TO_STRING_MAP[base_type]
+            return "ref to " + base_name if is_ref else base_name
+
+        # Check descriptor system for struct and array types
         descriptor = self._type_descriptors.get(base_type)
         if descriptor:
             if descriptor.kind == self.TYPE_KIND_STRUCT:
-                ref_prefix = "&" if is_ref else ""
-                return ref_prefix + descriptor.name
+                struct_name = self.get_struct_name(base_type)
+                return "ref to " + struct_name if is_ref else struct_name
+
             elif descriptor.kind == self.TYPE_KIND_ARRAY:
                 elem_type = descriptor.element_type_id
                 size = descriptor.size
-                elem_type_str = self.type_to_string(elem_type)
-                ref_prefix = "&" if is_ref else ""
+                elem_type_str = self.var_type_to_string(elem_type)
+
                 if size is not None:
-                    return "%s%s[%s]" % (ref_prefix, elem_type_str, size)
+                    array_str = "%s[%s]" % (elem_type_str, size)
                 else:
-                    return "%s%s[]" % (ref_prefix, elem_type_str)
+                    array_str = "%s[]" % elem_type_str
+
+                return "ref to " + array_str if is_ref else array_str
 
         # Fall back to struct name lookup
         struct_name = self._struct_id_to_name.get(base_type)
         if struct_name:
-            ref_prefix = "&" if is_ref else ""
-            return ref_prefix + struct_name
+            return "ref to " + struct_name if is_ref else struct_name
 
-        return "unknown_type_%d" % type_id
+        raise CompilerException("unknown_type_%d" % var_type)
+
+    # Type helpers for reference types
+    def is_ref_type(self, type_):
+        """Check if a type is a reference type"""
+        return (type_ & REF_TYPE_FLAG) != 0
+
+    def get_base_type(self, type_):
+        """Get the base type of a reference type"""
+        if self.is_ref_type(type_):
+            return type_ & ~REF_TYPE_FLAG
+        return type_
+
+    def make_ref_type(self, type_):
+        """Convert a type to its reference equivalent"""
+        if self.is_ref_type(type_):
+            return type_  # Already a reference
+        return type_ | REF_TYPE_FLAG
+
 
 # Singleton instance
 _registry = None

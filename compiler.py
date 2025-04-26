@@ -23,7 +23,7 @@ class NumberNode(ASTNode):
         self.expr_type = expr_type  # TYPE_INT, TYPE_FLOAT, etc.
 
     def __repr__(self):
-        return "Number(%s, %s)" % (self.value, var_type_to_string(self.expr_type))
+        return "Number(%s, %s)" % (self.value, registry.var_type_to_string(self.expr_type))
 
 class StringNode(ASTNode):
     def __init__(self, value):
@@ -41,7 +41,7 @@ class VariableNode(ASTNode):
         self.expr_type = var_type
 
     def __repr__(self):
-        return "Var(%s, %s)" % (self.name, var_type_to_string(self.expr_type))
+        return "Var(%s, %s)" % (self.name, registry.var_type_to_string(self.expr_type))
 
 class BinaryOpNode(ASTNode):
     def __init__(self, operator, left, right, result_type):
@@ -54,7 +54,7 @@ class BinaryOpNode(ASTNode):
     def __repr__(self):
         return "BinaryOp(%s, %s, %s) -> %s" % (
             self.operator, repr(self.left), repr(self.right),
-            var_type_to_string(self.expr_type)
+            registry.var_type_to_string(self.expr_type)
         )
 
 class UnaryOpNode(ASTNode):
@@ -66,7 +66,7 @@ class UnaryOpNode(ASTNode):
 
     def __repr__(self):
         return "UnaryOp(%s, %s) -> %s" % (
-            self.operator, repr(self.operand), var_type_to_string(self.expr_type)
+            self.operator, repr(self.operand), registry.var_type_to_string(self.expr_type)
         )
 
 class AssignNode(ASTNode):
@@ -78,7 +78,7 @@ class AssignNode(ASTNode):
 
     def __repr__(self):
         return "Assign(%s, %s) -> %s" % (
-            self.var_name, repr(self.expr), var_type_to_string(self.expr_type)
+            self.var_name, repr(self.expr), registry.var_type_to_string(self.expr_type)
         )
 
 class CompoundAssignNode(ASTNode):
@@ -92,7 +92,7 @@ class CompoundAssignNode(ASTNode):
     def __repr__(self):
         op_name = token_name(self.op_type)
         return "CompoundAssign(%s, %s, %s) -> %s" % (
-            op_name, self.var_name, repr(self.expr), var_type_to_string(self.expr_type)
+            op_name, self.var_name, repr(self.expr), registry.var_type_to_string(self.expr_type)
         )
 
 class PrintNode(ASTNode):
@@ -168,7 +168,7 @@ class VarDeclNode(ASTNode):
     def __repr__(self):
         decl_type_str = "var" if self.decl_type == TT_VAR else "let"
         return "VarDecl(%s, %s, %s, %s)" % (
-            decl_type_str, self.var_name, var_type_to_string(self.var_type), repr(self.expr)
+            decl_type_str, self.var_name, registry.var_type_to_string(self.var_type), repr(self.expr)
         )
 
 class FunctionDeclNode(ASTNode):
@@ -184,12 +184,12 @@ class FunctionDeclNode(ASTNode):
     def __repr__(self):
         name = self.name if self.parent_struct_id == -1 else "%s.%s"%(registry.get_struct_name(self.parent_struct_id), self.name)
         func_or_method = "Function" if self.parent_struct_id == -1 else "Method"
-        params_str = ", ".join(["%s:%s" % (pname, var_type_to_string(ptype)) for pname, ptype in self.params])
+        params_str = ", ".join(["%s:%s" % (pname, registry.var_type_to_string(ptype)) for pname, ptype in self.params])
         return "%s(%s(%s):%s, [%s])" % (
             func_or_method,
             name,
             params_str,
-            var_type_to_string(self.return_type),
+            registry.var_type_to_string(self.return_type),
             ", ".join(repr(stmt) for stmt in self.body),
         )
 
@@ -201,7 +201,7 @@ class ReturnNode(ASTNode):
 
     def __repr__(self):
         if self.expr:
-            return "Return(%s) -> %s" %(repr(self.expr), var_type_to_string(self.expr_type))
+            return "Return(%s) -> %s" %(repr(self.expr), registry.var_type_to_string(self.expr_type))
         else:
             return "Return()"
 
@@ -249,7 +249,7 @@ class StructDefNode(ASTNode):
 
     def __repr__(self):
         parent_str = "(%s)" % self.parent_name if self.parent_name else ""
-        fields_str = ", ".join(["%s:%s" % (name, var_type_to_string(type_)) for name, type_ in self.fields])
+        fields_str = ", ".join(["%s:%s" % (name, registry.var_type_to_string(type_)) for name, type_ in self.fields])
         return "StructDef(%s%s, [%s])" % (self.name, parent_str, fields_str)
 
 class StructInitNode(ASTNode):
@@ -296,7 +296,7 @@ class NewNode(ASTNode):
     def __init__(self, struct_init):
         ASTNode.__init__(self, AST_NODE_NEW)
         self.struct_init = struct_init
-        self.expr_type = make_ref_type(struct_init.expr_type)
+        self.expr_type = registry.make_ref_type(struct_init.expr_type)
 
     def __repr__(self):
         return "New(%s)" % repr(self.struct_init)
@@ -322,7 +322,7 @@ class GenericInitializerNode(ASTNode):
         subtype_str = ["TUPLE", "LINEAR", "NAMED"][self.subtype]
         elements_str = ", ".join(repr(e) for e in self.elements)
         return "Initializer(%s, %s, [%s])" % (
-            subtype_str, var_type_to_string(self.target_type), elements_str)
+            subtype_str, registry.var_type_to_string(self.target_type), elements_str)
 
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
@@ -356,7 +356,7 @@ class Parser:
             return TYPE_STRING if type1 == type2 else None
 
         # Handle struct types - they must be identical
-        if is_struct_type(type1) or is_struct_type(type2):
+        if registry.is_struct_type(type1) or registry.is_struct_type(type2):
             return type1 if type1 == type2 else None
 
         # If either operand is floating point, result is the highest precision float
@@ -394,7 +394,7 @@ class Parser:
 
         # Bitwise operators require integer operands
         if op in ['&', '|', 'xor', 'shl', 'shr']:
-            if is_float_type(left_type) or is_float_type(right_type) or is_struct_type(left_type) or is_struct_type(right_type):
+            if is_float_type(left_type) or is_float_type(right_type) or registry.is_struct_type(left_type) or registry.is_struct_type(right_type):
                 self.error("Bitwise operators require integer operands")
 
         # Arithmetic operators
@@ -460,12 +460,12 @@ class Parser:
     def type_mismatch_error(self, context, from_type, to_type):
         """Generate consistent type mismatch error messages"""
         self.error("%s: cannot convert %s to %s" % 
-                  (context, var_type_to_string(from_type), var_type_to_string(to_type)))
+                  (context, registry.var_type_to_string(from_type), registry.var_type_to_string(to_type)))
 
     def type_mismatch_assignment_error(self, var_name, expr_type, var_type):
         """Generate type mismatch error for assignment operations"""
         self.error("Type mismatch: can't assign a value of type %s to %s (type %s)" % 
-                  (var_type_to_string(expr_type), var_name, var_type_to_string(var_type)))
+                  (registry.var_type_to_string(expr_type), var_name, registry.var_type_to_string(var_type)))
 
     def already_declared_error(self, var_name):
         """Generate error for already declared variables"""
@@ -539,7 +539,7 @@ class Parser:
         """Helper to check field assignment type compatibility"""
         if not can_promote(from_type, to_type):
             self.error("Type mismatch: cannot assign %s to field of type %s" % 
-                      (var_type_to_string(from_type), var_type_to_string(to_type)))
+                      (registry.var_type_to_string(from_type), registry.var_type_to_string(to_type)))
 
     def parse_member_access(self, obj_node):
         """
@@ -549,9 +549,9 @@ class Parser:
         """
         # Get object type
         obj_type = obj_node.expr_type
-        base_type = get_base_type(obj_type)  # Unwrap reference if needed
+        base_type = registry.get_base_type(obj_type)  # Unwrap reference if needed
 
-        if not is_struct_type(base_type):
+        if not registry.is_struct_type(base_type):
             self.error("Left side of '.' is not a struct type")
 
         struct_name = registry.get_struct_name(base_type)
@@ -836,7 +836,7 @@ class Parser:
                     type_list.append(elem.expr_type)
 
         # Generate a unique struct type name for this tuple
-        elements_str = "_".join(var_type_to_string(t) for t in type_list)
+        elements_str = "_".join(registry.var_type_to_string(t) for t in type_list)
         struct_name = "_tuple_%d_%s" % (len(type_list), elements_str)
 
         # Register the tuple as an anonymous struct if not already registered
@@ -874,7 +874,7 @@ class Parser:
             return StringNode("")
         elif is_float_type(field_type):
             return NumberNode(0.0, field_type)
-        elif is_struct_type(field_type):
+        elif registry.is_struct_type(field_type):
             # For struct fields, create a zero-filled initializer recursively
             struct_name = registry.get_struct_name(field_type)
             fields = registry.get_all_fields(struct_name)
@@ -900,7 +900,7 @@ class Parser:
 
         # Determine subtype based on target_type
         if target_type != TYPE_UNKNOWN:
-            if is_struct_type(target_type):
+            if registry.is_struct_type(target_type):
                 subtype = INITIALIZER_SUBTYPE_LINEAR
                 # Check if struct has a constructor - if so, initializer is not allowed
                 if registry.get_method(target_type, "init"):
@@ -917,7 +917,7 @@ class Parser:
                 # Nested initializer - derive element type based on context
                 element_type = TYPE_UNKNOWN
                 if subtype == INITIALIZER_SUBTYPE_LINEAR:
-                    if is_struct_type(target_type):
+                    if registry.is_struct_type(target_type):
                         # Get field type for the current index
                         field_index = len(elements)
                         struct_name = registry.get_struct_name(target_type)
@@ -950,7 +950,7 @@ class Parser:
             init_node.expr_type = struct_id
 
         # Type validation for LINEAR initializers
-        if subtype == INITIALIZER_SUBTYPE_LINEAR and is_struct_type(target_type):
+        if subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_struct_type(target_type):
             struct_name = registry.get_struct_name(target_type)
             fields = registry.get_all_fields(struct_name)
 
@@ -1278,7 +1278,7 @@ class Parser:
             expr = self.expression(0)
 
             # Verify expr is a reference type
-            if not is_ref_type(expr.expr_type):
+            if not registry.is_ref_type(expr.expr_type):
                 self.error("'del' can only be used with reference types (created with 'new')")
 
             self.check_statement_end()

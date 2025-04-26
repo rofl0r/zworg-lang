@@ -405,40 +405,6 @@ def token_name(token_type):
     """Convert a token type number to its name for better debugging"""
     return TOKEN_NAMES.get(token_type, str(token_type))
 
-# Type helpers for struct and reference types
-def is_struct_type(type_):
-    """Check if a type is a struct type"""
-    return type_ >= TYPE_STRUCT_BASE and (type_ & REF_TYPE_FLAG) == 0
-
-def is_ref_type(type_):
-    """Check if a type is a reference type"""
-    return (type_ & REF_TYPE_FLAG) != 0
-
-def get_base_type(type_):
-    """Get the base type of a reference type"""
-    if is_ref_type(type_):
-        return type_ & ~REF_TYPE_FLAG
-    return type_
-
-def make_ref_type(type_):
-    """Convert a type to its reference equivalent"""
-    if is_ref_type(type_):
-        return type_  # Already a reference
-    return type_ | REF_TYPE_FLAG
-
-def var_type_to_string(var_type):
-    """Convert a variable type constant to a string for error messages using the map"""
-    if is_ref_type(var_type):
-        base_type = get_base_type(var_type)
-        base_type_name = var_type_to_string(base_type)
-        return "ref to " + base_type_name
-    elif is_struct_type(var_type):
-        # Import here to avoid circular imports
-        from type_registry import get_struct_name
-        struct_name = get_struct_name(var_type)
-        return struct_name if struct_name else "unknown struct"
-    return TYPE_TO_STRING_MAP.get(var_type, "unknown")
-
 def ast_node_type_to_string(node_type):
     """Convert AST node type to string for debugging"""
     type_names = {
@@ -487,6 +453,11 @@ def can_promote(from_type, to_type):
 
     # Everything else is not allowed
     return False
+
+# Reference kinds
+#REF_KIND_NONE = 0 # Not a reference (regular value)
+#REF_KIND_HEAP = 1 # Heap-allocated (new operator)
+#REF_KIND_STACK = 2 # Stack reference (byref parameter)
 
 # Generic initializer subtypes
 INITIALIZER_SUBTYPE_TUPLE = 0     # Type inferred from elements
