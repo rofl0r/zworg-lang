@@ -2,7 +2,10 @@
 
 from shared import *
 from lexer import Token, Lexer
-import type_registry
+from type_registry import get_registry
+
+# import registry singleton
+registry = get_registry()
 
 # Base class for all AST nodes
 class ASTNode(object):
@@ -179,7 +182,7 @@ class FunctionDeclNode(ASTNode):
         self.parent_struct_id = parent_struct_id  # -1 for global functions
 
     def __repr__(self):
-        name = self.name if self.parent_struct_id == -1 else "%s.%s"%(type_registry.get_struct_name(self.parent_struct_id), self.name)
+        name = self.name if self.parent_struct_id == -1 else "%s.%s"%(registry.get_struct_name(self.parent_struct_id), self.name)
         func_or_method = "Function" if self.parent_struct_id == -1 else "Method"
         params_str = ", ".join(["%s:%s" % (pname, var_type_to_string(ptype)) for pname, ptype in self.params])
         return "%s(%s(%s):%s, [%s])" % (
@@ -551,7 +554,7 @@ class Parser:
         if not is_struct_type(base_type):
             self.error("Left side of '.' is not a struct type")
 
-        struct_name = type_registry.get_struct_name(base_type)
+        struct_name = registry.get_struct_name(base_type)
 
         # Parse member name
         if self.token.type != TT_IDENT:
@@ -566,11 +569,11 @@ class Parser:
             self.advance()  # Skip '('
 
             # Get method details directly from registry
-            method_id = type_registry.lookup_function(member_name, base_type)
+            method_id = registry.lookup_function(member_name, base_type)
             if method_id == -1:
                 self.error("Method '%s' not found in struct '%s'" % (member_name, struct_name))
 
-            func_obj = type_registry.get_func_from_id(method_id)
+            func_obj = registry.get_func_from_id(method_id)
 
             # Parse arguments
             args = []
@@ -584,7 +587,7 @@ class Parser:
             return CallNode(member_name, args, func_obj.return_type, obj_node)
         else:
             # Field access
-            field_type = type_registry.get_field_type(struct_name, member_name)
+            field_type = registry.get_field_type(struct_name, member_name)
             if field_type is None:
                 self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
 
@@ -612,7 +615,7 @@ class Parser:
             struct_name = name
 
             # Verify struct exists
-            if not type_registry.struct_exists(struct_name):
+            if not registry.struct_exists(struct_name):
                 self.error("Struct '%s' is not defined" % struct_name)
 
             # Parse method name after the dot
@@ -659,7 +662,7 @@ class Parser:
         struct_id = -1
         # Special checks for methods
         if struct_name:
-            struct_id = type_registry.get_struct_id(struct_name)
+            struct_id = registry.get_struct_id(struct_name)
             # Check constructor and destructor constraints
             if name == "init" and return_type != TYPE_VOID:
                 self.error("Constructor 'init' must have void return type")
@@ -669,17 +672,17 @@ class Parser:
                 if len(params) > 0:
                     self.error("Destructor 'fini' cannot have parameters")
 
-        if type_registry.lookup_function(name, struct_id, check_parents=False) != -1:
+        if registry.lookup_function(name, struct_id, check_parents=False) != -1:
                 self.error("Function '%s' is already defined" % name if not struct_name else "%s.%s"%(struct_name, name))
 
         # Enter function/method scope
         self.enter_scope(name)
         prev_function = self.current_function
-        self.current_function = type_registry.register_function(name, return_type, params, parent_struct_id=struct_id)
+        self.current_function = registry.register_function(name, return_type, params, parent_struct_id=struct_id)
         # create a new node with empty body - we'll add it later
         # That's needed so type checking inside the body can find it
         node = FunctionDeclNode(name, params, return_type, body=None, parent_struct_id=struct_id)
-        type_registry.set_function_ast_node(self.current_function, node)
+        registry.set_function_ast_node(self.current_function, node)
 
         if struct_name:
             # Add implicit 'self' parameter of struct type
@@ -729,8 +732,8 @@ class Parser:
             return type_id
         elif self.token.type == TT_IDENT:
             type_name = self.token.value
-            if type_registry.struct_exists(type_name):
-                type_id = type_registry.get_struct_id(type_name)
+            if registry.struct_exists(type_name):
+                type_id = registry.get_struct_id(type_name)
                 self.advance()
                 return type_id
             else:
@@ -759,13 +762,13 @@ class Parser:
             parent_name = self.token.value
 
             # Verify parent struct exists
-            if not type_registry.struct_exists(parent_name):
+            if not registry.struct_exists(parent_name):
                 self.error("Parent struct '%s' is not defined" % parent_name)
 
             self.advance()
 
         # Register the struct
-        struct_id = type_registry.register_struct(struct_name, parent_name, self.token)
+        struct_id = registry.register_struct(struct_name, parent_name, self.token)
 
         # Parse struct body
         self.skip_separators()
@@ -795,7 +798,7 @@ class Parser:
             field_type = self.parse_type_reference()
 
             # Register field
-            type_registry.add_field(struct_name, field_name, field_type, self.token)
+            registry.add_field(struct_name, field_name, field_type, self.token)
             fields.append((field_name, field_type))
 
             # If on the same line, require a semicolon
@@ -837,12 +840,12 @@ class Parser:
         struct_name = "_tuple_%d_%s" % (len(type_list), elements_str)
 
         # Register the tuple as an anonymous struct if not already registered
-        if not type_registry.struct_exists(struct_name):
-            struct_id = type_registry.register_struct(struct_name, None, self.token)
+        if not registry.struct_exists(struct_name):
+            struct_id = registry.register_struct(struct_name, None, self.token)
             for i, element_type in enumerate(type_list):
-                type_registry.add_field(struct_name, "_%d" % i, element_type)
+                registry.add_field(struct_name, "_%d" % i, element_type)
         else:
-            struct_id = type_registry.get_struct_id(struct_name)
+            struct_id = registry.get_struct_id(struct_name)
 
         return struct_id
 
@@ -873,8 +876,8 @@ class Parser:
             return NumberNode(0.0, field_type)
         elif is_struct_type(field_type):
             # For struct fields, create a zero-filled initializer recursively
-            struct_name = type_registry.get_struct_name(field_type)
-            fields = type_registry.get_all_fields(struct_name)
+            struct_name = registry.get_struct_name(field_type)
+            fields = registry.get_all_fields(struct_name)
             zero_elements = []
 
             for _, nested_field_type in fields:
@@ -900,8 +903,8 @@ class Parser:
             if is_struct_type(target_type):
                 subtype = INITIALIZER_SUBTYPE_LINEAR
                 # Check if struct has a constructor - if so, initializer is not allowed
-                if type_registry.get_method(target_type, "init"):
-                    struct_name = type_registry.get_struct_name(target_type)
+                if registry.get_method(target_type, "init"):
+                    struct_name = registry.get_struct_name(target_type)
                     self.error("Cannot use initializer for struct '%s' because it has a constructor" % struct_name)
 
         # Empty initializer not allowed (for now)
@@ -917,8 +920,8 @@ class Parser:
                     if is_struct_type(target_type):
                         # Get field type for the current index
                         field_index = len(elements)
-                        struct_name = type_registry.get_struct_name(target_type)
-                        fields = type_registry.get_all_fields(struct_name)
+                        struct_name = registry.get_struct_name(target_type)
+                        fields = registry.get_all_fields(struct_name)
                         if field_index < len(fields):
                             _, element_type = fields[field_index]
 
@@ -948,8 +951,8 @@ class Parser:
 
         # Type validation for LINEAR initializers
         if subtype == INITIALIZER_SUBTYPE_LINEAR and is_struct_type(target_type):
-            struct_name = type_registry.get_struct_name(target_type)
-            fields = type_registry.get_all_fields(struct_name)
+            struct_name = registry.get_struct_name(target_type)
+            fields = registry.get_all_fields(struct_name)
 
             # Validate field count - too many elements is an error
             if len(elements) > len(fields):
@@ -983,8 +986,8 @@ class Parser:
             var_name = t.value
 
             # Check if it's a struct type name (for initialization)
-            if type_registry.struct_exists(var_name):
-                struct_id = type_registry.get_struct_id(var_name)
+            if registry.struct_exists(var_name):
+                struct_id = registry.get_struct_id(var_name)
 
                 # Parse initializer: StructName() or StructName(arg1, arg2, ...)
                 if self.token.type == TT_LPAREN:
@@ -1005,9 +1008,9 @@ class Parser:
             # method, then derive
             # the full struct_name + function_name "tuple" for full function
             # lookup in type_registry
-            func_id = type_registry.lookup_function(var_name)
+            func_id = registry.lookup_function(var_name)
             if func_id != -1:
-                return_type = type_registry.get_func_from_id(func_id).return_type
+                return_type = registry.get_func_from_id(func_id).return_type
                 return VariableNode(var_name, return_type)
 
             # It's a variable name, see if it's declared
@@ -1039,11 +1042,11 @@ class Parser:
             self.advance()
 
             # Verify struct exists
-            if not type_registry.struct_exists(struct_name):
+            if not registry.struct_exists(struct_name):
                 self.error("Struct '%s' is not defined" % struct_name)
 
             # Get the struct type ID
-            struct_id = type_registry.get_struct_id(struct_name)
+            struct_id = registry.get_struct_id(struct_name)
 
             # Check for constructor call
             args = []
@@ -1057,7 +1060,7 @@ class Parser:
             self.consume(TT_RPAREN)
 
             # Check if init method exists for the struct
-            init_method = type_registry.get_method(struct_id, "init")
+            init_method = registry.get_method(struct_id, "init")
             if init_method:
                 # Check argument count
                 self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args)
@@ -1197,7 +1200,7 @@ class Parser:
 
     def funccall(self, func_name, consume_lparen=True):
         """Parse a function call and return a CallNode"""
-        func_id = type_registry.lookup_function(func_name)
+        func_id = registry.lookup_function(func_name)
         if func_id == -1:
                 self.error("'%s' is not a function" % func_name)
 
@@ -1209,7 +1212,7 @@ class Parser:
         self.consume(TT_RPAREN)
 
         # Type checking for function call
-        func_obj = type_registry.get_func_from_id(func_id)
+        func_obj = registry.get_func_from_id(func_id)
         func_params = func_obj.params
         func_return_type = func_obj.return_type
 
@@ -1249,17 +1252,17 @@ class Parser:
             # Special handling for initializers in return statements
             if self.token.type == TT_LBRACE:
                 # Get return type from current function
-                func_return_type = type_registry.get_func_from_id(self.current_function).return_type
+                func_return_type = registry.get_func_from_id(self.current_function).return_type
                 expr = self.parse_initializer_expression(func_return_type)
             else:
                 expr = self.expression(0)
 
             # Check if return type matches function return type
-            current_func_obj = type_registry.get_func_from_id(self.current_function)
+            current_func_obj = registry.get_func_from_id(self.current_function)
             func_return_type = current_func_obj.return_type
 
             if func_return_type == TYPE_VOID:
-                fn = type_registry.get_func_from_id(self.current_function).name
+                fn = registry.get_func_from_id(self.current_function).name
                 self.error("Void function '%s' cannot return a value" % fn)
 
             # Check that return expression type matches function return type

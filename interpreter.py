@@ -3,7 +3,10 @@
 from __future__ import division  # Use true division
 from shared import *
 from cops import add, subtract, multiply, divide, modulo, shift_left, shift_right, negate, logical_not, bitwise_not, compare_eq, compare_ne, compare_lt, compare_le, compare_gt, compare_ge, logical_and, logical_or, bitwise_and, bitwise_or, bitwise_xor
-import type_registry
+from type_registry import get_registry
+
+# import registry singleton
+registry = get_registry()
 
 # Struct instance class for runtime
 class StructInstance:
@@ -55,7 +58,7 @@ class Interpreter(object):
         }
 
     def reset(self):
-        type_registry.reset_registry()
+        registry.reset()
         if self.environment: self.environment.reset()
 
     def run(self, text):
@@ -80,12 +83,12 @@ class Interpreter(object):
                 if node.node_type == AST_NODE_VAR_DECL:
                     interpreter.evaluate(node)
 
-            main_func_id = type_registry.lookup_function("main")
+            main_func_id = registry.lookup_function("main")
 
             if main_func_id == -1:
                 return {'success': False, 'error': "No 'main' function defined", 'ast': ast}
 
-            main_func = type_registry.get_func_from_id(main_func_id).ast_node
+            main_func = registry.get_func_from_id(main_func_id).ast_node
 
             # Make sure main has no parameters
             if len(main_func.params) > 0:
@@ -400,7 +403,7 @@ class Interpreter(object):
         instance = StructInstance(node.struct_id, node.struct_name)
 
         # Initialize fields with default values first
-        all_fields = type_registry.get_all_fields(node.struct_name)
+        all_fields = registry.get_all_fields(node.struct_name)
         for field_name, field_type in all_fields:
             # Set default value based on type
             if is_struct_type(field_type):
@@ -414,7 +417,7 @@ class Interpreter(object):
                 instance.fields[field_name] = 0
 
         # Call constructor if it exists and there are args or it's "init"
-        init_method = type_registry.get_method(node.struct_id, "init")
+        init_method = registry.get_method(node.struct_id, "init")
         if init_method:
             # Create a temporary scope for the constructor
             self.environment.enter_scope()
@@ -474,7 +477,7 @@ class Interpreter(object):
                 raise CompilerException("Cannot call method '%s' on non-struct value" % node.name)
 
             # Get the method ID from registry
-            method_id = type_registry.lookup_function(node.name, obj.struct_id)
+            method_id = registry.lookup_function(node.name, obj.struct_id)
             if method_id == -1:
                 raise CompilerException("Method '%s' not found in struct '%s'" % (node.name, obj.struct_name))
 
@@ -486,7 +489,7 @@ class Interpreter(object):
             self.environment.set("self", obj)
         else:
             # Get function ID from registry
-            method_id = type_registry.lookup_function(node.name)
+            method_id = registry.lookup_function(node.name)
             if method_id == -1:
                 raise CompilerException("Function '%s' is not defined" % node.name)
 
@@ -497,7 +500,7 @@ class Interpreter(object):
             self.environment.enter_scope()
 
         # Get function details from registry
-        func_obj = type_registry.get_func_from_id(method_id)
+        func_obj = registry.get_func_from_id(method_id)
 
         # Evaluate arguments
         args = [self.evaluate(arg) for arg in node.args]
@@ -548,7 +551,7 @@ class Interpreter(object):
 
         # Call destructor if it exists
         if isinstance(obj, StructInstance):
-            fini_method = type_registry.get_method(obj.struct_id, "fini")
+            fini_method = registry.get_method(obj.struct_id, "fini")
             if fini_method:
                 # Create a temporary scope for the destructor
                 self.environment.enter_scope()
@@ -571,7 +574,7 @@ class Interpreter(object):
     def visit_generic_initializer(self, node):
         """Visit a generic initializer node handling tuples, structs, and arrays"""
         # Get struct name from type registry
-        struct_name = type_registry.get_struct_name(node.expr_type)
+        struct_name = registry.get_struct_name(node.expr_type)
         if not struct_name:
             raise CompilerException("Unknown initializer type")
 
@@ -581,7 +584,7 @@ class Interpreter(object):
         # Get struct fields for validation in LINEAR mode
         all_fields = []
         if node.subtype == INITIALIZER_SUBTYPE_LINEAR:
-            all_fields = type_registry.get_all_fields(struct_name)
+            all_fields = registry.get_all_fields(struct_name)
 
         # Initialize fields based on initializer subtype
         if node.subtype == INITIALIZER_SUBTYPE_TUPLE:
