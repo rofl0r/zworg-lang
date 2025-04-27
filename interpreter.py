@@ -8,10 +8,19 @@ from type_registry import get_registry
 # import registry singleton
 registry = get_registry()
 
-# Reference type tags
+# Reference type tags - explicitly defined for clarity
 TAG_DIRECT_VALUE = 0  # Regular value (int, string, struct)
 TAG_HEAP_REF = 1      # Heap reference (created with new)
 TAG_STACK_REF = 2     # Stack reference (parameters passed byref)
+
+# Simple container for runtime values with reference tracking
+class Variable(object):
+    """Container for all runtime values with reference tracking"""
+    def __init__(self, value, expr_type, tag=TAG_DIRECT_VALUE, ref_data=None):
+        self.value = value        # The actual value or target
+        self.expr_type = expr_type # Type ID
+        self.tag = tag            # Reference type tag
+        self.ref_data = ref_data  # For heap: heap_id, For stack: (var_name, scope_id)
 
 # Struct instance class for runtime
 class StructInstance:
@@ -72,29 +81,34 @@ class Interpreter(object):
         self.heap_objects = {}
         self.next_heap_id = 1
 
+    def make_direct_value(self, value, expr_type):
+        """Create a direct value variable"""
+        return Variable(value, expr_type, TAG_DIRECT_VALUE)
+        
     def make_heap_ref(self, target, expr_type, heap_id):
-        """Create a heap reference (tag, target, heap_id, type)"""
-        return (TAG_HEAP_REF, target, heap_id, expr_type)
+        """Create a heap reference variable"""
+        return Variable(target, expr_type, TAG_HEAP_REF, heap_id)
         
     def make_stack_ref(self, var_name, scope_id, expr_type):
-        """Create a stack reference (tag, var_name, scope_id, type)"""
-        return (TAG_STACK_REF, var_name, scope_id, expr_type)
+        """Create a stack reference variable"""
+        return Variable(None, expr_type, TAG_STACK_REF, (var_name, scope_id))
         
-    def get_ref_tag(self, value):
-        """Get reference tag from a value (direct value or reference)"""
-        if isinstance(value, tuple) and len(value) >= 3:
-            return value[0]  # First element is the tag
-        return TAG_DIRECT_VALUE
+    def is_reference(self, var):
+        """Check if a variable is a reference"""
+        return hasattr(var, 'tag') and var.tag != TAG_DIRECT_VALUE
         
-    def dereference(self, value):
-        """Get actual value from a reference or return the value itself"""
-        tag = self.get_ref_tag(value)
-        
-        if tag == TAG_HEAP_REF:
-            # Unpack: (TAG_HEAP_REF, target, heap_id, expr_type)
-            _, target, heap_id, _ = value
+    def dereference(self, var):
+        """Get actual value from a variable, following references if needed"""
+        # Direct values or non-Variable objects are returned as-is
+        if not hasattr(var, 'tag'):
+            return var
             
-            # Check if valid heap reference
+        if var.tag == TAG_DIRECT_VALUE:
+            return var.value
+            
+        if var.tag == TAG_HEAP_REF:
+            # Check heap reference validity
+            heap_id = var.ref_data
             if heap_id not in self.heap_objects:
                 raise CompilerException("Invalid heap reference")
                 
@@ -103,9 +117,10 @@ class Interpreter(object):
                 raise CompilerException("Use after free")
                 
             return obj
-        elif tag == TAG_STACK_REF:
-            # Unpack: (TAG_STACK_REF, var_name, scope_id, expr_type)
-            _, var_name, scope_id, _ = value
+            
+        if var.tag == TAG_STACK_REF:
+            # Resolve stack reference
+            var_name, scope_id = var.ref_data
             
             # Check if scope still exists
             scope_exists = scope_id <= self.environment.stackptr
@@ -118,9 +133,9 @@ class Interpreter(object):
                     return self.environment.stack[i][var_name]
                     
             raise CompilerException("Referenced variable '%s' not found" % var_name)
-        
-        # Direct value
-        return value
+            
+        # Unknown reference type
+        return var
     
     def run(self, text):
         from lexer import Lexer
@@ -413,14 +428,13 @@ class Interpreter(object):
         value = self.evaluate(node.expr)
         
         # Check if value is a reference and node wants a reference
-        tag = self.get_ref_tag(value)
-        if tag != TAG_DIRECT_VALUE and node.ref_kind != REF_KIND_NONE:
-            # Make sure reference kinds match
-            if (tag == TAG_HEAP_REF and node.ref_kind != REF_KIND_HEAP) or \
-               (tag == TAG_STACK_REF and node.ref_kind != REF_KIND_STACK):
+        if self.is_reference(value) and node.ref_kind != REF_KIND_NONE:
+            # Check compatibility of reference kinds
+            if (value.tag == TAG_HEAP_REF and node.ref_kind != REF_KIND_HEAP) or \
+               (value.tag == TAG_STACK_REF and node.ref_kind != REF_KIND_STACK):
                 raise CompilerException("Cannot assign %s reference to %s reference variable" % 
                                       (
-                                          "heap" if tag == TAG_HEAP_REF else "stack",
+                                          "heap" if value.tag == TAG_HEAP_REF else "stack",
                                           "heap" if node.ref_kind == REF_KIND_HEAP else "stack"
                                       ))
         
@@ -677,7 +691,7 @@ class Interpreter(object):
         self.next_heap_id += 1
         self.heap_objects[heap_id] = (instance, False)  # Not freed
         
-        # Return a heap reference tuple
+        # Return a heap reference
         return self.make_heap_ref(instance, node.expr_type, heap_id)
 
     def visit_del(self, node):
@@ -686,12 +700,11 @@ class Interpreter(object):
         obj = self.evaluate(node.expr)
         
         # Check if it's a heap reference
-        tag = self.get_ref_tag(obj)
-        if tag != TAG_HEAP_REF:
+        if not hasattr(obj, 'tag') or obj.tag != TAG_HEAP_REF:
             raise CompilerException("'del' can only be used with heap references (created with 'new')")
         
-        # Unpack heap reference: (TAG_HEAP_REF, target, heap_id, expr_type)
-        _, _, heap_id, _ = obj
+        # Get heap ID
+        heap_id = obj.ref_data
         
         # Get the actual object and mark as freed
         if heap_id not in self.heap_objects:
