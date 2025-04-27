@@ -696,8 +696,12 @@ class Interpreter(object):
                 else:
                     # Regular argument (adjust index to account for self)
                     arg_index = i - 1
+                    if arg_index >= len(node.args):
+                        # Missing argument - this should have been caught by the parser
+                        raise CompilerException("Constructor for '%s' expects %d arguments, got %d" % 
+                                               (node.struct_name, len(init_method.params) - 1, len(node.args)))
                     _, _, is_byref = init_method.params[i]
-                    arg_value = self.process_argument(node.args[arg_index], is_byref) if arg_index < len(node.args) else None
+                    arg_value = self.process_argument(node.args[arg_index], is_byref)
                 args.append(arg_value)
 
             self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)

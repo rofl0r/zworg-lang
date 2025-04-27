@@ -1153,7 +1153,7 @@ class Parser:
                 constructor_args = [VariableNode("", struct_id)]  # Placeholder for self
                 constructor_args.extend(args)
                 self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, constructor_args)
-                self.check_argument_types(args, init_method.params, "constructor for '%s'" % struct_name)
+                self.check_argument_types(constructor_args, init_method.params, "constructor for '%s'" % struct_name)
 
             # Create heap allocated struct
             struct_init = StructInitNode(struct_name, struct_id, args)
