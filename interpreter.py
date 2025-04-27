@@ -680,13 +680,27 @@ class Interpreter(object):
         if init_method:
             # Create a temporary scope for the constructor
             self.environment.enter_scope()
-            # we need to evaluate args in the function's scope, so param names dont end up in the parent's scope
-            # BUT we need to do it before setting "self", because evaluating it might accessing the caller's self
-            args = [self.evaluate(arg) for arg in node.args]
-            self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
+
+            # Process arguments with proper byref handling
+            args = []
+
+            # First parameter is always 'self' and is implicitly byref
+            self_var = self.make_direct_value(instance, node.struct_id)
+            args.append(self_var)
+
+            # Process remaining arguments
+            for i in range(len(node.args)):
+                # Skip 'self' parameter (it's at index 0)
+                param_index = i + 1
+                _, _, is_byref = init_method.params[param_index]
+                arg_value = self.process_argument(node.args[i], is_byref)
+                args.append(arg_value)
+
+            # Create expanded_arg_nodes list with placeholder for 'self'
+            expanded_arg_nodes = [None] + node.args
+            self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, expanded_arg_nodes)
 
             # Create a Variable for 'self'
-            self_var = self.make_direct_value(instance, node.struct_id)
             self.environment.set("self", self_var)
 
             # Execute constructor body
