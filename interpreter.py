@@ -93,7 +93,7 @@ class Interpreter(object):
         """Create a stack reference variable"""
         return Variable(None, expr_type, TAG_STACK_REF, (var_name, scope_id))
         
-    def dereference(self, var):
+    def dereference(self, var, skip_checks=False):
         """Get actual value from a variable, following references if needed"""
         # Direct values are returned as-is
         if var.tag == TAG_DIRECT_VALUE:
@@ -106,7 +106,7 @@ class Interpreter(object):
                 raise CompilerException("Invalid heap reference")
                 
             obj, is_freed = self.heap_objects[heap_id]
-            if is_freed:
+            if is_freed and not skip_checks:
                 raise CompilerException("Use after free")
                 
             return obj
@@ -140,7 +140,7 @@ class Interpreter(object):
         raw_env = {}
         for var_name, var_obj in env.items():
             # All objects in the environment should be Variables
-            deref_var = self.dereference(var_obj)
+            deref_var = self.dereference(var_obj, skip_checks=True)
             raw_env[var_name] = deref_var.value
         return raw_env
         
@@ -792,18 +792,14 @@ class Interpreter(object):
         
         # Get heap ID
         heap_id = obj_var.ref_data
-        
-        # Get the actual object and mark as freed
+
         if heap_id not in self.heap_objects:
             raise CompilerException("Invalid heap reference or double free")
-            
+
         instance_var, is_freed = self.heap_objects[heap_id]
         if is_freed:
             raise CompilerException("Double free detected")
             
-        # Mark as freed
-        self.heap_objects[heap_id] = (instance_var, True)
-        
         # Get the actual instance
         instance = instance_var.value
 
@@ -828,6 +824,9 @@ class Interpreter(object):
                     pass
 
                 self.environment.leave_scope()
+
+        # Mark as freed (destructor must run first)
+        self.heap_objects[heap_id] = (instance_var, True)
 
         return self.make_direct_value(None, TYPE_VOID)
 
