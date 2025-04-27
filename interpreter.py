@@ -32,7 +32,8 @@ class StructInstance:
         self.fields = {}  # field_name -> Variable instance
 
     def __repr__(self):
-        fields_str = ", ".join(["%s=%s" % (name, value.value) for name, value in self.fields.items()])
+        if self.fields is None: self.fields = {}
+        fields_str = ", ".join(["%s=%s" % (name, value.value if value else "None") for name, value in self.fields.items()])
         return "%s(%s)" % (self.struct_name, fields_str)
 
 class Interpreter(object):
@@ -247,18 +248,23 @@ class Interpreter(object):
         if len(args) != len(method_params):
             self.environment.leave_scope()
             raise CompilerException("%s expects %d arguments, got %d" %
-                                  (method_name, len(method_params), len(args)))
+                                   (method_name, len(method_params), len(args)))
 
         for i in range(len(method_params)):
             param_name, param_type, is_byref = method_params[i]
             arg_value = args[i]
-            # Skip type checking for byref parameters since we've already verified
-            # the reference handling in process_argument
-            if not is_byref and not can_promote(arg_nodes[i].expr_type, param_type):
+            # Determine if we need to type check this parameter
+            skip_type_check = is_byref  # Skip type check for byref params, already verified
+
+            # Make sure arg_nodes has an entry for this parameter
+            has_node_for_type_check = i < len(arg_nodes)
+
+            # Only perform type checking if needed and possible
+            if not skip_type_check and has_node_for_type_check and not can_promote(arg_nodes[i].expr_type, param_type):
                 self.environment.leave_scope()
                 raise CompilerException("Type mismatch in %s argument: cannot convert %s to %s" %
-                                      (method_name, var_type_to_string(arg_nodes[i].expr_type), 
-                                       var_type_to_string(param_type)))
+                                       (method_name, var_type_to_string(arg_nodes[i].expr_type),
+                                        var_type_to_string(param_type)))
             self.environment.set(param_name, arg_value)
 
     def visit_number(self, node):
@@ -684,24 +690,17 @@ class Interpreter(object):
             # Process arguments with proper byref handling
             args = []
 
-            # First parameter is always 'self' and is implicitly byref
-            self_var = self.make_direct_value(instance, node.struct_id)
-            args.append(self_var)
-
-            # Process remaining arguments
-            for i in range(len(node.args)):
-                # Skip 'self' parameter (it's at index 0)
-                param_index = i + 1
-                _, _, is_byref = init_method.params[param_index]
-                arg_value = self.process_argument(node.args[i], is_byref)
+            for i in range(len(init_method.params)):
+                if i == 0:  # First parameter is always 'self'
+                    arg_value = self.make_direct_value(instance, node.struct_id)
+                else:
+                    # Regular argument (adjust index to account for self)
+                    arg_index = i - 1
+                    _, _, is_byref = init_method.params[i]
+                    arg_value = self.process_argument(node.args[arg_index], is_byref) if arg_index < len(node.args) else None
                 args.append(arg_value)
 
-            # Create expanded_arg_nodes list with placeholder for 'self'
-            expanded_arg_nodes = [None] + node.args
-            self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, expanded_arg_nodes)
-
-            # Create a Variable for 'self'
-            self.environment.set("self", self_var)
+            self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
 
             # Execute constructor body
             try:
@@ -766,42 +765,33 @@ class Interpreter(object):
         """Unified handler for function and method calls using only the type registry"""
         # Determine if this is a method call (has an object context)
         is_method_call = node.obj is not None
+        context_name = "Method '%s'" % node.name if is_method_call else "Function '%s'" % node.name
 
         if is_method_call:
-            # Evaluate the object
-            obj_var = self.evaluate(node.obj)
-
-            # Dereference if it's a reference
-            obj_var = self.dereference(obj_var)
-            obj = obj_var.value
+            # Evaluate object and perform validation for method calls
+            obj = self.evaluate(node.obj)
+            obj_deref = self.dereference(obj)
+            obj_value = obj_deref.value
 
             # Handle nil reference
             if obj is None:
                 raise CompilerException("Attempt to call method '%s' on a nil reference" % node.name)
 
             # Make sure it's a struct instance
-            if not isinstance(obj, StructInstance):
+            if not isinstance(obj_value, StructInstance):
                 raise CompilerException("Cannot call method '%s' on non-struct value" % node.name)
 
             # Get the method ID from registry
-            method_id = registry.lookup_function(node.name, obj.struct_id)
+            method_id = registry.lookup_function(node.name, obj_value.struct_id)
             if method_id == -1:
                 raise CompilerException("Method '%s' not found in struct '%s'" % (node.name, obj.struct_name))
 
-            # Create context description for error messages
-            context_name = "Method '%s'" % node.name
-
-            # Enter method scope and set 'self'
             self.environment.enter_scope()
-            self.environment.set("self", obj_var)
         else:
             # Get function ID from registry
             method_id = registry.lookup_function(node.name)
             if method_id == -1:
                 raise CompilerException("Function '%s' is not defined" % node.name)
-
-            # Create context description for error messages
-            context_name = "Function '%s'" % node.name
 
             # Enter function scope
             self.environment.enter_scope()
@@ -809,30 +799,29 @@ class Interpreter(object):
         # Get function details from registry
         func_obj = registry.get_func_from_id(method_id)
 
-        # Evaluate arguments with special handling for byref parameters
+        # Process all parameters (including self for methods)
         args = []
+        arg_nodes = []  # For type checking
 
-        # For method calls, handle 'self' parameter first
-        if is_method_call:
-            # Note: 'self' is already evaluated as obj_var above
-            # First parameter is always 'self' and is implicitly byref
-            args.append(obj_var)
+        for i in range(len(func_obj.params)):
+            _, _, is_byref = func_obj.params[i]
 
-        # Process regular arguments
-        for i in range(len(node.args)):
-            param_index = i + (1 if is_method_call else 0)
-            _, _, is_byref = func_obj.params[param_index]
-            arg_value = self.process_argument(node.args[i], is_byref)
+            if i == 0 and is_method_call:
+                # First parameter for methods is 'self'
+                arg_value = obj  # Already evaluated above
+                arg_nodes.append(node.obj)
+            else:
+                # Regular argument (adjust index based on whether it's a method)
+                arg_index = i - (1 if is_method_call else 0)
+                if arg_index < len(node.args):
+                    arg_value = self.process_argument(node.args[arg_index], is_byref)
+                    arg_nodes.append(node.args[arg_index])
+                else:
+                    raise CompilerException("%s requires %d arguments, got %d" % 
+                                        (context_name, len(func_obj.params) - (1 if is_method_call else 0), len(node.args)))
             args.append(arg_value)
 
-        # Bind parameters - we need to handle offsets carefully
-        if is_method_call:
-            # Create a new args_nodes list with obj at the front
-            expanded_arg_nodes = [node.obj] + node.args
-            self.check_and_set_params(context_name, func_obj.params, args, expanded_arg_nodes)
-        else:
-            self.check_and_set_params(context_name, func_obj.params, args, node.args)
-
+        self.check_and_set_params(context_name, func_obj.params, args, arg_nodes)
         # Default return value for void functions
         result = self.make_direct_value(None, TYPE_VOID)
 

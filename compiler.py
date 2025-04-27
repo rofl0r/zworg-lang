@@ -590,12 +590,11 @@ class Parser:
                 self.type_mismatch_error("Type mismatch for argument %d of %s" % (i+1, context_name), 
                                          arg.expr_type, param_type)
 
-    def check_arg_count(self, func_name, params, args, is_method=False):
+    def check_arg_count(self, func_name, params, args):
         """Helper to check argument count against parameter count"""
-        expected = len(params) if not is_method else len(params)-1
-        if len(args) != expected:
+        if len(args) != len(params):
             self.error("%s expects %d arguments, got %d" %
-                      (func_name, expected, len(args)))
+                      (func_name, len(params), len(args)))
 
     def parse_args(self, args):
         """Helper to parse argument lists for function/method calls"""
@@ -651,10 +650,12 @@ class Parser:
             # Parse arguments
             args = []
             self.parse_args(args)
+            # For methods, insert the object as the first argument (for 'self')
+            args.insert(0, obj_node)
             self.consume(TT_RPAREN)
 
             # Type check arguments
-            self.check_arg_count("Method '%s'" % member_name, func_obj.params, args, is_method=True)
+            self.check_arg_count("Method '%s'" % member_name, func_obj.params, args)
             self.check_argument_types(args, func_obj.params, "method '%s'" % member_name)
 
             return CallNode(member_name, args, func_obj.return_type, obj_node)
@@ -1146,7 +1147,12 @@ class Parser:
             init_method = registry.get_method(struct_id, "init")
             if init_method:
                 # Check argument count
-                self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args, is_method=True)
+                # For constructor calls, we need to create a placeholder for 'self'
+                # since the real self will be created after struct initialization
+                # This ensures the argument count check passes
+                constructor_args = [VariableNode("", struct_id)]  # Placeholder for self
+                constructor_args.extend(args)
+                self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, constructor_args)
                 self.check_argument_types(args, init_method.params, "constructor for '%s'" % struct_name)
 
             # Create heap allocated struct
@@ -1301,7 +1307,7 @@ class Parser:
         func_return_type = func_obj.return_type
 
         # Check number of arguments
-        self.check_arg_count("Function '%s'" % func_name, func_params, args, is_method=False)
+        self.check_arg_count("Function '%s'" % func_name, func_params, args)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
         return CallNode(func_name, args, func_return_type)
 
