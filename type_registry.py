@@ -109,24 +109,19 @@ class TypeRegistry:
     def is_array_type(self, type_id):
         """Check if a type is an array"""
         # Get base type if this is a reference
-        base_type = self.get_base_type(type_id)
-        descriptor = self._type_descriptors.get(base_type)
+        descriptor = self._type_descriptors.get(type_id)
         return descriptor and descriptor.kind == self.TYPE_KIND_ARRAY
 
     def get_array_element_type(self, array_type_id):
         """Get element type for an array"""
-        # Get base type if this is a reference
-        base_type = self.get_base_type(array_type_id)
-        descriptor = self._type_descriptors.get(base_type)
+        descriptor = self._type_descriptors.get(array_type_id)
         if descriptor and descriptor.kind == self.TYPE_KIND_ARRAY:
             return descriptor.element_type_id
         return -1
 
     def get_array_size(self, array_type_id):
         """Get size for an array (None if dynamic)"""
-        # Get base type if this is a reference
-        base_type = self.get_base_type(array_type_id)
-        descriptor = self._type_descriptors.get(base_type)
+        descriptor = self._type_descriptors.get(array_type_id)
         if descriptor and descriptor.kind == self.TYPE_KIND_ARRAY:
             return descriptor.size
         return -1
@@ -165,9 +160,7 @@ class TypeRegistry:
 
     def is_struct_type(self, type_id):
         """Check if a type is a struct type using descriptor information"""
-        # Get base type (in case it's a reference)
-        base_type = self.get_base_type(type_id)
-        descriptor = self._type_descriptors.get(base_type)
+        descriptor = self._type_descriptors.get(type_id)
         return descriptor is not None and descriptor.kind == self.TYPE_KIND_STRUCT
 
     def add_field(self, struct_name, field_name, field_type, token=None):
@@ -240,11 +233,8 @@ class TypeRegistry:
 
     def get_struct_name(self, type_id):
         """Get struct name from type ID"""
-        # Handle reference types
-        base_type = self.get_base_type(type_id)
-
         # Try descriptor system first
-        descriptor = self._type_descriptors.get(base_type)
+        descriptor = self._type_descriptors.get(type_id)
         if descriptor:
             if descriptor.kind == self.TYPE_KIND_STRUCT:
                 return descriptor.name
@@ -368,24 +358,6 @@ class TypeRegistry:
         elif ref_kind == REF_KIND_STACK:
             return "stack_ref<%s>" % type_str
         return type_str
-
-    # Type helpers for reference types
-    def is_ref_type(self, type_):
-        """Check if a type is a reference type"""
-        return (type_ & REF_TYPE_FLAG) != 0
-
-    def get_base_type(self, type_):
-        """Get the base type of a reference type"""
-        if self.is_ref_type(type_):
-            return type_ & ~REF_TYPE_FLAG
-        return type_
-
-    def make_ref_type(self, type_):
-        """Convert a type to its reference equivalent"""
-        if self.is_ref_type(type_):
-            return type_  # Already a reference
-        return type_ | REF_TYPE_FLAG
-
 
 # Singleton instance
 _registry = None

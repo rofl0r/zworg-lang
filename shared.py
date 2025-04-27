@@ -144,7 +144,6 @@ TYPE_DOUBLE = 18
 
 # Type system constants
 TYPE_STRUCT_BASE = 100      # Base for struct types
-REF_TYPE_FLAG = 0x80000000  # Bit 32 set for reference types
 
 # Mapping from type constants to their string representations
 TYPE_TO_STRING_MAP = {
