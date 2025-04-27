@@ -13,7 +13,7 @@ TAG_DIRECT_VALUE = 0  # Regular value (int, string, struct)
 TAG_HEAP_REF = 1      # Heap reference (created with new)
 TAG_STACK_REF = 2     # Stack reference (parameters passed byref)
 
-# Simple container for runtime values with reference tracking
+# Simple container for all runtime values with reference tracking
 class Variable(object):
     """Container for all runtime values with reference tracking"""
     def __init__(self, value, expr_type, tag=TAG_DIRECT_VALUE, ref_data=None):
@@ -135,6 +135,21 @@ class Interpreter(object):
         deref_var = self.dereference(var)
         return deref_var.value
     
+    def extract_raw_values_from_env(self, env):
+        """Extract raw values from an environment containing Variables"""
+        raw_env = {}
+        for var_name, var_obj in env.items():
+            # All objects in the environment should be Variables
+            deref_var = self.dereference(var_obj)
+            raw_env[var_name] = deref_var.value
+        return raw_env
+        
+    def prepare_result_environments(self):
+        """Prepare result environments with raw values for testing"""
+        raw_global_env = self.extract_raw_values_from_env(self.environment.stack[0])
+        raw_main_env = self.extract_raw_values_from_env(self.environment.stack[1])
+        return raw_global_env, raw_main_env
+    
     def run(self, text):
         from lexer import Lexer
         from compiler import Parser
@@ -172,24 +187,31 @@ class Interpreter(object):
             interpreter.environment.enter_scope()
 
             try:
-                # Execute main function
+                # Execute main function body
                 for stmt in main_func.body:
                     interpreter.evaluate(stmt)
+                    
+                # Convert environment to raw values for testing
+                raw_global_env, raw_main_env = self.prepare_result_environments()
 
                 # Return both global and main's environment
                 return {
                     'success': True,
-                    'global_env': interpreter.environment.stack[0],
-                    'main_env': interpreter.environment.stack[1],
+                    'global_env': raw_global_env,
+                    'main_env': raw_main_env,
                     'ast': ast
                 }
             except ReturnException as ret:
                 # If main returns a value, include it in the result
+                
+                # Convert environment to raw values for testing
+                raw_global_env, raw_main_env = self.prepare_result_environments()
+                
                 return {
                     'success': True,
                     'result': ret.value.value if ret.value else None,  # Extract raw value for result
-                    'global_env': interpreter.environment.stack[0],
-                    'main_env': interpreter.environment.stack[1],
+                    'global_env': raw_global_env,
+                    'main_env': raw_main_env,
                     'ast': ast
                 }
         except CompilerException as e:
@@ -323,7 +345,7 @@ class Interpreter(object):
             return self.make_direct_value(result, node.expr_type)
         elif node.operator == '!':
             result = logical_not(value)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
         elif node.operator == 'bitnot':
             result = bitwise_not(value, node.operand.expr_type)
             return self.make_direct_value(result, node.expr_type)
@@ -501,10 +523,10 @@ class Interpreter(object):
         if node.left.expr_type == TYPE_STRING and node.right.expr_type == TYPE_STRING:
             if node.operator == '==':
                 result = 1 if left_val == right_val else 0
-                return self.make_direct_value(result, TYPE_BOOL)
+                return self.make_direct_value(result, TYPE_INT)
             elif node.operator == '!=':
                 result = 1 if left_val != right_val else 0
-                return self.make_direct_value(result, TYPE_BOOL)
+                return self.make_direct_value(result, TYPE_INT)
             # Other comparison operators are not supported for strings
             elif node.operator in ['>', '>=', '<', '<=']:
                 raise CompilerException("Operator %s not supported for strings" % node.operator)
@@ -514,22 +536,22 @@ class Interpreter(object):
 
         if node.operator == '==':
             result = compare_eq(left_val, right_val, node.left.expr_type, node.right.expr_type)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
         elif node.operator == '!=':
             result = compare_ne(left_val, right_val, node.left.expr_type, node.right.expr_type)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
         elif node.operator == '>=':
             result = compare_ge(left_val, right_val, node.left.expr_type, node.right.expr_type)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
         elif node.operator == '>':
             result = compare_gt(left_val, right_val, node.left.expr_type, node.right.expr_type)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
         elif node.operator == '<':
             result = compare_lt(left_val, right_val, node.left.expr_type, node.right.expr_type)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
         elif node.operator == '<=':
             result = compare_le(left_val, right_val, node.left.expr_type, node.right.expr_type)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
 
         raise CompilerException("Unknown comparison operator: %s" % node.operator)
 
@@ -544,25 +566,25 @@ class Interpreter(object):
         if node.operator == 'and':
             # Short circuit evaluation
             if not left_val:
-                return self.make_direct_value(0, TYPE_BOOL)
+                return self.make_direct_value(0, TYPE_INT)
                 
             right_var = self.evaluate(node.right)
             right_var = self.dereference(right_var)
             right_val = right_var.value
             
             result = logical_and(left_val, right_val)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
         elif node.operator == 'or':
             # Short circuit evaluation
             if left_val:
-                return self.make_direct_value(1, TYPE_BOOL)
+                return self.make_direct_value(1, TYPE_INT)
                 
             right_var = self.evaluate(node.right)
             right_var = self.dereference(right_var)
             right_val = right_var.value
             
             result = logical_or(left_val, right_val)
-            return self.make_direct_value(result, TYPE_BOOL)
+            return self.make_direct_value(result, TYPE_INT)
 
         raise CompilerException("Unknown logical operator: %s" % node.operator)
 
