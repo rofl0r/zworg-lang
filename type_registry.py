@@ -32,7 +32,7 @@ class Function:
     def __init__(self, name, return_type, params, parent_struct_id=-1, ast_node=None):
         self.name = name  # Qualified name containing struct prefix for methods
         self.return_type = return_type
-        self.params = params  # List of (name, type) tuples
+        self.params = params  # List of (name, type, is_byref) tuples
         self.parent_struct_id = parent_struct_id  # -1 for global functions
         self.ast_node = ast_node  # Store AST nodes directly
 

@@ -85,6 +85,7 @@ TT_TYPE_LONGLONG = 76
 TT_TYPE_ULONGLONG = 77
 TT_ULONGLONG_LITERAL = 78
 TT_LONGLONG_LITERAL = 79
+TT_BYREF = 80
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -231,6 +232,7 @@ KEYWORDS = {
     'struct': TT_STRUCT,
     'new': TT_NEW,
     'del': TT_DEL,
+    'byref': TT_BYREF,
     'double': TT_TYPE_DOUBLE,  # Double type
     'i8': TT_TYPE_I8,
     'u8': TT_TYPE_U8,

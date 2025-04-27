@@ -246,13 +246,15 @@ class Interpreter(object):
         """
         if len(args) != len(method_params):
             self.environment.leave_scope()
-            raise CompilerException("%s expects %d arguments, got %d" % 
+            raise CompilerException("%s expects %d arguments, got %d" %
                                   (method_name, len(method_params), len(args)))
 
         for i in range(len(method_params)):
-            param_name, param_type = method_params[i]
+            param_name, param_type, is_byref = method_params[i]
             arg_value = args[i]
-            if not can_promote(arg_nodes[i].expr_type, param_type):
+            # Skip type checking for byref parameters since we've already verified
+            # the reference handling in process_argument
+            if not is_byref and not can_promote(arg_nodes[i].expr_type, param_type):
                 self.environment.leave_scope()
                 raise CompilerException("Type mismatch in %s argument: cannot convert %s to %s" %
                                       (method_name, var_type_to_string(arg_nodes[i].expr_type), 
@@ -352,9 +354,44 @@ class Interpreter(object):
 
         raise CompilerException("Unknown unary operator: %s" % node.operator)
 
+    def assign_through_reference(self, ref_var, value_var):
+        """Assign a value through a reference"""
+        if ref_var.tag == TAG_STACK_REF:
+            # Stack reference - update the original variable
+            var_name, scope_id = ref_var.ref_data
+
+            # Find and update in appropriate scope
+            for i in range(scope_id, -1, -1):
+                if var_name in self.environment.stack[i]:
+                    self.environment.stack[i][var_name] = value_var
+                    return True
+
+            raise CompilerException("Reference target '%s' not found" % var_name)
+
+        elif ref_var.tag == TAG_HEAP_REF:
+            # Heap reference - update the heap object
+            heap_id = ref_var.ref_data
+            if heap_id in self.heap_objects:
+                _, is_freed = self.heap_objects[heap_id]
+                if is_freed:
+                    raise CompilerException("Use after free in assignment")
+                self.heap_objects[heap_id] = (value_var, is_freed)
+                return True
+            raise CompilerException("Invalid heap reference in assignment")
+        raise CompilerException("Cannot assign through non-reference value")
+
     def visit_assign(self, node):
         """Evaluate an assignment node"""
         value_var = self.evaluate(node.expr)
+        var_obj = None
+
+        # Check if we're assigning to a variable passed by reference
+        if self.environment.has(node.var_name):
+            var_obj = self.environment.get(node.var_name)
+
+            # If it's a reference, we need to assign through it
+            if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
+                return self.assign_through_reference(var_obj, value_var)
 
         # Check if type promotion is needed and allowed
         if node.expr_type != node.expr.expr_type:
@@ -688,6 +725,29 @@ class Interpreter(object):
 
         return obj.fields[node.member_name]
 
+    def process_argument(self, arg_node, is_byref):
+        """Process a function/method argument based on byref flag"""
+        # First evaluate the expression regardless of byref status
+        result = self.evaluate(arg_node)
+
+        if not is_byref:
+            # For regular parameters, just return the evaluated result
+            return result
+
+        # For byref parameters, we need an lvalue or a reference
+        if result.tag in (TAG_HEAP_REF, TAG_STACK_REF):
+            # Already a reference, can pass directly
+            return result
+
+        # Direct value from a variable - create a reference
+        if arg_node.node_type == AST_NODE_VARIABLE:
+            var_name = arg_node.name
+            scope_id = self.environment.stackptr
+            return self.make_stack_ref(var_name, scope_id, arg_node.expr_type)
+
+        # Expression result that isn't a reference (e.g., direct struct) - can't use with byref
+        raise CompilerException("Cannot pass expression result to 'byref' parameter - must be a variable or reference")
+
     def visit_call(self, node):
         """Unified handler for function and method calls using only the type registry"""
         # Determine if this is a method call (has an object context)
@@ -696,7 +756,7 @@ class Interpreter(object):
         if is_method_call:
             # Evaluate the object
             obj_var = self.evaluate(node.obj)
-            
+
             # Dereference if it's a reference
             obj_var = self.dereference(obj_var)
             obj = obj_var.value
@@ -735,11 +795,29 @@ class Interpreter(object):
         # Get function details from registry
         func_obj = registry.get_func_from_id(method_id)
 
-        # Evaluate arguments
-        args = [self.evaluate(arg) for arg in node.args]
+        # Evaluate arguments with special handling for byref parameters
+        args = []
 
-        # Bind parameters
-        self.check_and_set_params(context_name, func_obj.params, args, node.args)
+        # For method calls, handle 'self' parameter first
+        if is_method_call:
+            # Note: 'self' is already evaluated as obj_var above
+            # First parameter is always 'self' and is implicitly byref
+            args.append(obj_var)
+
+        # Process regular arguments
+        for i in range(len(node.args)):
+            param_index = i + (1 if is_method_call else 0)
+            _, _, is_byref = func_obj.params[param_index]
+            arg_value = self.process_argument(node.args[i], is_byref)
+            args.append(arg_value)
+
+        # Bind parameters - we need to handle offsets carefully
+        if is_method_call:
+            # Create a new args_nodes list with obj at the front
+            expanded_arg_nodes = [node.obj] + node.args
+            self.check_and_set_params(context_name, func_obj.params, args, expanded_arg_nodes)
+        else:
+            self.check_and_set_params(context_name, func_obj.params, args, node.args)
 
         # Default return value for void functions
         result = self.make_direct_value(None, TYPE_VOID)

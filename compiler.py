@@ -190,12 +190,25 @@ class FunctionDeclNode(ASTNode):
     def __repr__(self):
         name = self.name if self.parent_struct_id == -1 else "%s.%s"%(registry.get_struct_name(self.parent_struct_id), self.name)
         func_or_method = "Function" if self.parent_struct_id == -1 else "Method"
-        params_str = ", ".join(["%s:%s" % (pname, registry.var_type_to_string(ptype)) for pname, ptype in self.params])
+        params_str = ", ".join([
+            "%s%s:%s" % (
+                "byref " if is_ref else "",
+                pname,
+                registry.var_type_to_string(ptype)
+            )
+            for pname, ptype, is_ref in self.params
+        ])
+
+        # Also include byref in return type if applicable
+        return_type_str = registry.var_type_to_string(self.return_type)
+        if hasattr(self, 'is_ref_return') and self.is_ref_return:
+            return_type_str = "byref " + return_type_str
+
         return "%s(%s(%s):%s, [%s])" % (
             func_or_method,
             name,
             params_str,
-            registry.var_type_to_string(self.return_type),
+            return_type_str,
             ", ".join(repr(stmt) for stmt in self.body),
         )
 
@@ -553,18 +566,36 @@ class Parser:
             # This should never happen as we check arg count before this
             if i >= len(args): break
 
-            param_name, param_type = params[i]
+            param_name, param_type, is_byref = params[i]
             arg = args[i]
+
+            # Special handling for byref parameters
+            if is_byref:
+                # For byref parameters, make sure the argument is addressable
+                if arg.node_type != AST_NODE_VARIABLE:
+                    # Only variables can be passed by reference
+                    self.error("Cannot pass expression result to 'byref' parameter '%s' - must be a variable" % param_name)
+
+                # The referenced variable's type must be compatible with the parameter type
+                if not can_promote(arg.expr_type, param_type):
+                    self.type_mismatch_error(
+                        "Type mismatch for byref argument '%s'" % param_name,
+                        arg.expr_type, param_type
+                    )
+
+                # If we get here, the byref parameter check passed
+                continue
 
             if not can_promote(arg.expr_type, param_type):
                 self.type_mismatch_error("Type mismatch for argument %d of %s" % (i+1, context_name), 
                                          arg.expr_type, param_type)
 
-    def check_arg_count(self, func_name, params, args):
+    def check_arg_count(self, func_name, params, args, is_method=False):
         """Helper to check argument count against parameter count"""
-        if len(args) != len(params):
+        expected = len(params) if not is_method else len(params)-1
+        if len(args) != expected:
             self.error("%s expects %d arguments, got %d" %
-                      (func_name, len(params), len(args)))
+                      (func_name, expected, len(args)))
 
     def parse_args(self, args):
         """Helper to parse argument lists for function/method calls"""
@@ -623,7 +654,7 @@ class Parser:
             self.consume(TT_RPAREN)
 
             # Type check arguments
-            self.check_arg_count("Method '%s'" % member_name, func_obj.params, args)
+            self.check_arg_count("Method '%s'" % member_name, func_obj.params, args, is_method=True)
             self.check_argument_types(args, func_obj.params, "method '%s'" % member_name)
 
             return CallNode(member_name, args, func_obj.return_type, obj_node)
@@ -682,7 +713,7 @@ class Parser:
             if struct_name and tmp[0] == "self":
                 self.error("Cannot use 'self' as a parameter name, it is reserved")
 
-            for n, _ in params:
+            for n, _, _ in params:
                 if n == tmp[0]:
                     self.error("Parameter '%s' is already defined" % n)
 
@@ -727,11 +758,11 @@ class Parser:
         registry.set_function_ast_node(self.current_function, node)
 
         if struct_name:
-            # Add implicit 'self' parameter of struct type
-            self.declare_variable("self", struct_id)
+            # Insert 'self' as first parameter (implicitly byref)
+            params.insert(0, ("self", struct_id, True))
 
         # Add parameters to scope
-        for param_name, param_type in params:
+        for param_name, param_type, _ in params:
             self.declare_variable(param_name, param_type)
 
         # Parse function/method body
@@ -747,6 +778,13 @@ class Parser:
 
     def parameter(self):
         """Parse a function parameter (name:type)"""
+        is_byref = False
+
+        # Check for byref keyword
+        if self.token.type == TT_BYREF:
+            is_byref = True
+            self.advance()  # Consume 'byref'
+
         if self.token.type != TT_IDENT:
             self.error("Expected parameter name")
 
@@ -759,7 +797,7 @@ class Parser:
         self.advance() # Skip colon
         param_type = self.parse_type_reference()
 
-        return (name, param_type)
+        return (name, param_type, is_byref)
 
     def parse_type_reference(self):
         """Parse a type reference (tuple, primitive or struct)"""
@@ -1108,7 +1146,7 @@ class Parser:
             init_method = registry.get_method(struct_id, "init")
             if init_method:
                 # Check argument count
-                self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args)
+                self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args, is_method=True)
                 self.check_argument_types(args, init_method.params, "constructor for '%s'" % struct_name)
 
             # Create heap allocated struct
@@ -1263,7 +1301,7 @@ class Parser:
         func_return_type = func_obj.return_type
 
         # Check number of arguments
-        self.check_arg_count("Function '%s'" % func_name, func_params, args)
+        self.check_arg_count("Function '%s'" % func_name, func_params, args, is_method=False)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
         return CallNode(func_name, args, func_return_type)
 
