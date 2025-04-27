@@ -29,10 +29,10 @@ class StructInstance:
     def __init__(self, struct_id, struct_name):
         self.struct_id = struct_id
         self.struct_name = struct_name
-        self.fields = {}  # field_name -> value
+        self.fields = {}  # field_name -> Variable instance
 
     def __repr__(self):
-        fields_str = ", ".join(["%s=%s" % (name, value) for name, value in self.fields.items()])
+        fields_str = ", ".join(["%s=%s" % (name, value.value) for name, value in self.fields.items()])
         return "%s(%s)" % (self.struct_name, fields_str)
 
 class Interpreter(object):
@@ -40,7 +40,7 @@ class Interpreter(object):
         """Initialize the interpreter with an optional environment"""
         self.environment = environment if environment else EnvironmentStack()
         # Initialize heap management
-        self.heap_objects = {}  # obj_id -> (object, is_freed)
+        self.heap_objects = {}  # obj_id -> (Variable, is_freed)
         self.next_heap_id = 1
 
         # Create node type to visitor method mapping
@@ -93,18 +93,11 @@ class Interpreter(object):
         """Create a stack reference variable"""
         return Variable(None, expr_type, TAG_STACK_REF, (var_name, scope_id))
         
-    def is_reference(self, var):
-        """Check if a variable is a reference"""
-        return hasattr(var, 'tag') and var.tag != TAG_DIRECT_VALUE
-        
     def dereference(self, var):
         """Get actual value from a variable, following references if needed"""
-        # Direct values or non-Variable objects are returned as-is
-        if not hasattr(var, 'tag'):
-            return var
-            
+        # Direct values are returned as-is
         if var.tag == TAG_DIRECT_VALUE:
-            return var.value
+            return var
             
         if var.tag == TAG_HEAP_REF:
             # Check heap reference validity
@@ -134,8 +127,13 @@ class Interpreter(object):
                     
             raise CompilerException("Referenced variable '%s' not found" % var_name)
             
-        # Unknown reference type
-        return var
+        # This should never happen if code is consistent
+        raise CompilerException("Unknown reference tag")
+    
+    def get_raw_value(self, var):
+        """Get the underlying raw value from a Variable, following references"""
+        deref_var = self.dereference(var)
+        return deref_var.value
     
     def run(self, text):
         from lexer import Lexer
@@ -189,7 +187,7 @@ class Interpreter(object):
                 # If main returns a value, include it in the result
                 return {
                     'success': True,
-                    'result': ret.value,
+                    'result': ret.value.value if ret.value else None,  # Extract raw value for result
                     'global_env': interpreter.environment.stack[0],
                     'main_env': interpreter.environment.stack[1],
                     'ast': ast
@@ -200,11 +198,11 @@ class Interpreter(object):
     def evaluate(self, node):
         """Main entry point to evaluate an AST node"""
         if node is None:
-            return None
+            return self.make_direct_value(None, TYPE_VOID)
 
         # If given a list of nodes (program), execute each one
         if isinstance(node, list):
-            result = None
+            result = self.make_direct_value(None, TYPE_VOID)
             for n in node:
                 result = self.evaluate(n)
             return result
@@ -221,7 +219,7 @@ class Interpreter(object):
         Args:
             method_name: Name of method/constructor for error messages
             method_params: List of (param_name, param_type) tuples
-            args: List of evaluated argument values
+            args: List of evaluated argument values (Variable instances)
             arg_nodes: List of argument AST nodes for type information
         """
         if len(args) != len(method_params):
@@ -241,11 +239,11 @@ class Interpreter(object):
 
     def visit_number(self, node):
         """Evaluate a number node (integer or float)"""
-        return node.value
+        return self.make_direct_value(node.value, node.expr_type)
 
     def visit_string(self, node):
         """Evaluate a string node"""
-        return node.value
+        return self.make_direct_value(node.value, TYPE_STRING)
 
     def visit_variable(self, node):
         """Evaluate a variable reference node"""
@@ -255,69 +253,86 @@ class Interpreter(object):
 
     def visit_binary_op(self, node):
         """Evaluate a binary operation node"""
-        left_val = self.evaluate(node.left)
-        right_val = self.evaluate(node.right)
+        left_var = self.evaluate(node.left)
+        right_var = self.evaluate(node.right)
 
         # Special case for assignment to struct field (obj.field = value)
         if node.operator == '=' and node.left.node_type == AST_NODE_MEMBER_ACCESS:
             # First evaluate the object to get the struct instance
-            obj = self.evaluate(node.left.obj)
+            obj_var = self.evaluate(node.left.obj)
             
             # Dereference if it's a reference
-            obj = self.dereference(obj)
+            obj_var = self.dereference(obj_var)
+            obj = obj_var.value  # Get the struct instance
 
             # Check if obj is a struct instance
             if not isinstance(obj, StructInstance):
                 raise CompilerException("Cannot assign to field of non-struct value")
 
             # Set the field value
-            obj.fields[node.left.member_name] = right_val
-            return right_val
+            obj.fields[node.left.member_name] = right_var
+            return right_var
 
         # Dereference operands if they are references
-        left_val = self.dereference(left_val)
-        right_val = self.dereference(right_val)
+        left_var = self.dereference(left_var)
+        right_var = self.dereference(right_var)
+        
+        # Get raw values for operation
+        left_val = left_var.value
+        right_val = right_var.value
 
         if node.operator == '+':
             # Handle string concatenation
             if node.left.expr_type == TYPE_STRING and node.right.expr_type == TYPE_STRING:
-                return left_val + right_val
+                result = left_val + right_val
+                return self.make_direct_value(result, TYPE_STRING)
 
-            return add(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = add(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == '-':
-            return subtract(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = subtract(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == '*':
-            return multiply(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = multiply(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == '/':
-            return divide(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = divide(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == '%':
-            return modulo(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = modulo(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == 'shl':
-            return shift_left(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = shift_left(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == 'shr':
-            return shift_right(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = shift_right(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
 
         raise CompilerException("Unknown binary operator: %s" % node.operator)
 
     def visit_unary_op(self, node):
         """Evaluate a unary operation node"""
-        value = self.evaluate(node.operand)
+        value_var = self.evaluate(node.operand)
         
         # Dereference if it's a reference
-        value = self.dereference(value)
+        value_var = self.dereference(value_var)
+        value = value_var.value
 
         if node.operator == '-':
-            return negate(value, node.operand.expr_type)
+            result = negate(value, node.operand.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == '!':
-            return logical_not(value)
+            result = logical_not(value)
+            return self.make_direct_value(result, TYPE_BOOL)
         elif node.operator == 'bitnot':
-            return bitwise_not(value, node.operand.expr_type)
+            result = bitwise_not(value, node.operand.expr_type)
+            return self.make_direct_value(result, node.expr_type)
 
         raise CompilerException("Unknown unary operator: %s" % node.operator)
 
     def visit_assign(self, node):
         """Evaluate an assignment node"""
-        value = self.evaluate(node.expr)
+        value_var = self.evaluate(node.expr)
 
         # Check if type promotion is needed and allowed
         if node.expr_type != node.expr.expr_type:
@@ -327,19 +342,26 @@ class Interpreter(object):
 
         # Handle number literal promotion
         if node.expr.node_type == AST_NODE_NUMBER:
-            value = promote_literal_if_needed(value, node.expr.expr_type, node.expr_type)
+            raw_value = value_var.value
+            promoted = promote_literal_if_needed(raw_value, node.expr.expr_type, node.expr_type)
+            if promoted != raw_value:
+                value_var = self.make_direct_value(promoted, node.expr_type)
 
-        self.environment.set(node.var_name, value)
-        return value
+        self.environment.set(node.var_name, value_var)
+        return value_var
 
     def visit_compound_assign(self, node):
         """Evaluate a compound assignment node (+=, -=, etc.)"""
-        current_value = self.environment.get(node.var_name)
-        expr_value = self.evaluate(node.expr)
+        current_var = self.environment.get(node.var_name)
+        expr_var = self.evaluate(node.expr)
         
         # Dereference if they are references
-        current_value = self.dereference(current_value)
-        expr_value = self.dereference(expr_value)
+        current_var = self.dereference(current_var)
+        expr_var = self.dereference(expr_var)
+        
+        # Get raw values
+        current_value = current_var.value
+        expr_value = expr_var.value
 
         if node.op_type == TT_PLUS_ASSIGN:
             # Handle string concatenation for += operator
@@ -347,38 +369,46 @@ class Interpreter(object):
                 if node.expr.expr_type != TYPE_STRING:
                     raise CompilerException("Cannot use += with string and %s" % var_type_to_string(node.expr.expr_type))
                 result = current_value + expr_value
+                result_var = self.make_direct_value(result, TYPE_STRING)
             else:
                 result = add(current_value, expr_value, node.expr_type, node.expr.expr_type)
+                result_var = self.make_direct_value(result, node.expr_type)
         elif node.op_type == TT_MINUS_ASSIGN:
             result = subtract(current_value, expr_value, node.expr_type, node.expr.expr_type)
+            result_var = self.make_direct_value(result, node.expr_type)
         elif node.op_type == TT_MULT_ASSIGN:
             result = multiply(current_value, expr_value, node.expr_type, node.expr.expr_type)
+            result_var = self.make_direct_value(result, node.expr_type)
         elif node.op_type == TT_DIV_ASSIGN:
             result = divide(current_value, expr_value, node.expr_type, node.expr.expr_type)
+            result_var = self.make_direct_value(result, node.expr_type)
         elif node.op_type == TT_MOD_ASSIGN:
             result = modulo(current_value, expr_value, node.expr_type, node.expr.expr_type)
+            result_var = self.make_direct_value(result, node.expr_type)
         else:
             raise CompilerException("Unknown compound assignment operator: %s" % token_name(node.op_type))
 
-        self.environment.set(node.var_name, result)
-        return result
+        self.environment.set(node.var_name, result_var)
+        return result_var
 
     def visit_print(self, node):
         """Evaluate a print statement node"""
-        value = self.evaluate(node.expr)
+        value_var = self.evaluate(node.expr)
         
         # Dereference if it's a reference
-        value = self.dereference(value)
+        value_var = self.dereference(value_var)
         
-        print(value)
-        return value
+        # Print the raw value
+        print(value_var.value)
+        return value_var
 
     def visit_if(self, node):
         """Evaluate an if statement node"""
-        condition = self.evaluate(node.condition)
+        condition_var = self.evaluate(node.condition)
         
         # Dereference if it's a reference
-        condition = self.dereference(condition)
+        condition_var = self.dereference(condition_var)
+        condition = condition_var.value
         
         if condition:
             for stmt in node.then_body:
@@ -386,15 +416,16 @@ class Interpreter(object):
         elif node.else_body:
             for stmt in node.else_body:
                 self.evaluate(stmt)
-        return 0
+        return self.make_direct_value(0, TYPE_INT)
 
     def visit_while(self, node):
         """Evaluate a while loop node"""
         while True:
-            condition = self.evaluate(node.condition)
+            condition_var = self.evaluate(node.condition)
             
             # Dereference if it's a reference
-            condition = self.dereference(condition)
+            condition_var = self.dereference(condition_var)
+            condition = condition_var.value
             
             if not condition:
                 break
@@ -409,7 +440,7 @@ class Interpreter(object):
                         raise
             except BreakException:
                 break
-        return 0
+        return self.make_direct_value(0, TYPE_INT)
 
     def visit_break(self, node):
         """Evaluate a break statement node"""
@@ -425,49 +456,55 @@ class Interpreter(object):
 
     def visit_var_decl(self, node):
         """Evaluate a variable declaration node"""
-        value = self.evaluate(node.expr)
+        value_var = self.evaluate(node.expr)
         
-        # Check if value is a reference and node wants a reference
-        if self.is_reference(value) and node.ref_kind != REF_KIND_NONE:
+        # Check reference kind consistency
+        if value_var.tag != TAG_DIRECT_VALUE and node.ref_kind != REF_KIND_NONE:
             # Check compatibility of reference kinds
-            if (value.tag == TAG_HEAP_REF and node.ref_kind != REF_KIND_HEAP) or \
-               (value.tag == TAG_STACK_REF and node.ref_kind != REF_KIND_STACK):
+            if (value_var.tag == TAG_HEAP_REF and node.ref_kind != REF_KIND_HEAP) or \
+               (value_var.tag == TAG_STACK_REF and node.ref_kind != REF_KIND_STACK):
                 raise CompilerException("Cannot assign %s reference to %s reference variable" % 
                                       (
-                                          "heap" if value.tag == TAG_HEAP_REF else "stack",
+                                          "heap" if value_var.tag == TAG_HEAP_REF else "stack",
                                           "heap" if node.ref_kind == REF_KIND_HEAP else "stack"
                                       ))
         
         # types are already checked in compiler
-        self.environment.set(node.var_name, value)
-        return value
+        self.environment.set(node.var_name, value_var)
+        return value_var
 
     def visit_function_decl(self, node):
         """Evaluate a function declaration node"""
         # Functions are already registered in the type registry during parsing
-        return 0
+        return self.make_direct_value(0, TYPE_INT)
 
     def visit_return(self, node):
         """Evaluate a return statement node"""
-        value = None if node.expr is None else self.evaluate(node.expr)
+        value_var = None if node.expr is None else self.evaluate(node.expr)
         # Throw a special exception to unwind the call stack
-        raise ReturnException(value)
+        raise ReturnException(value_var)
 
     def visit_compare(self, node):
         """Evaluate a comparison node"""
-        left_val = self.evaluate(node.left)
-        right_val = self.evaluate(node.right)
+        left_var = self.evaluate(node.left)
+        right_var = self.evaluate(node.right)
         
         # Dereference operands if they are references
-        left_val = self.dereference(left_val)
-        right_val = self.dereference(right_val)
+        left_var = self.dereference(left_var)
+        right_var = self.dereference(right_var)
+        
+        # Get raw values
+        left_val = left_var.value
+        right_val = right_var.value
 
         # Handle string comparison operations
         if node.left.expr_type == TYPE_STRING and node.right.expr_type == TYPE_STRING:
             if node.operator == '==':
-                return 1 if left_val == right_val else 0
+                result = 1 if left_val == right_val else 0
+                return self.make_direct_value(result, TYPE_BOOL)
             elif node.operator == '!=':
-                return 1 if left_val != right_val else 0
+                result = 1 if left_val != right_val else 0
+                return self.make_direct_value(result, TYPE_BOOL)
             # Other comparison operators are not supported for strings
             elif node.operator in ['>', '>=', '<', '<=']:
                 raise CompilerException("Operator %s not supported for strings" % node.operator)
@@ -476,59 +513,81 @@ class Interpreter(object):
                 raise CompilerException("Unknown comparison operator: %s" % node.operator)
 
         if node.operator == '==':
-            return compare_eq(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = compare_eq(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, TYPE_BOOL)
         elif node.operator == '!=':
-            return compare_ne(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = compare_ne(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, TYPE_BOOL)
         elif node.operator == '>=':
-            return compare_ge(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = compare_ge(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, TYPE_BOOL)
         elif node.operator == '>':
-            return compare_gt(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = compare_gt(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, TYPE_BOOL)
         elif node.operator == '<':
-            return compare_lt(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = compare_lt(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, TYPE_BOOL)
         elif node.operator == '<=':
-            return compare_le(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = compare_le(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, TYPE_BOOL)
 
         raise CompilerException("Unknown comparison operator: %s" % node.operator)
 
     def visit_logical(self, node):
         """Evaluate a logical operation node"""
-        left_val = self.evaluate(node.left)
+        left_var = self.evaluate(node.left)
         
         # Dereference if it's a reference
-        left_val = self.dereference(left_val)
+        left_var = self.dereference(left_var)
+        left_val = left_var.value
 
         if node.operator == 'and':
             # Short circuit evaluation
             if not left_val:
-                return 0
-            right_val = self.evaluate(node.right)
-            right_val = self.dereference(right_val)
-            return logical_and(left_val, right_val)
+                return self.make_direct_value(0, TYPE_BOOL)
+                
+            right_var = self.evaluate(node.right)
+            right_var = self.dereference(right_var)
+            right_val = right_var.value
+            
+            result = logical_and(left_val, right_val)
+            return self.make_direct_value(result, TYPE_BOOL)
         elif node.operator == 'or':
             # Short circuit evaluation
             if left_val:
-                return 1
-            right_val = self.evaluate(node.right)
-            right_val = self.dereference(right_val)
-            return logical_or(left_val, right_val)
+                return self.make_direct_value(1, TYPE_BOOL)
+                
+            right_var = self.evaluate(node.right)
+            right_var = self.dereference(right_var)
+            right_val = right_var.value
+            
+            result = logical_or(left_val, right_val)
+            return self.make_direct_value(result, TYPE_BOOL)
 
         raise CompilerException("Unknown logical operator: %s" % node.operator)
 
     def visit_bitop(self, node):
         """Evaluate a bitwise operation node"""
-        left_val = self.evaluate(node.left)
-        right_val = self.evaluate(node.right)
+        left_var = self.evaluate(node.left)
+        right_var = self.evaluate(node.right)
         
         # Dereference operands if they are references
-        left_val = self.dereference(left_val)
-        right_val = self.dereference(right_val)
+        left_var = self.dereference(left_var)
+        right_var = self.dereference(right_var)
+        
+        # Get raw values
+        left_val = left_var.value
+        right_val = right_var.value
 
         if node.operator == '&':
-            return bitwise_and(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = bitwise_and(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == '|':
-            return bitwise_or(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = bitwise_or(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
         elif node.operator == 'xor':
-            return bitwise_xor(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            result = bitwise_xor(left_val, right_val, node.left.expr_type, node.right.expr_type)
+            return self.make_direct_value(result, node.expr_type)
 
         raise CompilerException("Unknown bitwise operator: %s" % node.operator)
 
@@ -536,7 +595,7 @@ class Interpreter(object):
     def visit_struct_def(self, node):
         """Visit a struct definition node - Nothing to do at runtime"""
         # Struct definitions are handled at parse time
-        return None
+        return self.make_direct_value(None, TYPE_VOID)
 
     def visit_struct_init(self, node):
         """Visit a struct initialization node"""
@@ -549,13 +608,13 @@ class Interpreter(object):
             # Set default value based on type
             if registry.is_struct_type(field_type):
                 # For now, we don't auto-initialize nested structs
-                instance.fields[field_name] = None
+                instance.fields[field_name] = self.make_direct_value(None, field_type)
             elif field_type == TYPE_STRING:
-                instance.fields[field_name] = ""
+                instance.fields[field_name] = self.make_direct_value("", TYPE_STRING)
             elif is_float_type(field_type):
-                instance.fields[field_name] = 0.0
+                instance.fields[field_name] = self.make_direct_value(0.0, field_type)
             else:
-                instance.fields[field_name] = 0
+                instance.fields[field_name] = self.make_direct_value(0, field_type)
 
         # Call constructor if it exists and there are args or it's "init"
         init_method = registry.get_method(node.struct_id, "init")
@@ -567,7 +626,9 @@ class Interpreter(object):
             args = [self.evaluate(arg) for arg in node.args]
             self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
 
-            self.environment.set("self", instance)
+            # Create a Variable for 'self'
+            self_var = self.make_direct_value(instance, node.struct_id)
+            self.environment.set("self", self_var)
 
             # Execute constructor body
             try:
@@ -579,15 +640,17 @@ class Interpreter(object):
 
             self.environment.leave_scope()
 
-        return instance
+        # Return instance wrapped in a Variable
+        return self.make_direct_value(instance, node.struct_id)
 
     def visit_member_access(self, node):
         """Visit a member access node (obj.field)"""
         # Evaluate the object expression
-        obj = self.evaluate(node.obj)
+        obj_var = self.evaluate(node.obj)
         
         # Dereference if it's a reference
-        obj = self.dereference(obj)
+        obj_var = self.dereference(obj_var)
+        obj = obj_var.value  # Get the actual struct instance
 
         # Handle nil reference
         if obj is None:
@@ -610,10 +673,11 @@ class Interpreter(object):
 
         if is_method_call:
             # Evaluate the object
-            obj = self.evaluate(node.obj)
+            obj_var = self.evaluate(node.obj)
             
             # Dereference if it's a reference
-            obj = self.dereference(obj)
+            obj_var = self.dereference(obj_var)
+            obj = obj_var.value
 
             # Handle nil reference
             if obj is None:
@@ -633,7 +697,7 @@ class Interpreter(object):
 
             # Enter method scope and set 'self'
             self.environment.enter_scope()
-            self.environment.set("self", obj)
+            self.environment.set("self", obj_var)
         else:
             # Get function ID from registry
             method_id = registry.lookup_function(node.name)
@@ -656,7 +720,7 @@ class Interpreter(object):
         self.check_and_set_params(context_name, func_obj.params, args, node.args)
 
         # Default return value for void functions
-        result = None
+        result = self.make_direct_value(None, TYPE_VOID)
 
         try:
             # Execute body
@@ -675,7 +739,7 @@ class Interpreter(object):
                 raise CompilerException("Void %s returned a value" % 
                                       ("method" if is_method_call else "function"))
 
-            result = ret.value
+            result = ret.value if ret.value else self.make_direct_value(None, TYPE_VOID)
 
         # Clean up scope
         self.environment.leave_scope()
@@ -684,12 +748,13 @@ class Interpreter(object):
     def visit_new(self, node):
         """Visit a new expression for heap allocation"""
         # Evaluate the struct initialization
-        instance = self.evaluate(node.struct_init)
+        instance_var = self.evaluate(node.struct_init)
+        instance = instance_var.value
         
         # Allocate on heap
         heap_id = self.next_heap_id
         self.next_heap_id += 1
-        self.heap_objects[heap_id] = (instance, False)  # Not freed
+        self.heap_objects[heap_id] = (instance_var, False)  # Not freed
         
         # Return a heap reference
         return self.make_heap_ref(instance, node.expr_type, heap_id)
@@ -697,25 +762,28 @@ class Interpreter(object):
     def visit_del(self, node):
         """Visit a del statement for heap deallocation"""
         # Evaluate the expression
-        obj = self.evaluate(node.expr)
+        obj_var = self.evaluate(node.expr)
         
         # Check if it's a heap reference
-        if not hasattr(obj, 'tag') or obj.tag != TAG_HEAP_REF:
+        if obj_var.tag != TAG_HEAP_REF:
             raise CompilerException("'del' can only be used with heap references (created with 'new')")
         
         # Get heap ID
-        heap_id = obj.ref_data
+        heap_id = obj_var.ref_data
         
         # Get the actual object and mark as freed
         if heap_id not in self.heap_objects:
             raise CompilerException("Invalid heap reference or double free")
             
-        instance, is_freed = self.heap_objects[heap_id]
+        instance_var, is_freed = self.heap_objects[heap_id]
         if is_freed:
             raise CompilerException("Double free detected")
             
         # Mark as freed
-        self.heap_objects[heap_id] = (instance, True)
+        self.heap_objects[heap_id] = (instance_var, True)
+        
+        # Get the actual instance
+        instance = instance_var.value
 
         # Handle nil reference
         if instance is None:
@@ -727,7 +795,7 @@ class Interpreter(object):
             if fini_method:
                 # Create a temporary scope for the destructor
                 self.environment.enter_scope()
-                self.environment.set("self", instance)
+                self.environment.set("self", instance_var)
 
                 # Execute destructor body
                 try:
@@ -739,7 +807,7 @@ class Interpreter(object):
 
                 self.environment.leave_scope()
 
-        return None
+        return self.make_direct_value(None, TYPE_VOID)
 
     def visit_generic_initializer(self, node):
         """Visit a generic initializer node handling tuples, structs, and arrays"""
@@ -761,21 +829,21 @@ class Interpreter(object):
             # For tuples, use numerical field names (_0, _1, etc.)
             for i, elem in enumerate(node.elements):
                 field_name = "_%d" % i
-                value = self.evaluate(elem)
-                instance.fields[field_name] = value
+                value_var = self.evaluate(elem)
+                instance.fields[field_name] = value_var
 
         elif node.subtype == INITIALIZER_SUBTYPE_LINEAR:
             # For linear initializers, assign values to fields in order
-            for i, (field_name, _) in enumerate(all_fields):
+            for i, (field_name, field_type) in enumerate(all_fields):
                 if i < len(node.elements):
-                    value = self.evaluate(node.elements[i])
-                    instance.fields[field_name] = value
+                    value_var = self.evaluate(node.elements[i])
+                    instance.fields[field_name] = value_var
 
         elif node.subtype == INITIALIZER_SUBTYPE_NAMED:
             # Reserved for future C99-style named initializers
             raise CompilerException("Named initializers not yet implemented")
 
-        return instance
+        return self.make_direct_value(instance, node.expr_type)
 
 # Custom exceptions for control flow
 class BreakException(Exception):
