@@ -2,7 +2,7 @@
 
 from __future__ import division  # Use true division
 from shared import *
-from cops import add, subtract, multiply, divide, modulo, shift_left, shift_right, negate, logical_not, bitwise_not, compare_eq, compare_ne, compare_lt, compare_le, compare_gt, compare_ge, logical_and, logical_or, bitwise_and, bitwise_or, bitwise_xor
+from cops import add, subtract, multiply, divide, modulo, shift_left, shift_right, negate, logical_not, bitwise_not, compare_eq, compare_ne, compare_lt, compare_le, compare_gt, compare_ge, logical_and, logical_or, bitwise_and, bitwise_or, bitwise_xor, truncate_to_unsigned
 from type_registry import get_registry
 
 # import registry singleton
@@ -21,10 +21,36 @@ class StructInstance:
         fields_str = ", ".join(["%s=%s" % (name, value) for name, value in self.fields.items()])
         return "%s(%s)" % (self.struct_name, fields_str)
 
+# Reference types for runtime
+class Reference(object):
+    """Base class for references"""
+    def __init__(self, target, expr_type):
+        self.target = target  # The referenced value
+        self.expr_type = expr_type  # Type of the referenced value
+        self.ref_kind = REF_KIND_NONE
+
+class HeapReference(Reference):
+    """Reference to heap-allocated memory"""
+    def __init__(self, target, expr_type, obj_id):
+        Reference.__init__(self, target, expr_type)
+        self.obj_id = obj_id  # ID for tracking in the heap
+        self.ref_kind = REF_KIND_HEAP
+
+class StackReference(Reference):
+    """Reference to stack-allocated memory"""
+    def __init__(self, var_name, scope_id, expr_type):
+        Reference.__init__(self, None, expr_type)  # Target is resolved at access time
+        self.var_name = var_name
+        self.scope_id = scope_id
+        self.ref_kind = REF_KIND_STACK
+
 class Interpreter(object):
     def __init__(self, environment=None):
         """Initialize the interpreter with an optional environment"""
         self.environment = environment if environment else EnvironmentStack()
+        # Initialize heap management
+        self.heap_objects = {}  # obj_id -> (object, is_freed)
+        self.next_heap_id = 1
 
         # Create node type to visitor method mapping
         self.visitor_map = {
@@ -60,7 +86,41 @@ class Interpreter(object):
     def reset(self):
         registry.reset()
         if self.environment: self.environment.reset()
+        # Reset heap tracking
+        self.heap_objects = {}
+        self.next_heap_id = 1
 
+    def dereference(self, value):
+        """Get actual value from a reference"""
+        if isinstance(value, HeapReference):
+            # Check if valid and return the target
+            if value.obj_id not in self.heap_objects:
+                raise CompilerException("Invalid heap reference")
+                
+            obj, is_freed = self.heap_objects[value.obj_id]
+            if is_freed:
+                raise CompilerException("Use after free")
+                
+            return obj
+        elif isinstance(value, StackReference):
+            # Resolve stack reference to variable
+            var_name = value.var_name
+            
+            # Check if the referenced scope still exists
+            scope_exists = value.scope_id <= self.environment.stackptr
+            if not scope_exists:
+                raise CompilerException("Reference to variable from destroyed scope")
+            
+            # Find the variable in the appropriate scope
+            for i in range(value.scope_id, -1, -1):
+                if var_name in self.environment.stack[i]:
+                    return self.environment.stack[i][var_name]
+                    
+            raise CompilerException("Referenced variable '%s' not found" % var_name)
+            
+        # Not a reference
+        return value
+    
     def run(self, text):
         from lexer import Lexer
         from compiler import Parser
@@ -182,6 +242,26 @@ class Interpreter(object):
         left_val = self.evaluate(node.left)
         right_val = self.evaluate(node.right)
 
+        # Special case for assignment to struct field (obj.field = value)
+        if node.operator == '=' and node.left.node_type == AST_NODE_MEMBER_ACCESS:
+            # First evaluate the object to get the struct instance
+            obj = self.evaluate(node.left.obj)
+            
+            # Dereference if it's a reference
+            obj = self.dereference(obj)
+
+            # Check if obj is a struct instance
+            if not isinstance(obj, StructInstance):
+                raise CompilerException("Cannot assign to field of non-struct value")
+
+            # Set the field value
+            obj.fields[node.left.member_name] = right_val
+            return right_val
+
+        # Dereference operands if they are references
+        left_val = self.dereference(left_val)
+        right_val = self.dereference(right_val)
+
         if node.operator == '+':
             # Handle string concatenation
             if node.left.expr_type == TYPE_STRING and node.right.expr_type == TYPE_STRING:
@@ -200,24 +280,15 @@ class Interpreter(object):
             return shift_left(left_val, right_val, node.left.expr_type, node.right.expr_type)
         elif node.operator == 'shr':
             return shift_right(left_val, right_val, node.left.expr_type, node.right.expr_type)
-        # Special case for assignment to struct field (obj.field = value)
-        elif node.operator == '=' and node.left.node_type == AST_NODE_MEMBER_ACCESS:
-            # First evaluate the object to get the struct instance
-            obj = self.evaluate(node.left.obj)
-
-            # Check if obj is a struct instance
-            if not isinstance(obj, StructInstance):
-                raise CompilerException("Cannot assign to field of non-struct value")
-
-            # Set the field value
-            obj.fields[node.left.member_name] = right_val
-            return right_val
 
         raise CompilerException("Unknown binary operator: %s" % node.operator)
 
     def visit_unary_op(self, node):
         """Evaluate a unary operation node"""
         value = self.evaluate(node.operand)
+        
+        # Dereference if it's a reference
+        value = self.dereference(value)
 
         if node.operator == '-':
             return negate(value, node.operand.expr_type)
@@ -249,6 +320,10 @@ class Interpreter(object):
         """Evaluate a compound assignment node (+=, -=, etc.)"""
         current_value = self.environment.get(node.var_name)
         expr_value = self.evaluate(node.expr)
+        
+        # Dereference if they are references
+        current_value = self.dereference(current_value)
+        expr_value = self.dereference(expr_value)
 
         if node.op_type == TT_PLUS_ASSIGN:
             # Handle string concatenation for += operator
@@ -275,12 +350,21 @@ class Interpreter(object):
     def visit_print(self, node):
         """Evaluate a print statement node"""
         value = self.evaluate(node.expr)
+        
+        # Dereference if it's a reference
+        value = self.dereference(value)
+        
         print(value)
         return value
 
     def visit_if(self, node):
         """Evaluate an if statement node"""
-        if self.evaluate(node.condition):
+        condition = self.evaluate(node.condition)
+        
+        # Dereference if it's a reference
+        condition = self.dereference(condition)
+        
+        if condition:
             for stmt in node.then_body:
                 self.evaluate(stmt)
         elif node.else_body:
@@ -290,7 +374,15 @@ class Interpreter(object):
 
     def visit_while(self, node):
         """Evaluate a while loop node"""
-        while self.evaluate(node.condition):
+        while True:
+            condition = self.evaluate(node.condition)
+            
+            # Dereference if it's a reference
+            condition = self.dereference(condition)
+            
+            if not condition:
+                break
+                
             try:
                 for stmt in node.body:
                     try:
@@ -318,6 +410,18 @@ class Interpreter(object):
     def visit_var_decl(self, node):
         """Evaluate a variable declaration node"""
         value = self.evaluate(node.expr)
+        
+        # If the value has ref_kind and the variable needs it too,
+        # preserve the reference and store it directly
+        if hasattr(value, 'ref_kind') and node.ref_kind != REF_KIND_NONE:
+            # Make sure reference kinds match
+            if value.ref_kind != node.ref_kind:
+                raise CompilerException("Cannot assign %s reference to %s reference variable" % 
+                                      (
+                                          "heap" if value.ref_kind == REF_KIND_HEAP else "stack",
+                                          "heap" if node.ref_kind == REF_KIND_HEAP else "stack"
+                                      ))
+        
         # types are already checked in compiler
         self.environment.set(node.var_name, value)
         return value
@@ -337,6 +441,10 @@ class Interpreter(object):
         """Evaluate a comparison node"""
         left_val = self.evaluate(node.left)
         right_val = self.evaluate(node.right)
+        
+        # Dereference operands if they are references
+        left_val = self.dereference(left_val)
+        right_val = self.dereference(right_val)
 
         # Handle string comparison operations
         if node.left.expr_type == TYPE_STRING and node.right.expr_type == TYPE_STRING:
@@ -369,11 +477,24 @@ class Interpreter(object):
     def visit_logical(self, node):
         """Evaluate a logical operation node"""
         left_val = self.evaluate(node.left)
+        
+        # Dereference if it's a reference
+        left_val = self.dereference(left_val)
 
         if node.operator == 'and':
-            return logical_and(left_val, self.evaluate(node.right))
+            # Short circuit evaluation
+            if not left_val:
+                return 0
+            right_val = self.evaluate(node.right)
+            right_val = self.dereference(right_val)
+            return logical_and(left_val, right_val)
         elif node.operator == 'or':
-            return logical_or(left_val, self.evaluate(node.right))
+            # Short circuit evaluation
+            if left_val:
+                return 1
+            right_val = self.evaluate(node.right)
+            right_val = self.dereference(right_val)
+            return logical_or(left_val, right_val)
 
         raise CompilerException("Unknown logical operator: %s" % node.operator)
 
@@ -381,6 +502,10 @@ class Interpreter(object):
         """Evaluate a bitwise operation node"""
         left_val = self.evaluate(node.left)
         right_val = self.evaluate(node.right)
+        
+        # Dereference operands if they are references
+        left_val = self.dereference(left_val)
+        right_val = self.dereference(right_val)
 
         if node.operator == '&':
             return bitwise_and(left_val, right_val, node.left.expr_type, node.right.expr_type)
@@ -444,6 +569,9 @@ class Interpreter(object):
         """Visit a member access node (obj.field)"""
         # Evaluate the object expression
         obj = self.evaluate(node.obj)
+        
+        # Dereference if it's a reference
+        obj = self.dereference(obj)
 
         # Handle nil reference
         if obj is None:
@@ -467,6 +595,9 @@ class Interpreter(object):
         if is_method_call:
             # Evaluate the object
             obj = self.evaluate(node.obj)
+            
+            # Dereference if it's a reference
+            obj = self.dereference(obj)
 
             # Handle nil reference
             if obj is None:
@@ -538,24 +669,46 @@ class Interpreter(object):
         """Visit a new expression for heap allocation"""
         # Evaluate the struct initialization
         instance = self.evaluate(node.struct_init)
-        return instance  # The expression type is already set to reference type
+        
+        # Allocate on heap
+        heap_id = self.next_heap_id
+        self.next_heap_id += 1
+        self.heap_objects[heap_id] = (instance, False)  # Not freed
+        
+        # Return a heap reference
+        return HeapReference(instance, node.expr_type, heap_id)
 
     def visit_del(self, node):
         """Visit a del statement for heap deallocation"""
         # Evaluate the expression
         obj = self.evaluate(node.expr)
+        
+        # Check if it's a heap reference
+        if not isinstance(obj, HeapReference):
+            raise CompilerException("'del' can only be used with heap references (created with 'new')")
+        
+        # Get the actual object and mark as freed
+        if obj.obj_id not in self.heap_objects:
+            raise CompilerException("Invalid heap reference or double free")
+            
+        instance, is_freed = self.heap_objects[obj.obj_id]
+        if is_freed:
+            raise CompilerException("Double free detected")
+            
+        # Mark as freed
+        self.heap_objects[obj.obj_id] = (instance, True)
 
         # Handle nil reference
-        if obj is None:
+        if instance is None:
             raise CompilerException("Attempt to delete a nil reference")
 
         # Call destructor if it exists
-        if isinstance(obj, StructInstance):
-            fini_method = registry.get_method(obj.struct_id, "fini")
+        if isinstance(instance, StructInstance):
+            fini_method = registry.get_method(instance.struct_id, "fini")
             if fini_method:
                 # Create a temporary scope for the destructor
                 self.environment.enter_scope()
-                self.environment.set("self", obj)
+                self.environment.set("self", instance)
 
                 # Execute destructor body
                 try:
@@ -567,8 +720,6 @@ class Interpreter(object):
 
                 self.environment.leave_scope()
 
-        # Mark object as deleted (set to None)
-        # In a real implementation, this would free memory
         return None
 
     def visit_generic_initializer(self, node):
@@ -689,4 +840,3 @@ def promote_literal_if_needed(value, from_type, to_type):
         return float(value)
 
     return value
-
