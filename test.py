@@ -754,7 +754,7 @@ def test():
            "expected_env": {"x": 3, "y": 4, "m": 25, "z":5}
         },
         {
-           "name": "test struct inheritance",
+           "name": "test struct inheritance1",
            "code": """
     struct Shape do
         name: string;
@@ -792,7 +792,7 @@ def test():
            "expected_env": {"i": "My Circle", "j": "My Circle", "k": 2.5, "l":19.625}
         },
         {
-           "name": "test struct inheritance",
+           "name": "test struct inheritance2",
            "code": """
     struct Counter do
         count: int;
