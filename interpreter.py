@@ -263,8 +263,8 @@ class Interpreter(object):
             if not skip_type_check and has_node_for_type_check and not can_promote(arg_nodes[i].expr_type, param_type):
                 self.environment.leave_scope()
                 raise CompilerException("Type mismatch in %s argument: cannot convert %s to %s" %
-                                       (method_name, var_type_to_string(arg_nodes[i].expr_type),
-                                        var_type_to_string(param_type)))
+                                       (method_name, registry.var_type_to_string(arg_nodes[i].expr_type),
+                                        registry.var_type_to_string(param_type)))
             self.environment.set(param_name, arg_value)
 
     def visit_number(self, node):
@@ -694,14 +694,8 @@ class Interpreter(object):
                 if i == 0:  # First parameter is always 'self'
                     arg_value = self.make_direct_value(instance, node.struct_id)
                 else:
-                    # Regular argument (adjust index to account for self)
-                    arg_index = i - 1
-                    if arg_index >= len(node.args):
-                        # Missing argument - this should have been caught by the parser
-                        raise CompilerException("Constructor for '%s' expects %d arguments, got %d" % 
-                                               (node.struct_name, len(init_method.params) - 1, len(node.args)))
                     _, _, is_byref = init_method.params[i]
-                    arg_value = self.process_argument(node.args[arg_index], is_byref)
+                    arg_value = self.process_argument(node.args[i], is_byref)
                 args.append(arg_value)
 
             self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
@@ -762,8 +756,20 @@ class Interpreter(object):
             scope_id = self.environment.stackptr
             return self.make_stack_ref(var_name, scope_id, arg_node.expr_type)
 
-        # Expression result that isn't a reference (e.g., direct struct) - can't use with byref
-        raise CompilerException("Cannot pass expression result to 'byref' parameter - must be a variable or reference")
+        # Create a temporary variable for the expression result
+        # This allows passing expression results to byref parameters
+        temp = self.make_direct_value(result.value, result.expr_type)
+
+        # Store this temporary in the current function's scope with a unique name
+        # We don't need to track this name as it's just for the duration of the call
+        # hack hack - we introduce a "static int" into the class
+        # Add a temp counter at class level if not present
+        if not hasattr(self, 'temp_counter'): self.temp_counter = 0
+        temp_name = "__temp_%d"%self.temp_counter
+        self.environment.set(temp_name, temp)
+
+        # Create and return a reference to this temporary
+        return self.make_stack_ref(temp_name, self.environment.stackptr, result.expr_type)
 
     def visit_call(self, node):
         """Unified handler for function and method calls using only the type registry"""

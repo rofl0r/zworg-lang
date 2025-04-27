@@ -571,10 +571,8 @@ class Parser:
 
             # Special handling for byref parameters
             if is_byref:
-                # For byref parameters, make sure the argument is addressable
-                if arg.node_type != AST_NODE_VARIABLE:
-                    # Only variables can be passed by reference
-                    self.error("Cannot pass expression result to 'byref' parameter '%s' - must be a variable" % param_name)
+                # All expressions should be allowed for byref parameters
+                # The interpreter will handle creating temporary storage as needed
 
                 # The referenced variable's type must be compatible with the parameter type
                 if not can_promote(arg.expr_type, param_type):
@@ -1055,6 +1053,37 @@ class Parser:
 
         return init_node
 
+    def parse_constructor_call(self, struct_name, struct_id):
+        """Parse a constructor call and return a StructInitNode with properly handled arguments."""
+        # Verify struct parentheses
+        if self.token.type != TT_LPAREN:
+            self.error("Constructor invocation requires parentheses")
+
+        # Parse constructor arguments
+        self.advance()  # Skip '('
+        args = []
+        self.parse_args(args)
+        self.consume(TT_RPAREN)
+
+        # Check if init method exists for the struct - this MUST exist
+        init_method = registry.get_method(struct_id, "init")
+        # we allow StructName() without arguments as a convenient shortcut to get a zero-initialized struct.
+        if not init_method and len(args) > 0:
+            self.error("Cannot use constructor syntax for struct '%s' - no init method defined. Use initializer syntax {...} instead." % struct_name)
+
+        if init_method:
+            # Add self placeholder to arguments list
+            args_with_self = [VariableNode("", struct_id)]  # Placeholder for self
+            args_with_self.extend(args)
+            args = args_with_self
+
+            # Perform type checking
+            self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args)
+            self.check_argument_types(args, init_method.params, "Constructor for '%s'" % struct_name)
+
+        # Create and return struct initialization node with self included in args
+        return StructInitNode(struct_name, struct_id, args)
+
     def nud(self, t):
         # Handle number literals using the type mapping
         if t.type in TOKEN_TO_TYPE_MAP:
@@ -1072,15 +1101,7 @@ class Parser:
 
                 # Parse initializer: StructName() or StructName(arg1, arg2, ...)
                 if self.token.type == TT_LPAREN:
-                    self.advance()  # Skip '('
-
-                    # Parse constructor args
-                    args = []
-                    self.parse_args(args)
-                    self.consume(TT_RPAREN)
-
-                    # Create struct initialization
-                    return StructInitNode(var_name, struct_id, args)
+                    return self.parse_constructor_call(var_name, struct_id)
 
             # For a variable in an expression context:
             # Could be a function name.
@@ -1131,33 +1152,7 @@ class Parser:
 
             # Get the struct type ID
             struct_id = registry.get_struct_id(struct_name)
-
-            # Check for constructor call
-            args = []
-
-            if self.token.type != TT_LPAREN:
-                self.error("constructor invocation requires parenthesis")
-
-            # Parse constructor arguments
-            self.advance()  # Skip '('
-            self.parse_args(args)
-            self.consume(TT_RPAREN)
-
-            # Check if init method exists for the struct
-            init_method = registry.get_method(struct_id, "init")
-            if init_method:
-                # Check argument count
-                # For constructor calls, we need to create a placeholder for 'self'
-                # since the real self will be created after struct initialization
-                # This ensures the argument count check passes
-                constructor_args = [VariableNode("", struct_id)]  # Placeholder for self
-                constructor_args.extend(args)
-                self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, constructor_args)
-                self.check_argument_types(constructor_args, init_method.params, "constructor for '%s'" % struct_name)
-
-            # Create heap allocated struct
-            struct_init = StructInitNode(struct_name, struct_id, args)
-            return NewNode(struct_init)
+            return NewNode(self.parse_constructor_call(struct_name, struct_id))
 
         raise CompilerException('Unexpected token %s' % token_name(t), t)
 

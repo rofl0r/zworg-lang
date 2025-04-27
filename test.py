@@ -16,6 +16,21 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "constructor of differing types",
+           "code": """
+                struct Foo do x: int; label: string; end
+                def Foo.init(x: int, name: string) do
+                    self.x = x
+                    self.label = name;
+                end
+                def main() do
+                    var f := Foo(4, "origin")
+                    var x := f.x
+                end
+           """,
+           "expected_env": {"x": 4}
+        },
+        {
             "name": "tuple initializer with type inference",
             "code": """
                 def main() do
