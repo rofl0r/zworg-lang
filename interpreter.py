@@ -767,6 +767,7 @@ class Interpreter(object):
         # Add a temp counter at class level if not present
         if not hasattr(self, 'temp_counter'): self.temp_counter = 0
         temp_name = "__temp_%d"%self.temp_counter
+        self.temp_counter += 1
         self.environment.set(temp_name, temp)
 
         # Create and return a reference to this temporary
