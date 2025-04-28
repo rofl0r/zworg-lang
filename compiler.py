@@ -214,14 +214,16 @@ class FunctionDeclNode(ASTNode):
         )
 
 class ReturnNode(ASTNode):
-    def __init__(self, expr=None):
+    def __init__(self, expr=None, is_ref_return=False):
         ASTNode.__init__(self, AST_NODE_RETURN)
         self.expr = expr  # Can be None for return with no value
         self.expr_type = TYPE_VOID if expr is None else (expr.expr_type if hasattr(expr, 'expr_type') else TYPE_UNKNOWN)
+        self.is_ref_return = is_ref_return  # Whether this return is from a byref function
 
     def __repr__(self):
         if self.expr:
-            return "Return(%s) -> %s" %(repr(self.expr), registry.var_type_to_string(self.expr_type))
+            byref_str = "byref " if self.is_ref_return else ""
+            return "Return(%s) -> %s%s" %(repr(self.expr), byref_str, registry.var_type_to_string(self.expr_type))
         else:
             return "Return()"
 
@@ -296,13 +298,13 @@ class MemberAccessNode(ASTNode):
         return "MemberAccess(%s.%s)" % (repr(self.obj), self.member_name)
 
 class CallNode(ASTNode):
-    def __init__(self, name, args, return_type, obj=None, returns_ref=False):
+    def __init__(self, name, args, return_type, obj=None, is_ref_return=False):
         ASTNode.__init__(self, AST_NODE_CALL)
         self.name = name
         self.args = args
         self.expr_type = return_type
         self.obj = obj  # None for regular functions, object expr for methods
-        self.returns_ref = returns_ref
+        self.is_ref_return = is_ref_return
 
     def is_method_call(self):
         return self.obj is not None
@@ -482,10 +484,11 @@ class Parser:
 
     def get_variable_ref_kind(self, var_name):
         """Get a variable's reference kind from the appropriate scope"""
-        # Check all scopes from current to global
+        # Check all scopes from current to global - they contain variables and parameters.
         for scope in reversed(self.scopes):
             if var_name in self.var_ref_kinds[scope]:
                 return self.var_ref_kinds[scope][var_name]
+
         return REF_KIND_NONE
 
     def error(self, message):
@@ -664,7 +667,7 @@ class Parser:
             self.check_arg_count("Method '%s'" % member_name, func_obj.params, args, is_method=True)
             self.check_argument_types(args, func_obj.params, "method '%s'" % member_name)
 
-            return CallNode(member_name, args, func_obj.return_type, obj_node, returns_ref=func_obj.is_ref_return)
+            return CallNode(member_name, args, func_obj.return_type, obj_node, is_ref_return=func_obj.is_ref_return)
         else:
             # Field access
             field_type = registry.get_field_type(struct_name, member_name)
@@ -775,7 +778,10 @@ class Parser:
             params.insert(0, ("self", struct_id, True))
 
         # Add parameters to scope
-        for param_name, param_type, _ in params:
+        for param_name, param_type, param_is_byref in params:
+            ref_kind = REF_KIND_STACK if param_is_byref else REF_KIND_NONE
+            self.declare_variable(param_name, param_type, is_const=False, ref_kind=ref_kind)
+
             self.declare_variable(param_name, param_type)
 
         # Parse function/method body
@@ -1318,7 +1324,7 @@ class Parser:
         # Check number of arguments
         self.check_arg_count("Function '%s'" % func_name, func_params, args, is_method=False)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
-        return CallNode(func_name, args, func_return_type, returns_ref=func_obj.is_ref_return)
+        return CallNode(func_name, args, func_return_type, is_ref_return=func_obj.is_ref_return)
 
     def statement(self):
         self.skip_separators()
@@ -1375,7 +1381,7 @@ class Parser:
                 self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
 
             self.check_statement_end()
-            return ReturnNode(expr)
+            return ReturnNode(expr, current_func_obj.is_ref_return)
 
         # Handle del statement for heap deallocation
         if self.token.type == TT_DEL:

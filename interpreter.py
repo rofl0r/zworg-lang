@@ -547,13 +547,14 @@ class Interpreter(object):
     def visit_return(self, node):
         """Evaluate a return statement node"""
         value_var = None if node.expr is None else self.evaluate(node.expr)
-        # If returning from a non-byref function but we have a reference,
-        # automatically dereference it
-        if value_var and value_var.tag != TAG_DIRECT_VALUE:
-            # Check node's ref_kind to see if this is a byref return
-            if node.ref_kind == REF_KIND_NONE:
-                # Non-reference return function - dereference
-                value_var = self.dereference(value_var)
+        # Check if function returns by reference
+        if node.is_ref_return:
+            # Validate that we're actually returning a reference
+            if value_var is None or value_var.tag == TAG_DIRECT_VALUE:
+                raise CompilerException("Function with 'byref' return type must return a reference")
+        elif value_var and value_var.tag != TAG_DIRECT_VALUE:
+            # Non-reference return function - dereference
+            value_var = self.dereference(value_var)
 
         # Throw a special exception to unwind the call stack
         raise ReturnException(value_var)
@@ -772,6 +773,7 @@ class Interpreter(object):
 
         # Store this temporary in the current function's scope with a unique name
         # We don't need to track this name as it's just for the duration of the call
+        # WARNING: Returning this temporary reference from the function would be unsafe
         # hack hack - we introduce a "static int" into the class
         # Add a temp counter at class level if not present
         if not hasattr(self, 'temp_counter'): self.temp_counter = 0

@@ -24,7 +24,7 @@ def test():
                 def main() do
                     var a:int = 10;
                     var b:int = 20;
-                    get_ref(a) = 42;  # Modify a through returned reference
+                    get_ref(a) = 42;  // Modify a through returned reference
                 end
             """,
             "expected_env": {"a": 42, "b": 20}
@@ -67,7 +67,7 @@ def test():
                 end
                 def main() do
                     var num:int = 10;
-                    get_ref(num) += 5;  # Should increment by 5
+                    get_ref(num) += 5;  // Should increment by 5
                     print(num);
                 end
             """,
@@ -1879,6 +1879,7 @@ def test():
 
             else:
                 printc("red", "Failed! Error: %s" % result['error'])
+                printc("red", "Input: %s" % test_case["code"])
                 if os.getenv("DEBUG"):
                     import time
                     time.sleep(10000)
