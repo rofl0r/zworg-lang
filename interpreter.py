@@ -548,7 +548,7 @@ class Interpreter(object):
         """Evaluate a return statement node"""
         value_var = None if node.expr is None else self.evaluate(node.expr)
         # Check if function returns by reference
-        if node.is_ref_return:
+        if node.ref_kind & REF_KIND_GENERIC:
             # Validate that we're actually returning a reference
             if value_var is None or value_var.tag == TAG_DIRECT_VALUE:
                 raise CompilerException("Function with 'byref' return type must return a reference")
@@ -866,14 +866,14 @@ class Interpreter(object):
             result = ret.value if ret.value else self.make_direct_value(None, TYPE_VOID)
 
             # Check if this is a reference-returning function
-            if func_obj.is_ref_return:
+            if node.ref_kind & REF_KIND_GENERIC:
                 # Ensure reference is valid - should already be checked in visit_return
                 if result.tag == TAG_DIRECT_VALUE:
                     raise CompilerException("Function '%s' with byref return type must return a reference" % 
                                            (func_obj.name))
 
                 # No need to create new reference, already properly validated
-            elif result.tag in (TAG_STACK_REF, TAG_HEAP_REF):
+            elif result.tag != TAG_DIRECT_VALUE:
                 # For non-ref function with reference result, dereference
                 result = self.dereference(result)
 

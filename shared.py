@@ -457,8 +457,9 @@ def can_promote(from_type, to_type):
 
 # Reference kinds
 REF_KIND_NONE = 0 # Not a reference (regular value)
-REF_KIND_HEAP = 1 # Heap-allocated (new operator)
-REF_KIND_STACK = 2 # Stack reference (byref parameter)
+REF_KIND_HEAP = 1 # Heap-allocated (new operator)       0001 in binary
+REF_KIND_STACK = 2 # Stack reference (byref parameter)  0010 in binary
+REF_KIND_GENERIC = 3 # 0011 in binary (STACK | HEAP) - will be used as placeholder when we dont know the actual type (yet)
 
 # Generic initializer subtypes
 INITIALIZER_SUBTYPE_TUPLE = 0     # Type inferred from elements
