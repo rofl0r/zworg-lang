@@ -32,7 +32,7 @@ class StructInstance:
         self.fields = {}  # field_name -> Variable instance
 
     def __repr__(self):
-        if self.fields is None: self.fields = {}
+        #if self.fields is None: self.fields = {}
         fields_str = ", ".join(["%s=%s" % (name, value.value if value else "None") for name, value in self.fields.items()])
         return "%s(%s)" % (self.struct_name, fields_str)
 
