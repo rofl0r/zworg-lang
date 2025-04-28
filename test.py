@@ -16,6 +16,128 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "byref return basic test",
+            "code": """
+                def get_ref(byref x:int):byref int do
+                    return x;
+                end
+                def main() do
+                    var a:int = 10;
+                    var b:int = 20;
+                    get_ref(a) = 42;  # Modify a through returned reference
+                end
+            """,
+            "expected_env": {"a": 42, "b": 20}
+        },
+        {
+            "name": "byref return from global",
+            "code": """
+                var global:int = 5;
+                def get_global_ref() :byref int do
+                    return global;
+                end
+                def main() do
+                    get_global_ref() = 100;
+                end
+            """,
+            "expected_env": {"global": 100}
+        },
+        {
+            "name": "byref return chaining",
+            "code": """
+                def get_ref2(byref x:int) :byref int do
+                    return x;
+                end
+                def get_ref1(byref x:int) :byref int do
+                    return get_ref2(x);
+                end
+                def main() do
+                    var value:int = 10;
+                    get_ref1(value) = 55;
+                    print(value);
+                end
+            """,
+            "expected_env": {"value": 55}
+        },
+        {
+            "name": "byref return with compound assignment",
+            "code": """
+                def get_ref(byref x:int) :byref int do
+                    return x;
+                end
+                def main() do
+                    var num:int = 10;
+                    get_ref(num) += 5;  # Should increment by 5
+                    print(num);
+                end
+            """,
+            "expected_env": {"num": 15}
+        },
+        {
+            "name": "byref return with struct fields",
+            "code": """
+                struct Point do x:int; y:int; end
+                def get_x_ref(byref p:Point) :byref int do
+                    return p.x;
+                end
+                def main() do
+                    var p:Point = {10, 20};
+                    get_x_ref(p) = 99;
+                    print(p.x);
+                    print(p.y);
+                end
+            """,
+            "expected_env": {"p": {"_0": 99, "_1": 20}}
+        },
+        {
+            "name": "byref return from method",
+            "code": """
+                struct Counter do value:int ; end
+                def Counter.get_value_ref() :byref int do
+                    return self.value;
+                end
+                def main() do
+                    var c:Counter = {5};
+                    c.get_value_ref() = 42;
+                    print(c.value);
+                end
+            """,
+            "expected_env": {"c": {"_0": 42}}
+        },
+        {
+            "name": "byref return with heap objects",
+            "code": """
+                struct Data do value:int; end
+                def get_value_ref(byref d:Data) :byref int do
+                    return d.value;
+                end
+                def main() do
+                    var heap_data:= new Data()
+                    heap_data.value = 10;
+                    get_value_ref(heap_data) = 75;
+                    var x:= heap_data.value
+                    del heap_data;
+                end
+            """,
+            "expected_env": {"x": 75}
+        },
+        {
+            "name": "double byref indirection",
+            "code": """
+                def update_through_ref(byref x:int) do
+                    x = 99;
+                end
+                def get_ref(byref x:int) :byref int do
+                    return x;
+                end
+                def main() do
+                    var value:int = 42;
+                    update_through_ref(get_ref(value));
+                end
+            """,
+            "expected_env": {"value": 99}
+        },
+        {
            "name": "byref call 1",
            "code": """
 		def fun(byref y:int) do y=42; end

@@ -178,11 +178,12 @@ class VarDeclNode(ASTNode):
         )
 
 class FunctionDeclNode(ASTNode):
-    def __init__(self, name, params, return_type, body, parent_struct_id=-1):
+    def __init__(self, name, params, return_type, body, parent_struct_id=-1, is_ref_return=False):
         ASTNode.__init__(self, AST_NODE_FUNCTION_DECL)
         self.name = name
         self.params = params  # List of (name, type) tuples
         self.return_type = return_type
+        self.is_ref_return = is_ref_return
         self.body = body
         self.expr_type = TYPE_VOID # a function decl can't be used in expression context
         self.parent_struct_id = parent_struct_id  # -1 for global functions
@@ -295,12 +296,13 @@ class MemberAccessNode(ASTNode):
         return "MemberAccess(%s.%s)" % (repr(self.obj), self.member_name)
 
 class CallNode(ASTNode):
-    def __init__(self, name, args, return_type, obj=None):
+    def __init__(self, name, args, return_type, obj=None, returns_ref=False):
         ASTNode.__init__(self, AST_NODE_CALL)
         self.name = name
         self.args = args
         self.expr_type = return_type
         self.obj = obj  # None for regular functions, object expr for methods
+        self.returns_ref = returns_ref
 
     def is_method_call(self):
         return self.obj is not None
@@ -662,7 +664,7 @@ class Parser:
             self.check_arg_count("Method '%s'" % member_name, func_obj.params, args, is_method=True)
             self.check_argument_types(args, func_obj.params, "method '%s'" % member_name)
 
-            return CallNode(member_name, args, func_obj.return_type, obj_node)
+            return CallNode(member_name, args, func_obj.return_type, obj_node, returns_ref=func_obj.is_ref_return)
         else:
             # Field access
             field_type = registry.get_field_type(struct_name, member_name)
@@ -733,8 +735,14 @@ class Parser:
 
         # Parse return type (if specified)
         return_type = TYPE_VOID  # Default to void
+        is_ref_return = False    # Default to non-reference return
+
         if self.token.type == TT_COLON:
             self.advance()
+            # Check for byref return type
+            if self.token.type == TT_BYREF:
+                is_ref_return = True
+                self.advance()  # Consume 'byref'
             return_type = self.parse_type_reference()
 
         struct_id = -1
@@ -756,10 +764,10 @@ class Parser:
         # Enter function/method scope
         self.enter_scope(name)
         prev_function = self.current_function
-        self.current_function = registry.register_function(name, return_type, params, parent_struct_id=struct_id)
+        self.current_function = registry.register_function(name, return_type, params, parent_struct_id=struct_id, is_ref_return=is_ref_return)
         # create a new node with empty body - we'll add it later
         # That's needed so type checking inside the body can find it
-        node = FunctionDeclNode(name, params, return_type, body=None, parent_struct_id=struct_id)
+        node = FunctionDeclNode(name, params, return_type, body=None, parent_struct_id=struct_id, is_ref_return=is_ref_return)
         registry.set_function_ast_node(self.current_function, node)
 
         if struct_name:
@@ -1310,7 +1318,7 @@ class Parser:
         # Check number of arguments
         self.check_arg_count("Function '%s'" % func_name, func_params, args, is_method=False)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
-        return CallNode(func_name, args, func_return_type)
+        return CallNode(func_name, args, func_return_type, returns_ref=func_obj.is_ref_return)
 
     def statement(self):
         self.skip_separators()
@@ -1355,6 +1363,12 @@ class Parser:
             if func_return_type == TYPE_VOID:
                 fn = registry.get_func_from_id(self.current_function).name
                 self.error("Void function '%s' cannot return a value" % fn)
+
+            # Special handling for return statement type checking
+            # Check if function returns by reference
+            # XXX and hasattr(expr, 'ref_kind')
+            if current_func_obj.is_ref_return and expr.ref_kind == REF_KIND_NONE:
+                self.error("Function with 'byref' return type must return a reference")
 
             # Check that return expression type matches function return type
             if not can_promote(expr.expr_type, func_return_type):

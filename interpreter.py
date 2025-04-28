@@ -547,6 +547,14 @@ class Interpreter(object):
     def visit_return(self, node):
         """Evaluate a return statement node"""
         value_var = None if node.expr is None else self.evaluate(node.expr)
+        # If returning from a non-byref function but we have a reference,
+        # automatically dereference it
+        if value_var and value_var.tag != TAG_DIRECT_VALUE:
+            # Check node's ref_kind to see if this is a byref return
+            if node.ref_kind == REF_KIND_NONE:
+                # Non-reference return function - dereference
+                value_var = self.dereference(value_var)
+
         # Throw a special exception to unwind the call stack
         raise ReturnException(value_var)
 
@@ -554,11 +562,11 @@ class Interpreter(object):
         """Evaluate a comparison node"""
         left_var = self.evaluate(node.left)
         right_var = self.evaluate(node.right)
-        
+
         # Dereference operands if they are references
         left_var = self.dereference(left_var)
         right_var = self.dereference(right_var)
-        
+
         # Get raw values
         left_val = left_var.value
         right_val = right_var.value
@@ -854,6 +862,18 @@ class Interpreter(object):
                                       ("method" if is_method_call else "function"))
 
             result = ret.value if ret.value else self.make_direct_value(None, TYPE_VOID)
+
+            # Check if this is a reference-returning function
+            if func_obj.is_ref_return:
+                # Ensure reference is valid - should already be checked in visit_return
+                if result.tag == TAG_DIRECT_VALUE:
+                    raise CompilerException("Function '%s' with byref return type must return a reference" % 
+                                           (func_obj.name))
+
+                # No need to create new reference, already properly validated
+            elif result.tag in (TAG_STACK_REF, TAG_HEAP_REF):
+                # For non-ref function with reference result, dereference
+                result = self.dereference(result)
 
         # Clean up scope
         self.environment.leave_scope()

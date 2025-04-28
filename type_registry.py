@@ -29,9 +29,10 @@ class ArrayDescriptor(TypeDescriptor):
         self.size = size  # None = dynamic size, int = fixed size
 
 class Function:
-    def __init__(self, name, return_type, params, parent_struct_id=-1, ast_node=None):
+    def __init__(self, name, return_type, params, parent_struct_id=-1, ast_node=None, is_ref_return=False):
         self.name = name  # Qualified name containing struct prefix for methods
         self.return_type = return_type
+        self.is_ref_return = is_ref_return
         self.params = params  # List of (name, type, is_byref) tuples
         self.parent_struct_id = parent_struct_id  # -1 for global functions
         self.ast_node = ast_node  # Store AST nodes directly
@@ -275,7 +276,7 @@ class TypeRegistry:
         return struct_name in self._struct_registry
 
     # Function methods
-    def register_function(self, name, return_type, params, parent_struct_id=-1, ast_node=None):
+    def register_function(self, name, return_type, params, parent_struct_id=-1, ast_node=None, is_ref_return=False):
         """Register a function, returning its ID"""
         func_id = self._next_funcid
         self._next_funcid += 1
@@ -286,7 +287,7 @@ class TypeRegistry:
             struct_name = self.get_struct_name(parent_struct_id)
             qualified_name = "%s.%s" % (struct_name, name)
 
-        func = Function(qualified_name, return_type, params, parent_struct_id, ast_node)
+        func = Function(qualified_name, return_type, params, parent_struct_id, ast_node, is_ref_return=is_ref_return)
         self._functions[func_id] = func
 
         # Add to unified lookup map
