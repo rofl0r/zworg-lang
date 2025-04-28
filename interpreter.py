@@ -819,16 +819,13 @@ class Interpreter(object):
             if i == 0 and is_method_call:
                 # First parameter for methods is 'self'
                 arg_value = obj  # Already evaluated above
+                # Make sure we use the dereferenced object for 'self'
+                #arg_value = self.make_direct_value(obj_value, obj_deref.expr_type)
                 arg_nodes.append(node.obj)
             else:
-                # Regular argument (adjust index based on whether it's a method)
-                arg_index = i - (1 if is_method_call else 0)
-                if arg_index < len(node.args):
-                    arg_value = self.process_argument(node.args[arg_index], is_byref)
-                    arg_nodes.append(node.args[arg_index])
-                else:
-                    raise CompilerException("%s requires %d arguments, got %d" % 
-                                        (context_name, len(func_obj.params) - (1 if is_method_call else 0), len(node.args)))
+                arg_value = self.process_argument(node.args[i], is_byref)
+                arg_nodes.append(node.args[i])
+
             args.append(arg_value)
 
         self.check_and_set_params(context_name, func_obj.params, args, arg_nodes)

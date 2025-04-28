@@ -1411,7 +1411,7 @@ def test():
         "name": "Undefined method call",
         "code": """
             struct Point do x: int; end
-            def main() do var p := Point(5); p.nonexistent(); end
+            def main() do var p := Point(); p.nonexistent(); end
         """,
         "expected_error": "Method 'nonexistent' not found in struct 'Point'"
     },
@@ -1419,7 +1419,7 @@ def test():
         "name": "Undefined field access",
         "code": """
             struct Point do x: int; end
-            def main() do var p := Point(5); print p.y; end
+            def main() do var p := Point(); print p.y; end
         """,
         "expected_error": "Field 'y' not found in struct 'Point'"
     },
@@ -1477,7 +1477,7 @@ def test():
         "code": """
             struct Point do x: int; end
             def main() do
-                var p := Point(5);
+                var p := Point();
                 del p;  // Cannot delete stack object
             end
         """,
@@ -1542,7 +1542,7 @@ def test():
                 var c := new Counter;  // Missing parentheses
             end
         """,
-        "expected_error": "constructor invocation requires parenthesis"
+        "expected_error": "Constructor invocation requires parentheses"
     },
         {
             "name": "struct initializer with wrong field count",

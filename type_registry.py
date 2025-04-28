@@ -206,6 +206,31 @@ class TypeRegistry:
 
         return self._struct_id_to_name.get(parent_id, None)
 
+    def is_subtype_of(self, child_type, parent_type):
+        """Check if child_type is a subtype of parent_type (same or inherits)"""
+        # Same type is considered a subtype
+        if child_type == parent_type:
+            return True
+
+        # Only struct types can have inheritance
+        if not self.is_struct_type(child_type) or not self.is_struct_type(parent_type):
+            return False
+
+        # Get the struct names
+        child_name = self.get_struct_name(child_type)
+        parent_name = self.get_struct_name(parent_type)
+
+        # Follow the inheritance chain for the child
+        current = child_name
+        while True:
+            current_parent = self.get_struct_parent(current)
+            if current_parent is None:
+                # Reached top of hierarchy without finding parent
+                return False
+            if current_parent == parent_name:
+                return True
+            current = current_parent
+
     def get_all_fields(self, struct_name):
         """Get all fields including those from parent structs"""
         if struct_name not in self._struct_registry:

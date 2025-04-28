@@ -553,9 +553,13 @@ class Parser:
         if from_ref_kind != REF_KIND_NONE and to_ref_kind == REF_KIND_NONE:
             return False
 
-        # For references, any ref_kind can be assigned to any other ref_kind
-        # (they're compatible from a typing perspective)
-        # Memory management needs to check ref_kind explicitly for del/cleanup operations
+        # For references, allow inheritance relationships
+        if from_ref_kind != REF_KIND_NONE and to_ref_kind != REF_KIND_NONE:
+            # If both are struct types, check inheritance relationship
+            if registry.is_struct_type(from_type) and registry.is_struct_type(to_type):
+                # Allow child class where parent class is expected (covariance)
+                if registry.is_subtype_of(from_type, to_type):
+                    return True
 
         # Now check the underlying types
         return can_promote(from_type, to_type)
@@ -575,7 +579,8 @@ class Parser:
                 # The interpreter will handle creating temporary storage as needed
 
                 # The referenced variable's type must be compatible with the parameter type
-                if not can_promote(arg.expr_type, param_type):
+                # We use REF_KIND_HEAP here as it doesn't matter in this context - only that a ref type is used
+                if not self.can_promote_with_ref(arg.expr_type, REF_KIND_HEAP, param_type, REF_KIND_HEAP):
                     self.type_mismatch_error(
                         "Type mismatch for byref argument '%s'" % param_name,
                         arg.expr_type, param_type
@@ -588,11 +593,12 @@ class Parser:
                 self.type_mismatch_error("Type mismatch for argument %d of %s" % (i+1, context_name), 
                                          arg.expr_type, param_type)
 
-    def check_arg_count(self, func_name, params, args):
+    def check_arg_count(self, func_name, params, args, is_method=False):
         """Helper to check argument count against parameter count"""
         if len(args) != len(params):
+            subtrahend = 1 if is_method else 0
             self.error("%s expects %d arguments, got %d" %
-                      (func_name, len(params), len(args)))
+                      (func_name, len(params)-subtrahend, len(args)-subtrahend))
 
     def parse_args(self, args):
         """Helper to parse argument lists for function/method calls"""
@@ -653,7 +659,7 @@ class Parser:
             self.consume(TT_RPAREN)
 
             # Type check arguments
-            self.check_arg_count("Method '%s'" % member_name, func_obj.params, args)
+            self.check_arg_count("Method '%s'" % member_name, func_obj.params, args, is_method=True)
             self.check_argument_types(args, func_obj.params, "method '%s'" % member_name)
 
             return CallNode(member_name, args, func_obj.return_type, obj_node)
@@ -1078,7 +1084,7 @@ class Parser:
             args = args_with_self
 
             # Perform type checking
-            self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args)
+            self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args, is_method=True)
             self.check_argument_types(args, init_method.params, "Constructor for '%s'" % struct_name)
 
         # Create and return struct initialization node with self included in args
@@ -1302,7 +1308,7 @@ class Parser:
         func_return_type = func_obj.return_type
 
         # Check number of arguments
-        self.check_arg_count("Function '%s'" % func_name, func_params, args)
+        self.check_arg_count("Function '%s'" % func_name, func_params, args, is_method=False)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
         return CallNode(func_name, args, func_return_type)
 
