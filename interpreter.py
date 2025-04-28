@@ -685,10 +685,8 @@ class Interpreter(object):
         # Call constructor if it exists and there are args or it's "init"
         init_method = registry.get_method(node.struct_id, "init")
         if init_method:
-            # Create a temporary scope for the constructor
-            self.environment.enter_scope()
-
             # Process arguments with proper byref handling
+            # THIS NEEDS TO BE DONE BEFORE ENTER_SCOPE ELSE WE MAY SHADOW VARIABLES
             args = []
 
             for i in range(len(init_method.params)):
@@ -698,6 +696,9 @@ class Interpreter(object):
                     _, _, is_byref = init_method.params[i]
                     arg_value = self.process_argument(node.args[i], is_byref)
                 args.append(arg_value)
+
+            # Create a temporary scope for the constructor
+            self.environment.enter_scope()
 
             self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
 
@@ -798,20 +799,18 @@ class Interpreter(object):
             if method_id == -1:
                 raise CompilerException("Method '%s' not found in struct '%s'" % (node.name, obj.struct_name))
 
-            self.environment.enter_scope()
         else:
             # Get function ID from registry
             method_id = registry.lookup_function(node.name)
             if method_id == -1:
                 raise CompilerException("Function '%s' is not defined" % node.name)
 
-            # Enter function scope
-            self.environment.enter_scope()
-
         # Get function details from registry
         func_obj = registry.get_func_from_id(method_id)
 
         # Process all parameters (including self for methods)
+        # THIS NEEDS TO BE DONE BEFORE ENTER_SCOPE ELSE WE MAY SHADOW VARIABLES
+
         args = []
         arg_nodes = []  # For type checking
 
@@ -829,6 +828,9 @@ class Interpreter(object):
                 arg_nodes.append(node.args[i])
 
             args.append(arg_value)
+
+        # Enter function scope
+        self.environment.enter_scope()
 
         self.check_and_set_params(context_name, func_obj.params, args, arg_nodes)
         # Default return value for void functions

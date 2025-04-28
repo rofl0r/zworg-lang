@@ -16,6 +16,22 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "byref call 1",
+           "code": """
+		def fun(byref y:int) do y=42; end
+		def main() do var x:=11; fun(x); end
+           """,
+           "expected_env": {"x": 42}
+        },
+        {
+           "name": "byref call 1 with param/variable name shadowing",
+           "code": """
+		def fun(byref x:int) do x=42; end
+		def main() do var x:=11; fun(x); end
+           """,
+           "expected_env": {"x": 42}
+        },
+        {
            "name": "parameter shadowing test",
            "code": '''
                 struct Calculator do
