@@ -16,6 +16,50 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "parameter shadowing test",
+           "code": '''
+                struct Calculator do
+                  base: int;
+                end
+                def Calculator.init(base: int) do
+                  self.base = base;
+                end
+                def process(x: int, y: int): int do
+                  // This function processes x and y
+                  // If scope is wrong, it might use the outer x and y
+                  return x * 10 + y;
+                end
+                def transform(x: int, y: int): int do
+                  // Calls process with SWAPPED parameters
+                  // If scope is wrong, it will use the original x and y
+                  return process(y, x);  // Note the swap here
+                end
+                def Calculator.calculate(x: int, y: int): int do
+                  // Method with same parameter names
+                  // Uses a third value for the same parameters
+                  return transform(x+100, y+100);  // Drastically different values
+                end
+                def main() do
+                  var x := 1;
+                  var y := 2;
+                  var calc := Calculator(50);
+                  // Each of these calls has 'x' and 'y' parameters
+                  // using shadowed parameters from any wrong scope would result in wrong values
+                  var result := calc.calculate(x, y);
+                  // Calculation if correct:
+                  // 1. calculate is called with x=1, y=2
+                  // 2. transform is called with x=101, y=102
+                  // 3. process is called with x=102, y=101 (swapped)
+                  // 4. process returns 102*10 + 101 = 1021
+                  // Incorrect scope handling would yield different values:
+                  // - If using x,y from main scope: 1*10 + 2 = 12
+                  // - If using x,y from calculate: 1*10 + 2 = 12
+                  // - If using x,y from transform but not swapping: 101*10 + 102 = 1112
+                end
+           ''',
+           "expected_env": {"x": 1, "y": 2, "result": 1121}
+        },
+        {
            "name": "constructor of differing types",
            "code": """
                 struct Foo do x: int; label: string; end
