@@ -304,10 +304,20 @@ class Interpreter(object):
             obj.fields[node.left.member_name] = right_var
             return right_var
 
+        # Special case for assignment to function call result (func() = value)
+        elif node.operator == '=' and node.left.node_type == AST_NODE_CALL:
+            # Function calls that return references can be assigned to
+            if left_var.tag not in (TAG_STACK_REF, TAG_HEAP_REF):
+                raise CompilerException("Cannot assign to non-reference function result")
+
+            # Assign through the reference
+            self.assign_through_reference(left_var, right_var)
+            return right_var
+
         # Dereference operands if they are references
         left_var = self.dereference(left_var)
         right_var = self.dereference(right_var)
-        
+
         # Get raw values for operation
         left_val = left_var.value
         right_val = right_var.value
@@ -338,6 +348,8 @@ class Interpreter(object):
         elif node.operator == 'shr':
             result = shift_right(left_val, right_val, node.left.expr_type, node.right.expr_type)
             return self.make_direct_value(result, node.expr_type)
+        elif node.operator == '=':
+            raise CompilerException("= Operator for binary operator used in unspecified context!")
 
         raise CompilerException("Unknown binary operator: %s" % node.operator)
 

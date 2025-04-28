@@ -1528,6 +1528,35 @@ class Parser:
             # Function call
             if self.token.type == TT_LPAREN:
                 node = self.funccall(var)
+
+                # Check if we're assigning to the function call result (regular or compound)
+                if self.token.type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
+                                       TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
+                    # Verify this is a reference function
+                    if node.ref_kind == REF_KIND_NONE:
+                        self.error("Cannot assign to a non-reference value")
+
+                    # Save the operator type
+                    op = self.token.type
+
+                    # Get assignment value
+                    self.advance()  # Skip the operator
+                    expr = self.expression(0)
+
+                    # For compound operators, create a BinaryOpNode to calculate the value
+                    if op != TT_ASSIGN:
+                        # Create a binary op that calculates the operation first
+                        operator_char = get_operator_for_compound_assign(op)
+                        binary_expr = BinaryOpNode(operator_char, node, expr, node.expr_type)
+                        # Then create the assignment operation
+                        result = BinaryOpNode('=', node, binary_expr, node.expr_type)
+                    else:
+                        # Regular assignment
+                        result = BinaryOpNode('=', node, expr, node.expr_type)
+
+                    self.check_statement_end()
+                    return result
+
                 self.check_statement_end()
                 return node
 
