@@ -561,9 +561,24 @@ class Interpreter(object):
         value_var = None if node.expr is None else self.evaluate(node.expr)
         # Check if function returns by reference
         if node.ref_kind & REF_KIND_GENERIC:
+            # Special case: If returning a variable (not an expression) from a byref function,
+            # automatically create a reference to that variable
+            if value_var and value_var.tag == TAG_DIRECT_VALUE:
+                # Only do this for simple variable expressions
+                if node.expr and node.expr.node_type == AST_NODE_VARIABLE:
+                    var_name = node.expr.name
+
+                    # Find which scope contains this variable
+                    for i in range(self.environment.stackptr, -1, -1):
+                        if var_name in self.environment.stack[i]:
+                            # Create a reference to the variable in its correct scope
+                            value_var = self.make_stack_ref(var_name, i, node.expr.expr_type)
+                            break
+
             # Validate that we're actually returning a reference
             if value_var is None or value_var.tag == TAG_DIRECT_VALUE:
                 raise CompilerException("Function with 'byref' return type must return a reference")
+
         elif value_var and value_var.tag != TAG_DIRECT_VALUE:
             # Non-reference return function - dereference
             value_var = self.dereference(value_var)

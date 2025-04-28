@@ -38,9 +38,10 @@ def test():
                 end
                 def main() do
                     get_global_ref() = 100;
+                    var global_x := global
                 end
             """,
-            "expected_env": {"global": 100}
+            "expected_env": {"global_x": 100}
         },
         {
             "name": "byref return chaining",
