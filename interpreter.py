@@ -157,6 +157,7 @@ class Interpreter(object):
 
         lexer = Lexer(text)
         parser = Parser(lexer)
+        ast = None
         try:
             # Parse the program
             program = parser.parse()
@@ -216,7 +217,7 @@ class Interpreter(object):
                     'ast': ast
                 }
         except CompilerException as e:
-            return {'success': False, 'error': str(e), 'ast': None}
+            return {'success': False, 'error': str(e), 'ast': ast}
 
     def evaluate(self, node):
         """Main entry point to evaluate an AST node"""
