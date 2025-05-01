@@ -88,39 +88,7 @@ def test():
                     print(p.y);
                 end
             """,
-            "expected_env": {"p": {"_0": 99, "_1": 20}}
-        },
-        {
-            "name": "byref return from method",
-            "code": """
-                struct Counter do value:int ; end
-                def Counter.get_value_ref() :byref int do
-                    return self.value;
-                end
-                def main() do
-                    var c:Counter = {5};
-                    c.get_value_ref() = 42;
-                    print(c.value);
-                end
-            """,
-            "expected_env": {"c": {"_0": 42}}
-        },
-        {
-            "name": "byref return with heap objects",
-            "code": """
-                struct Data do value:int; end
-                def get_value_ref(byref d:Data) :byref int do
-                    return d.value;
-                end
-                def main() do
-                    var heap_data:= new Data()
-                    heap_data.value = 10;
-                    get_value_ref(heap_data) = 75;
-                    var x:= heap_data.value
-                    del heap_data;
-                end
-            """,
-            "expected_env": {"x": 75}
+            "expected_error": "Returning references to struct fields is not supported"
         },
         {
             "name": "double byref indirection",

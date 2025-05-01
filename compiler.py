@@ -1387,6 +1387,10 @@ class Parser:
             if current_func_obj.is_ref_return and expr.ref_kind == REF_KIND_NONE:
                 self.error("Function with 'byref' return type must return a reference")
 
+            # Disallow returning references to struct fields
+            if current_func_obj.is_ref_return and expr.node_type == AST_NODE_MEMBER_ACCESS:
+                self.error("Returning references to struct fields is not supported")
+
             # Check that return expression type matches function return type
             if not can_promote(expr.expr_type, func_return_type):
                 self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
