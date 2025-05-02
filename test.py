@@ -84,6 +84,21 @@ def test():
             "expected_error": "Cannot return a reference to a local variable"
         },
         {
+            "name": "byref return from heap - allowed",
+            "code": """
+                struct Point do x:int; y:int; end
+                def get_heap_ref() :byref Point do
+                    return new Point();
+                end
+                def main() do
+                    var p := get_heap_ref();
+                    p.x = 42;
+                    var x:= p.x
+                end
+            """,
+            "expected_env": {"x": 42}
+        },
+        {
             "name": "byref return chaining",
             "code": """
                 def get_ref2(byref x:int) :byref int do

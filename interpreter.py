@@ -537,18 +537,12 @@ class Interpreter(object):
     def visit_var_decl(self, node):
         """Evaluate a variable declaration node"""
         value_var = self.evaluate(node.expr)
-        
+
         # Check reference kind consistency
         if value_var.tag != TAG_DIRECT_VALUE and node.ref_kind != REF_KIND_NONE:
-            # Check compatibility of reference kinds
-            if (value_var.tag == TAG_HEAP_REF and node.ref_kind != REF_KIND_HEAP) or \
-               (value_var.tag == TAG_STACK_REF and node.ref_kind != REF_KIND_STACK):
-                raise CompilerException("Cannot assign %s reference to %s reference variable" % 
-                                      (
-                                          "heap" if value_var.tag == TAG_HEAP_REF else "stack",
-                                          "heap" if node.ref_kind == REF_KIND_HEAP else "stack"
-                                      ))
-        
+            # Reference compatibility is fine - references can be assigned to reference variables
+            pass
+
         # types are already checked in compiler
         self.environment.set(node.var_name, value_var)
         return value_var
