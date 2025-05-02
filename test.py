@@ -146,6 +146,51 @@ def test():
             "expected_error": "Returning references to struct fields is not supported"
         },
         {
+            "name": "reference modification through assignment",
+            "code": """
+                def get_ref(byref x:int) :byref int do
+                    return x;
+                end
+                def main() do
+                    var x:int = 10;
+                    var ref := get_ref(x);
+                    ref = 42;
+                end
+            """,
+            "expected_env": {"x": 42}
+        },
+        {
+            "name": "reference retargeting behavior",
+            "code": """
+                def get_ref(byref x:int) :byref int do
+                    return x;
+                end
+                def main() do
+                    var x:int = 10;
+                    var y:int = 20;
+                    var ref := get_ref(x);
+                    ref = y;  // Should modify x, not retarget ref
+                    y = 30;   // Changing y shouldn't affect x
+                end
+            """,
+            "expected_env": {"x": 20, "y": 30}
+        },
+        {
+            "name": "implicit reference with explicit typing",
+            "code": """
+                struct Point do x:int; y:int; end
+                def get_point() :byref Point do
+                    return new Point();
+                end
+                def main() do
+                    var p:Point = get_point();
+                    p.x = 42;
+                    var x:= p.x;
+                end
+            """,
+            "expected_env": {"x": 42}
+        },
+        {
             "name": "double byref indirection",
             "code": """
                 def update_through_ref(byref x:int) do
@@ -162,6 +207,37 @@ def test():
             "expected_env": {"value": 99}
         },
         {
+            "name": "nested byref functions",
+            "code": """
+                def modify(byref x:int) do
+                    x = 42;
+                end
+                def wrapper(byref y:int) do
+                    modify(y);
+                end
+                def main() do
+                    var z:int = 10;
+                    wrapper(z);
+                end
+            """,
+            "expected_env": {"z": 42},
+        },
+        {
+            "name": "references with arithmetic expressions",
+            "code": """
+                def get_ref(byref x:int) :byref int do
+                    return x;
+                end
+                def main() do
+                    var x:int = 10;
+                    var ref := get_ref(x);
+                    ref = ref * 2;
+                    ref *= 2
+                end
+            """,
+            "expected_env": {"x": 40}
+        },
+        {
            "name": "byref call 1",
            "code": """
 		def fun(byref y:int) do y=42; end
@@ -176,6 +252,18 @@ def test():
 		def main() do var x:=11; fun(x); end
            """,
            "expected_env": {"x": 42}
+        },
+        {
+            "name": "heap allocation with explicit typing",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = new Point();
+                    p.x = 42;
+                    var x:= p.x;
+                end
+            """,
+            "expected_env": {"x": 42}
         },
         {
            "name": "parameter shadowing test",
