@@ -432,13 +432,11 @@ class Interpreter(object):
 
     def visit_compound_assign(self, node):
         """Evaluate a compound assignment node (+=, -=, etc.)"""
-        current_var = self.environment.get(node.var_name)
+        var_obj = self.environment.get(node.var_name)
+        current_var = self.dereference(var_obj)
         expr_var = self.evaluate(node.expr)
-        
-        # Dereference if they are references
-        current_var = self.dereference(current_var)
         expr_var = self.dereference(expr_var)
-        
+
         # Get raw values
         current_value = current_var.value
         expr_value = expr_var.value
@@ -468,7 +466,11 @@ class Interpreter(object):
         else:
             raise CompilerException("Unknown compound assignment operator: %s" % token_name(node.op_type))
 
-        self.environment.set(node.var_name, result_var)
+        # If it's a reference, we need to assign through it
+        if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
+            self.assign_through_reference(var_obj, result_var)
+        else:
+             self.environment.set(node.var_name, result_var)
         return result_var
 
     def visit_print(self, node):
