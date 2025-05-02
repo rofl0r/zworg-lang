@@ -266,10 +266,10 @@ class TypeRegistry:
                 return descriptor.name
             elif descriptor.kind == self.TYPE_KIND_ARRAY:
                 # For arrays, return the name from the ID-to-name map
-                return self._struct_id_to_name.get(base_type, None)
+                return self._struct_id_to_name.get(type_id, None)
 
         # Fall back to legacy system
-        return self._struct_id_to_name.get(base_type, None)
+        return self._struct_id_to_name.get(type_id, None)
 
     def struct_exists(self, struct_name):
         """Check if a struct exists"""
