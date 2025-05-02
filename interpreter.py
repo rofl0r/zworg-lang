@@ -4,6 +4,7 @@ from __future__ import division  # Use true division
 from shared import *
 from cops import add, subtract, multiply, divide, modulo, shift_left, shift_right, negate, logical_not, bitwise_not, compare_eq, compare_ne, compare_lt, compare_le, compare_gt, compare_ge, logical_and, logical_or, bitwise_and, bitwise_or, bitwise_xor, truncate_to_unsigned
 from type_registry import get_registry
+from scope import EnvironmentStack
 
 # import registry singleton
 registry = get_registry()
@@ -278,9 +279,10 @@ class Interpreter(object):
 
     def visit_variable(self, node):
         """Evaluate a variable reference node"""
-        if not self.environment.has(node.name):
+        var = self.environment.get(node.name)
+        if var is None:
             raise CompilerException("Variable '%s' is not defined" % node.name)
-        return self.environment.get(node.name)
+        return var
 
     def visit_binary_op(self, node):
         """Evaluate a binary operation node"""
@@ -405,8 +407,8 @@ class Interpreter(object):
         var_obj = None
 
         # Check if we're assigning to a variable passed by reference
-        if self.environment.has(node.var_name):
-            var_obj = self.environment.get(node.var_name)
+        var_obj = self.environment.get(node.var_name)
+        if var_obj is not None:
 
             # If it's a reference, we need to assign through it
             if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
@@ -1020,48 +1022,6 @@ class ReturnException(Exception):
 class ContinueException(Exception):
     """Raised when a continue statement is encountered"""
     pass
-
-class EnvironmentStack:
-    """Stack-based environment implementation with support for scopes"""
-    def reset(self):
-        self.stack = [{}]  # Start with global scope at index 0
-        self.stackptr = 0
-
-    def __init__(self):
-        self.reset()
-
-    def enter_scope(self):
-        """Enter a new scope - reuse existing or create new one"""
-        self.stackptr += 1
-        if self.stackptr >= len(self.stack):
-            self.stack.append({})
-        else:
-            # Reuse existing dict but clear it
-            self.stack[self.stackptr].clear()
-
-    def leave_scope(self):
-        """Leave current scope and return to previous"""
-        if self.stackptr > 0:
-            self.stackptr -= 1
-
-    def get(self, name):
-        """Get a variable value looking through all accessible scopes"""
-        # Search from current scope down to global
-        for i in range(self.stackptr, -1, -1):
-            if name in self.stack[i]:
-                return self.stack[i][name]
-        raise KeyError(name)
-
-    def has(self, name):
-        """Check if a variable exists in any accessible scope"""
-        for i in range(self.stackptr, -1, -1):
-            if name in self.stack[i]:
-                return True
-        return False
-
-    def set(self, name, value):
-        """Set a variable in the current scope"""
-        self.stack[self.stackptr][name] = value
 
 # runtime emulation of C promotions.
 # TODO coverage says the first branch is always taken.
