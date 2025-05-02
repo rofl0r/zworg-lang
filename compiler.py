@@ -86,21 +86,6 @@ class AssignNode(ASTNode):
             self.var_name, repr(self.expr), registry.format_type_with_ref_kind(self.expr_type)
         )
 
-class CompoundAssignNode(ASTNode):
-    def __init__(self, op_type, var_name, expr, var_type, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_COMPOUND_ASSIGN)
-        self.op_type = op_type
-        self.var_name = var_name
-        self.expr = expr
-        self.expr_type = var_type
-        self.ref_kind = ref_kind
-
-    def __repr__(self):
-        op_name = token_name(self.op_type)
-        return "CompoundAssign(%s, %s, %s) -> %s" % (
-            op_name, self.var_name, repr(self.expr), registry.format_type_with_ref_kind(self.expr_type)
-        )
-
 class PrintNode(ASTNode):
     def __init__(self, expr):
         ASTNode.__init__(self, AST_NODE_PRINT)
@@ -1646,11 +1631,25 @@ class Parser:
                     # Check type compatibility for assignments
                     self.check_type_compatibility(var, expr)
 
-                    # For compound operators, use CompoundAssignNode
+                    # For compound operators, desugar them
                     if op != TT_ASSIGN:
                         var_ref_kind = self.get_variable_ref_kind(var)
+                        # Desugar compound assignment into binary op + assignment
+                        # Convert "a += b" into "a = a + b"
+
+                        # Create a variable node for the left side
+                        var_node = VariableNode(var, var_type, var_ref_kind)
+
+                        # Get the binary operator corresponding to this compound assignment
+                        binary_op = get_operator_for_compound_assign(op)
+
+                        # Create the binary operation (var op expr)
+                        binary_expr = BinaryOpNode(binary_op, var_node, expr, var_type)
+
+                        # Create and return a regular assignment node
+
                         self.check_statement_end()
-                        return CompoundAssignNode(op, var, expr, var_type, var_ref_kind)
+                        return AssignNode(var, binary_expr, var_type, var_ref_kind)
 
                     # Regular assignment
                     self.check_statement_end()

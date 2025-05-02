@@ -53,7 +53,6 @@ class Interpreter(object):
             AST_NODE_BINARY_OP: self.visit_binary_op,
             AST_NODE_UNARY_OP: self.visit_unary_op,
             AST_NODE_ASSIGN: self.visit_assign,
-            AST_NODE_COMPOUND_ASSIGN: self.visit_compound_assign,
             AST_NODE_PRINT: self.visit_print,
             AST_NODE_IF: self.visit_if,
             AST_NODE_WHILE: self.visit_while,
@@ -417,7 +416,7 @@ class Interpreter(object):
         # Check if type promotion is needed and allowed
         if node.expr_type != node.expr.expr_type:
             if not can_promote(node.expr.expr_type, node.expr_type):
-                raise CompilerException("Cannot assign %s to %s" % 
+                raise CompilerException("Cannot assign %s to %s" %
                                       (var_type_to_string(node.expr.expr_type), var_type_to_string(node.expr_type)))
 
         # Handle number literal promotion
@@ -430,56 +429,13 @@ class Interpreter(object):
         self.environment.set(node.var_name, value_var)
         return value_var
 
-    def visit_compound_assign(self, node):
-        """Evaluate a compound assignment node (+=, -=, etc.)"""
-        var_obj = self.environment.get(node.var_name)
-        current_var = self.dereference(var_obj)
-        expr_var = self.evaluate(node.expr)
-        expr_var = self.dereference(expr_var)
-
-        # Get raw values
-        current_value = current_var.value
-        expr_value = expr_var.value
-
-        if node.op_type == TT_PLUS_ASSIGN:
-            # Handle string concatenation for += operator
-            if node.expr_type == TYPE_STRING:
-                if node.expr.expr_type != TYPE_STRING:
-                    raise CompilerException("Cannot use += with string and %s" % var_type_to_string(node.expr.expr_type))
-                result = current_value + expr_value
-                result_var = self.make_direct_value(result, TYPE_STRING)
-            else:
-                result = add(current_value, expr_value, node.expr_type, node.expr.expr_type)
-                result_var = self.make_direct_value(result, node.expr_type)
-        elif node.op_type == TT_MINUS_ASSIGN:
-            result = subtract(current_value, expr_value, node.expr_type, node.expr.expr_type)
-            result_var = self.make_direct_value(result, node.expr_type)
-        elif node.op_type == TT_MULT_ASSIGN:
-            result = multiply(current_value, expr_value, node.expr_type, node.expr.expr_type)
-            result_var = self.make_direct_value(result, node.expr_type)
-        elif node.op_type == TT_DIV_ASSIGN:
-            result = divide(current_value, expr_value, node.expr_type, node.expr.expr_type)
-            result_var = self.make_direct_value(result, node.expr_type)
-        elif node.op_type == TT_MOD_ASSIGN:
-            result = modulo(current_value, expr_value, node.expr_type, node.expr.expr_type)
-            result_var = self.make_direct_value(result, node.expr_type)
-        else:
-            raise CompilerException("Unknown compound assignment operator: %s" % token_name(node.op_type))
-
-        # If it's a reference, we need to assign through it
-        if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
-            self.assign_through_reference(var_obj, result_var)
-        else:
-             self.environment.set(node.var_name, result_var)
-        return result_var
-
     def visit_print(self, node):
         """Evaluate a print statement node"""
         value_var = self.evaluate(node.expr)
-        
+
         # Dereference if it's a reference
         value_var = self.dereference(value_var)
-        
+
         # Print the raw value
         print(value_var.value)
         return value_var
