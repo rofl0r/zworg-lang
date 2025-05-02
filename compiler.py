@@ -3,6 +3,7 @@
 from shared import *
 from lexer import Token, Lexer
 from type_registry import get_registry
+from scope import EnvironmentStack
 
 # import registry singleton
 registry = get_registry()
@@ -354,11 +355,18 @@ def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
     return node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING]
 
+class Variable:
+    def __init__(self, expr_type, is_const=False, ref_kind=REF_KIND_NONE):
+        self.expr_type = expr_type
+        self.is_const = is_const
+        self.ref_kind = ref_kind
+
 class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
         self.token = self.lexer.next_token()
         self.prev_token = None
+        self.env = EnvironmentStack()
 
         self.scopes = ["global"]  # Stack of scope names
         self.variables = {"global": set()}  # Track declared variables per scope
@@ -427,70 +435,35 @@ class Parser:
         # Arithmetic operators
         return self.get_common_type(left_type, right_type)
 
-    def enter_scope(self, scope_name):
-        """Enter a new scope for variable tracking"""
-        self.scopes.append(scope_name)
-        self.variables[scope_name] = set()
-        self.constants[scope_name] = set()
-        self.var_types[scope_name] = {}
-        self.var_ref_kinds[scope_name] = {}
-
-    def leave_scope(self):
-        """Leave the current scope"""
-        if len(self.scopes) > 1:  # Don't leave global scope
-            self.scopes.pop()
-
-    def current_scope(self):
-        """Get the current scope name"""
-        return self.scopes[-1]
-
     def is_variable_declared(self, var_name):
         """Check if a variable is declared in any accessible scope"""
-        # Check all scopes from current to global
-        for scope in reversed(self.scopes):
-            if var_name in self.variables[scope]:
-                return True
-        return False
+        return self.env.get(var_name) is not None
 
     def is_constant(self, var_name):
         """Check if a variable is a constant in any accessible scope"""
-        # Check all scopes from current to global
-        for scope in reversed(self.scopes):
-            if var_name in self.constants[scope]:
-                return True
-        return False
+        var = self.env.get(var_name)
+        return var is not None and var.is_const
 
     def get_variable_type(self, var_name):
         """Get a variable's type from the appropriate scope"""
-        # Check all scopes from current to global
-        for scope in reversed(self.scopes):
-            if var_name in self.var_types[scope]:
-                return self.var_types[scope][var_name]
-        return TYPE_UNKNOWN
+        var = self.env.get(var_name)
+        return var.expr_type
 
     def declare_variable(self, var_name, var_type, is_const=False, ref_kind=REF_KIND_NONE):
         """Declare a variable in the current scope"""
-        current = self.current_scope()
+        var = self.env.get(var_name)
         # Check if already declared in current scope
-        if var_name in self.variables[current]:
+        if var is not None:
             return False  # Already declared in this scope
 
-        self.variables[current].add(var_name)
-        self.var_types[current][var_name] = var_type
-        self.var_ref_kinds[current][var_name] = ref_kind
-
-        if is_const:
-            self.constants[current].add(var_name)
+        var = Variable(var_type, is_const=is_const, ref_kind=ref_kind)
+        self.env.set(var_name, var)
         return True
 
     def get_variable_ref_kind(self, var_name):
         """Get a variable's reference kind from the appropriate scope"""
-        # Check all scopes from current to global - they contain variables and parameters.
-        for scope in reversed(self.scopes):
-            if var_name in self.var_ref_kinds[scope]:
-                return self.var_ref_kinds[scope][var_name]
-
-        return REF_KIND_NONE
+        var = self.env.get(var_name)
+        return var.ref_kind
 
     def error(self, message):
         """Raise a compiler exception with current token information"""
@@ -766,7 +739,7 @@ class Parser:
                 self.error("Function '%s' is already defined" % name if not struct_name else "%s.%s"%(struct_name, name))
 
         # Enter function/method scope
-        self.enter_scope(name)
+        self.env.enter_scope()
         prev_function = self.current_function
         ref_kind = REF_KIND_GENERIC if is_ref_return else REF_KIND_NONE
         self.current_function = registry.register_function(name, return_type, params, parent_struct_id=struct_id, is_ref_return=is_ref_return)
@@ -788,7 +761,7 @@ class Parser:
         body = self.doblock()
 
         # Restore previous context
-        self.leave_scope()
+        self.env.leave_scope()
         self.current_function = prev_function
 
         # update the node body and return it
@@ -1503,7 +1476,7 @@ class Parser:
             else:
                 self.error("Variable declaration must include an initialization")
             # Register the variable as defined in the current scope
-            if var_name in self.variables[self.current_scope()]:
+            if self.env.get(var_name, all_scopes=False):
                 self.already_declared_error(var_name)
 
             # If initializing with a reference (from new), keep the reference kind

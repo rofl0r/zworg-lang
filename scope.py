@@ -21,8 +21,13 @@ class EnvironmentStack:
         if self.stackptr > 0:
             self.stackptr -= 1
 
-    def get(self, name):
+    def get(self, name, all_scopes=True):
         """Get a variable value looking through all accessible scopes"""
+        if not all_scopes:
+            if name in self.stack[-1]:
+                return self.stack[-1][name]
+            return None
+
         # Search from current scope down to global
         for i in range(self.stackptr, -1, -1):
             if name in self.stack[i]:
