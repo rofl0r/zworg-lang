@@ -30,6 +30,19 @@ def test():
             "expected_env": {"a": 42, "b": 20}
         },
         {
+            "name": "byref parameter modification",
+            "code": """
+                def modify(byref x:int) do
+                    x = 42;
+                end
+                def main() do
+                    var x:int = 10;
+                    modify(x);
+                end
+            """,
+            "expected_env": {"x": 42}
+        },
+        {
             "name": "byref return from global",
             "code": """
                 var global:int = 5;
@@ -42,6 +55,33 @@ def test():
                 end
             """,
             "expected_env": {"global_x": 100}
+        },
+        {
+            "name": "byref reference forwarding",
+            "code": """
+                def forward(byref x:int) :byref int do
+                    return x;
+                end
+                def main() do
+                    var x:int = 10;
+                    forward(x) = 99;
+                end
+            """,
+            "expected_env": {"x": 99}
+        },
+        {
+            "name": "byref return local variable - error",
+            "code": """
+                def unsafe() :byref int do
+                    var local:int = 10;
+                    return local;
+                end
+                def main() do
+                    var ref := unsafe();
+                    print(ref);
+                end
+            """,
+            "expected_error": "Cannot return a reference to a local variable"
         },
         {
             "name": "byref return chaining",

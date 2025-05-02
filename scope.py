@@ -21,6 +21,9 @@ class EnvironmentStack:
         if self.stackptr > 0:
             self.stackptr -= 1
 
+    def is_global(self, name):
+        return name in self.stack[0]
+
     def get(self, name, all_scopes=True):
         """Get a variable value looking through all accessible scopes"""
         if not all_scopes:

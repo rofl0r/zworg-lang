@@ -1360,6 +1360,15 @@ class Parser:
             if current_func_obj.is_ref_return and expr.ref_kind == REF_KIND_NONE:
                 self.error("Function with 'byref' return type must return a reference")
 
+            # Prevent returning references to local variables
+            if current_func_obj.is_ref_return and expr.node_type == AST_NODE_VARIABLE:
+                var_name = expr.name
+                # Check if this variable was declared in the current function's scope
+                # (not a parameter or global)
+                is_param = any(p[0] == var_name for p in current_func_obj.ast_node.params)
+                if not (is_param or self.env.is_global(var_name)):
+                    self.error("Cannot return a reference to a local variable")
+
             # Disallow returning references to struct fields
             if current_func_obj.is_ref_return and expr.node_type == AST_NODE_MEMBER_ACCESS:
                 self.error("Returning references to struct fields is not supported")
