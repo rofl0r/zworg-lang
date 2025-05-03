@@ -308,15 +308,21 @@ class Interpreter(object):
 
         # Special case for assignment to array element (arr[idx] = value)
         elif node.operator == '=' and node.left.node_type == AST_NODE_ARRAY_ACCESS:
+            # Use the existing array_access visitor to get the array element
+            # This already handles all the array access logic consistently
+            array_node = node.left
+
             # Evaluate the array
-            arr = self.evaluate(node.left.array)
+            arr_var = self.evaluate(array_node.array)
+            arr = arr_var.value
 
             # Evaluate the index
-            idx = self.evaluate(node.left.index)
+            idx_var = self.evaluate(array_node.index)
+            idx = idx_var.value
 
-            # Check if arr is a struct instance
+            # Make sure it's a struct instance (arrays are represented as structs)
             if not isinstance(arr, StructInstance):
-                raise CompilerException("Cannot assign to element of non-array value")
+                raise CompilerException("Cannot perform array indexing on non-array value")
 
             # Set the element value
             field_name = "_%d" % idx
@@ -749,10 +755,15 @@ class Interpreter(object):
     def visit_array_access(self, node):
         """Evaluate an array access node (arr[idx])"""
         # Evaluate the array expression
-        arr = self.evaluate(node.array)
+        arr_var = self.evaluate(node.array)
 
         # Evaluate the index expression
-        idx = self.evaluate(node.index)
+        idx_var = self.evaluate(node.index)
+
+        # Get the raw values from the Variables
+        arr = arr_var.value # if isinstance(arr_var, Variable) else arr_var
+        idx = idx_var.value # if isinstance(idx_var, Variable) else idx_var
+
 
         # Handle nil reference
         if arr is None:
@@ -760,7 +771,7 @@ class Interpreter(object):
 
         # Make sure it's a struct instance (arrays are represented as structs)
         if not isinstance(arr, StructInstance):
-            raise CompilerException("Cannot perform array indexing on non-array value")
+            raise CompilerException("xCannot perform array indexing on non-array value")
 
         # Convert index to field name format (arrays use _0, _1, etc. like tuples)
         field_name = "_%d" % idx

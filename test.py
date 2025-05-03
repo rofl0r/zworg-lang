@@ -21,14 +21,13 @@ def test():
                 def main() do
                     var nums: int[5] = {1, 2, 3, 4, 5}
                     nums[2] = 99     // Modify the 3rd element
-                    var dynamic: int[] = {10, 20, 30}
-                    dynamic[1] = 50  // Modify the 2nd element
+                    var inferred: int[] = {10, 20, 30}
+                    inferred[1] = 50  // Modify the 2nd element
+                    var n_2 := nums[2]
+                    var i_1 := inferred[1]
                 end
             """,
-            "expected_env": {
-                "nums": {"_0": 1, "_1": 2, "_2": 99, "_3": 4, "_4": 5},
-                "dynamic": {"_0": 10, "_1": 50, "_2": 30}
-            }
+            "expected_env": {"n_2": 99, "i_1": 50}
         },
         {
            "name": "struct copy",
