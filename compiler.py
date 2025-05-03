@@ -1662,7 +1662,15 @@ class Parser:
 
                     # Get assignment value
                     self.advance()  # Skip the operator
-                    expr = self.expression(0)
+
+                    # Check for initializer syntax
+                    if self.token.type == TT_LBRACE:
+                        # Only allow initializers with regular assignment
+                        if op != TT_ASSIGN:
+                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
+                        expr = self.parse_initializer_expression(node.expr_type)
+                    else:
+                        expr = self.expression(0)
 
                     # For compound operators, create a BinaryOpNode to calculate the value
                     if op != TT_ASSIGN:
@@ -1706,8 +1714,14 @@ class Parser:
                     # Advance past the operator
                     self.advance()
 
-                    # Parse the right-hand expression
-                    expr = self.expression(0)
+                    # Check for initializer syntax
+                    if self.token.type == TT_LBRACE:
+                        # Only allow initializers with regular assignment
+                        if op != TT_ASSIGN:
+                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
+                        expr = self.parse_initializer_expression(field_type)
+                    else:
+                        expr = self.expression(0)
 
                     # Check type compatibility
                     self.check_field_compatibility(expr.expr_type, field_type)
@@ -1764,8 +1778,14 @@ class Parser:
                     # Advance past the operator
                     self.advance()
 
-                    # Parse the right-hand expression
-                    expr = self.expression(0)
+                    # Check for initializer syntax
+                    if self.token.type == TT_LBRACE:
+                        # Only allow initializers with regular assignment
+                        if op != TT_ASSIGN:
+                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
+                        expr = self.parse_initializer_expression(element_type)
+                    else:
+                        expr = self.expression(0)
 
                     # Check type compatibility
                     if not can_promote(expr.expr_type, element_type):
@@ -1807,14 +1827,21 @@ class Parser:
                     if self.is_constant(var):
                         self.error("Cannot reassign to constant '%s'" % var)
 
+                    # Save the operator type
                     op = self.token.type
                     var_type = self.get_variable_type(var)
 
                     # Advance past the operator
                     self.advance()
 
-                    # Parse the expression
-                    expr = self.expression(0)
+                    # Check for initializer syntax
+                    if self.token.type == TT_LBRACE:
+                        # Only allow initializers with regular assignment
+                        if op != TT_ASSIGN:
+                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
+                        expr = self.parse_initializer_expression(var_type)
+                    else:
+                        expr = self.expression(0)
 
                     # Check type compatibility for assignments
                     self.check_type_compatibility(var, expr)
