@@ -16,6 +16,88 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "array byref parameter modification",
+            "code": """
+                def modifyArray(byref arr: int[3]) do
+                    arr[0] = 99
+                    arr[1] = 88
+                    arr[2] = 77
+                end
+                def main() do
+                    var nums: int[3] = {1, 2, 3}
+                    modifyArray(nums)
+                    var n_0 := nums[0]
+                    var n_1 := nums[1]
+                    var n_2 := nums[2]
+                end
+            """,
+            "expected_env": {"n_0": 99, "n_1": 88, "n_2": 77}
+        },
+        {
+            "name": "array byval parameter (no changes to original)",
+            "code": """
+                def modifyArrayByVal(arr: int[3]) do
+                    arr[0] = 99  // Should not affect original
+                    arr[1] = 88
+                end
+                def main() do
+                    var nums: int[3] = {1, 2, 3}
+                    modifyArrayByVal(nums)
+                    var n_0 := nums[0]  // Should still be 1
+                    var n_1 := nums[1]  // Should still be 2
+                end
+            """,
+            "expected_env": {"n_0": 1, "n_1": 2}
+        },
+        {
+            "name": "array from heap with byref parameter",
+            "code": """
+                struct ArrayHolder do values: int[3]; end
+                def modifyHeapArray(byref arr: int[3]) do
+                    arr[0] = 99
+                    arr[1] = 88
+                end
+                def main() do
+                    var holder := new ArrayHolder()
+                    holder.values = {1, 2, 3}
+                    modifyHeapArray(holder.values)
+                    var n_0 := holder.values[0]
+                    var n_1 := holder.values[1]
+                end
+            """,
+            "expected_env": {"n_0": 99, "n_1": 88}
+        },
+        {
+            "name": "array byref vs byval parameters",
+            "code": """
+                def multiplyArrays(source: int[3], byref target: int[3]) do
+                    // Multiply each element in source with target and store in target
+                    target[0] = source[0] * target[0]
+                    target[1] = source[1] * target[1]
+                    target[2] = source[2] * target[2]
+                end
+                def main() do
+                    var arr1: int[3] = {2, 3, 4}
+                    var arr2: int[3] = {5, 6, 7}
+                    // Pass arr1 by value, arr2 by reference
+                    multiplyArrays(arr1, arr2)
+                    // Try to modify arr1 to prove it was passed by value
+                    arr1[0] = 99
+                    // Store results for verification
+                    var a1_0 := arr1[0]  // Should be 99 (local modification)
+                    var a2_0 := arr2[0]  // Should be 10 (2*5)
+                    var a2_1 := arr2[1]  // Should be 18 (3*6)
+                    var a2_2 := arr2[2]  // Should be 28 (4*7)
+                end
+            """,
+            "expected_env": {
+                "a1_0": 99,
+                "a2_0": 10,
+                "a2_1": 18,
+                "a2_2": 28
+            }
+        },
+        {
             "name": "array element assignment",
             "code": """
                 def main() do

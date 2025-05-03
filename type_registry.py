@@ -1,6 +1,13 @@
 # Type registry for struct types
 from shared import *
 
+PRIMITIVE_TYPES = [
+    TYPE_UNKNOWN, TYPE_VOID, TYPE_STRING,
+    TYPE_I8, TYPE_U8, TYPE_I16, TYPE_U16, TYPE_I32, TYPE_U32,
+    TYPE_I64, TYPE_U64, TYPE_INT, TYPE_UINT, TYPE_LONG, TYPE_ULONG,
+    TYPE_LONGLONG, TYPE_ULONGLONG, TYPE_FLOAT, TYPE_DOUBLE
+]
+
 # Type descriptor classes
 class TypeDescriptor(object):
     """Base descriptor for all types"""
@@ -70,15 +77,11 @@ class TypeRegistry:
 
     def _initialize_primitive_types(self):
         """Register all primitive types with descriptors"""
-        primitive_types = [
-            TYPE_UNKNOWN, TYPE_VOID, TYPE_STRING,
-            TYPE_I8, TYPE_U8, TYPE_I16, TYPE_U16, TYPE_I32, TYPE_U32,
-            TYPE_I64, TYPE_U64, TYPE_INT, TYPE_UINT, TYPE_LONG, TYPE_ULONG,
-            TYPE_LONGLONG, TYPE_ULONGLONG, TYPE_FLOAT, TYPE_DOUBLE
-        ]
-
-        for type_id in primitive_types:
+        for type_id in PRIMITIVE_TYPES:
             self._type_descriptors[type_id] = PrimitiveDescriptor(type_id)
+
+    def is_primitive_type(self, type_id):
+        return type_id in PRIMITIVE_TYPES
 
     # Array type methods
     def register_array_type(self, element_type_id, size=None):

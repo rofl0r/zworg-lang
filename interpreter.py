@@ -131,12 +131,46 @@ class Interpreter(object):
             
         # This should never happen if code is consistent
         raise CompilerException("Unknown reference tag")
-    
+
+    def deep_copy(self, var):
+        """Create a deep copy of a variable and its value"""
+        # Dereference if it's a reference first
+        var = self.dereference(var)
+
+        # Handle strings (also immutable in Python)
+        if var.expr_type == TYPE_STRING:
+            return self.make_direct_value(var.value, TYPE_STRING)
+
+        # Handle primitive types (they're immutable, so no need for deep copy)
+        if registry.is_primitive_type(var.expr_type):
+            return self.make_direct_value(var.value, var.expr_type)
+
+        # Handle struct instances (including arrays)
+        if isinstance(var.value, StructInstance):
+            # Create a new instance with the same type
+            new_instance = StructInstance(var.expr_type, var.value.struct_name)
+
+            # Recursively copy all fields
+            for field_name, field_value in var.value.fields.items():
+                # Deep copy each field value
+                new_instance.fields[field_name] = self.deep_copy(field_value)
+
+            # Return as a direct value
+            return self.make_direct_value(new_instance, var.expr_type)
+
+        # Handle nil references
+        if var.value is None:
+            raise CompilerException("Attempt to access None")
+            # return self.make_direct_value(None, var.expr_type)
+
+        # If we get here, we encountered an unknown type
+        raise CompilerException("Cannot deep copy value of type %s"%registry.var_type_to_string(var.expr_type))
+
     def get_raw_value(self, var):
         """Get the underlying raw value from a Variable, following references"""
         deref_var = self.dereference(var)
         return deref_var.value
-    
+
     def extract_raw_values_from_env(self, env):
         """Extract raw values from an environment containing Variables"""
         raw_env = {}
@@ -314,10 +348,14 @@ class Interpreter(object):
 
             # Evaluate the array
             arr_var = self.evaluate(array_node.array)
+            # Dereference as needed
+            arr_var = self.dereference(arr_var)
+
             arr = arr_var.value
 
             # Evaluate the index
             idx_var = self.evaluate(array_node.index)
+            idx_var = self.dereference(idx_var)
             idx = idx_var.value
 
             # Make sure it's a struct instance (arrays are represented as structs)
@@ -760,10 +798,13 @@ class Interpreter(object):
         # Evaluate the index expression
         idx_var = self.evaluate(node.index)
 
-        # Get the raw values from the Variables
-        arr = arr_var.value # if isinstance(arr_var, Variable) else arr_var
-        idx = idx_var.value # if isinstance(idx_var, Variable) else idx_var
+        # Dereference if it's a reference
+        arr_var = self.dereference(arr_var)
+        idx_var = self.dereference(idx_var)
 
+        # Get the raw values
+        arr = arr_var.value
+        idx = idx_var.value
 
         # Handle nil reference
         if arr is None:
@@ -788,8 +829,8 @@ class Interpreter(object):
         result = self.evaluate(arg_node)
 
         if not is_byref:
-            # For regular parameters, just return the evaluated result
-            return result
+            # For regular parameters, create a deep copy for value semantics
+            return self.deep_copy(result)
 
         # For byref parameters, we need an lvalue or a reference
         if result.tag in (TAG_HEAP_REF, TAG_STACK_REF):
