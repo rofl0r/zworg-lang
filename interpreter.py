@@ -70,6 +70,7 @@ class Interpreter(object):
             AST_NODE_STRUCT_DEF: self.visit_struct_def,
             AST_NODE_STRUCT_INIT: self.visit_struct_init,
             AST_NODE_MEMBER_ACCESS: self.visit_member_access,
+            AST_NODE_ARRAY_ACCESS: self.visit_array_access,
             AST_NODE_NEW: self.visit_new,
             AST_NODE_DEL: self.visit_del,
             AST_NODE_GENERIC_INITIALIZER: self.visit_generic_initializer,
@@ -292,7 +293,7 @@ class Interpreter(object):
         if node.operator == '=' and node.left.node_type == AST_NODE_MEMBER_ACCESS:
             # First evaluate the object to get the struct instance
             obj_var = self.evaluate(node.left.obj)
-            
+
             # Dereference if it's a reference
             obj_var = self.dereference(obj_var)
             obj = obj_var.value  # Get the struct instance
@@ -303,6 +304,23 @@ class Interpreter(object):
 
             # Set the field value
             obj.fields[node.left.member_name] = right_var
+            return right_var
+
+        # Special case for assignment to array element (arr[idx] = value)
+        elif node.operator == '=' and node.left.node_type == AST_NODE_ARRAY_ACCESS:
+            # Evaluate the array
+            arr = self.evaluate(node.left.array)
+
+            # Evaluate the index
+            idx = self.evaluate(node.left.index)
+
+            # Check if arr is a struct instance
+            if not isinstance(arr, StructInstance):
+                raise CompilerException("Cannot assign to element of non-array value")
+
+            # Set the element value
+            field_name = "_%d" % idx
+            arr.fields[field_name] = right_var
             return right_var
 
         # Special case for assignment to function call result (func() = value)
@@ -728,6 +746,31 @@ class Interpreter(object):
 
         return obj.fields[node.member_name]
 
+    def visit_array_access(self, node):
+        """Evaluate an array access node (arr[idx])"""
+        # Evaluate the array expression
+        arr = self.evaluate(node.array)
+
+        # Evaluate the index expression
+        idx = self.evaluate(node.index)
+
+        # Handle nil reference
+        if arr is None:
+            raise CompilerException("Attempt to access element of a nil reference")
+
+        # Make sure it's a struct instance (arrays are represented as structs)
+        if not isinstance(arr, StructInstance):
+            raise CompilerException("Cannot perform array indexing on non-array value")
+
+        # Convert index to field name format (arrays use _0, _1, etc. like tuples)
+        field_name = "_%d" % idx
+
+        # Get the element value
+        if field_name not in arr.fields:
+            raise CompilerException("Array index %d out of bounds" % idx)
+
+        return arr.fields[field_name]
+
     def process_argument(self, arg_node, is_byref):
         """Process a function/method argument based on byref flag"""
         # First evaluate the expression regardless of byref status
@@ -938,7 +981,14 @@ class Interpreter(object):
         # Get struct fields for validation in LINEAR mode
         all_fields = []
         if node.subtype == INITIALIZER_SUBTYPE_LINEAR:
-            all_fields = registry.get_all_fields(struct_name)
+            # Handle different LINEAR initializers based on type
+            if registry.is_array_type(node.expr_type):
+                # For arrays, we'll use numeric fields (_0, _1, etc.)
+                # No need to get fields, will generate field names from indices
+                pass
+            else:
+                # For structs, get field definitions
+                all_fields = registry.get_all_fields(struct_name)
 
         # Initialize fields based on initializer subtype
         if node.subtype == INITIALIZER_SUBTYPE_TUPLE:
@@ -947,6 +997,31 @@ class Interpreter(object):
                 field_name = "_%d" % i
                 value_var = self.evaluate(elem)
                 instance.fields[field_name] = value_var
+
+        elif node.subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_array_type(node.expr_type):
+            # For arrays, use numerical field names (_0, _1, etc.) - similar to tuples
+            for i, elem in enumerate(node.elements):
+                field_name = "_%d" % i
+                value = self.evaluate(elem)
+                instance.fields[field_name] = value
+
+            # If this is a fixed-size array, pre-initialize missing elements
+            array_size = registry.get_array_size(node.expr_type)
+            if array_size is not None and array_size > len(node.elements):
+                element_type = registry.get_array_element_type(node.expr_type)
+                # Initialize remaining elements with default values
+                for i in range(len(node.elements), array_size):
+                    field_name = "_%d" % i
+
+                    # Set default value based on element type
+                    if element_type == TYPE_STRING:
+                        instance.fields[field_name] = ""
+                    elif is_float_type(element_type):
+                        instance.fields[field_name] = 0.0
+                    elif is_struct_type(element_type):
+                        instance.fields[field_name] = None  # Struct elements default to nil
+                    else:
+                        instance.fields[field_name] = 0     # Default for other types
 
         elif node.subtype == INITIALIZER_SUBTYPE_LINEAR:
             # For linear initializers, assign values to fields in order

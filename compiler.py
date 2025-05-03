@@ -336,6 +336,18 @@ class GenericInitializerNode(ASTNode):
         return "Initializer(%s, %s, [%s])" % (
             subtype_str, registry.var_type_to_string(self.target_type), elements_str)
 
+class ArrayAccessNode(ASTNode):
+    def __init__(self, array, index, element_type):
+        ASTNode.__init__(self, AST_NODE_ARRAY_ACCESS)
+        self.array = array
+        self.index = index
+        self.expr_type = element_type
+        # Arrays elements can be used as references when the array is a reference
+        self.ref_kind = array.ref_kind
+
+    def __repr__(self):
+        return "ArrayAccess(%s[%s])" % (repr(self.array), repr(self.index))
+
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
     return node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING]
@@ -786,17 +798,41 @@ class Parser:
         if self.token.type in TYPE_TOKEN_MAP:
             type_id = TYPE_TOKEN_MAP[self.token.type]
             self.advance()
+            # Check for array syntax: Type[N] or Type[]
+            if self.token.type == TT_LBRACKET:
+                return self.parse_array_dimensions(type_id)
             return type_id
         elif self.token.type == TT_IDENT:
             type_name = self.token.value
             if registry.struct_exists(type_name):
                 type_id = registry.get_struct_id(type_name)
                 self.advance()
+                # Check for array syntax: Type[N] or Type[]
+                if self.token.type == TT_LBRACKET:
+                    return self.parse_array_dimensions(type_id)
                 return type_id
             else:
                 self.error("Unknown type '%s'" % type_name)
         else:
             self.error("Expected a type")
+
+    def parse_array_dimensions(self, element_type):
+        """Parse array dimensions: [size] or []"""
+        self.advance()  # Skip '['
+
+        # Parse dimension if provided
+        size = None  # Default to dynamic size
+        if self.token.type == TT_INT_LITERAL:
+            size = self.token.value
+            if size <= 0:
+                self.error("Array dimension must be positive")
+            self.advance()
+
+        # Consume closing bracket
+        self.consume(TT_RBRACKET)
+
+        # Register array type
+        return registry.register_array_type(element_type, size)
 
     def struct_definition(self):
         """Parse a struct definition: struct Name [:ParentName] do ... end"""
@@ -957,7 +993,11 @@ class Parser:
 
         # Determine subtype based on target_type
         if target_type != TYPE_UNKNOWN:
-            if registry.is_struct_type(target_type):
+            if registry.is_array_type(target_type):
+                subtype = INITIALIZER_SUBTYPE_LINEAR
+                # Get element type for array elements
+                element_type = registry.get_array_element_type(target_type)
+            elif registry.is_struct_type(target_type):
                 subtype = INITIALIZER_SUBTYPE_LINEAR
                 # Check if struct has a constructor - if so, initializer is not allowed
                 if registry.get_method(target_type, "init"):
@@ -974,7 +1014,9 @@ class Parser:
                 # Nested initializer - derive element type based on context
                 element_type = TYPE_UNKNOWN
                 if subtype == INITIALIZER_SUBTYPE_LINEAR:
-                    if registry.is_struct_type(target_type):
+                    if registry.is_array_type(target_type):
+                        element_type = registry.get_array_element_type(target_type)
+                    elif registry.is_struct_type(target_type):
                         # Get field type for the current index
                         field_index = len(elements)
                         struct_name = registry.get_struct_name(target_type)
@@ -999,6 +1041,20 @@ class Parser:
 
         # Create initializer node
         init_node = GenericInitializerNode(elements, subtype, target_type)
+
+        # Handle array dimension inference for arrays with inferred size
+        if (subtype == INITIALIZER_SUBTYPE_LINEAR and
+                registry.is_array_type(target_type) and
+                registry.get_array_size(target_type) is None):
+            # Get element type and inferred size
+            element_type = registry.get_array_element_type(target_type)
+            inferred_size = len(elements)
+            # Create a sized array type
+            sized_array_type = registry.register_array_type(element_type, inferred_size)
+            # Update target and result type
+            target_type = sized_array_type
+            init_node.target_type = sized_array_type
+            init_node.expr_type = sized_array_type
 
         # Handle type inference for tuple initializers
         if subtype == INITIALIZER_SUBTYPE_TUPLE:
@@ -1028,6 +1084,22 @@ class Parser:
                 if not can_promote(elem.expr_type, field_type):
                     self.type_mismatch_error("Field %d in %s initializer" % (i+1, struct_name), 
                                             elem.expr_type, field_type)
+
+        # Type validation for LINEAR initializers with array types
+        elif subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_array_type(target_type):
+            element_type = registry.get_array_element_type(target_type)
+            array_size = registry.get_array_size(target_type)
+
+            # Validate element count for fixed-size arrays
+            if array_size is not None and len(elements) > array_size:
+                self.error("Array initializer has %d elements, but array has size %d" % 
+                          (len(elements), array_size))
+
+            # Validate element types
+            for i, elem in enumerate(elements):
+                if not can_promote(elem.expr_type, element_type):
+                    self.type_mismatch_error("Element %d in array initializer" % (i+1),
+                                            elem.expr_type, element_type)
 
         return init_node
 
@@ -1150,6 +1222,10 @@ class Parser:
         if t.type == TT_DOT:
             return self.parse_member_access(left)
 
+        # Handle array indexing
+        if t.type == TT_LBRACKET:
+            return self.parse_array_access(left, consume_lbracket=False)
+
         # Handle function call
         if t.type == TT_LPAREN and left.node_type == AST_NODE_VARIABLE:
             return self.funccall(left.name, consume_lparen=False)
@@ -1190,6 +1266,20 @@ class Parser:
             # Create a special binary operation that models the assignment
             return BinaryOpNode('=', left, right, left.expr_type)
 
+        # Handle array element assignment (arr[idx] = value)
+        elif t.type == TT_ASSIGN and left.node_type == AST_NODE_ARRAY_ACCESS:
+            # Parse the right side expression
+            right = self.expression(0)
+
+            # Check type compatibility
+            element_type = left.expr_type
+            if not can_promote(right.expr_type, element_type):
+                self.type_mismatch_error("Array element assignment",
+                                        right.expr_type, element_type)
+
+            # Create a binary operation for the assignment
+            return BinaryOpNode('=', left, right, element_type)
+
         if t.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD, TT_SHL, TT_SHR]:
             right = self.expression(self.lbp(t))
 
@@ -1224,6 +1314,39 @@ class Parser:
             self.error("Bitwise operators require integer operands")
 
         raise CompilerException('Unexpected token type %d' % t.type, t)
+
+    def parse_array_access(self, array_node, consume_lbracket=True):
+        """Parse array access: array[index]"""
+        # Skip '[' if needed
+        if consume_lbracket:
+            self.consume(TT_LBRACKET)
+
+        # Check if type is an array
+        if not registry.is_array_type(array_node.expr_type):
+            self.error("Cannot index non-array type %s" %
+                      registry.var_type_to_string(array_node.expr_type))
+
+        # Parse index expression
+        index_expr = self.expression(0)
+
+        # Ensure index is an integer type
+        if not is_integer_type(index_expr.expr_type):
+            self.error("Array index must be an integer type")
+
+        # Consume the closing bracket
+        self.consume(TT_RBRACKET)
+
+        # Get the element type
+        element_type = registry.get_array_element_type(array_node.expr_type)
+
+        # Create and return the array access node
+        access_node = ArrayAccessNode(array_node, index_expr, element_type)
+
+        # Handle reference kind propagation - array elements can be referenced for modification
+        if array_node.ref_kind != REF_KIND_NONE:
+            access_node.ref_kind = array_node.ref_kind
+
+        return access_node
 
     def parse_type(self):
         """Parse a type annotation or return None if not present"""
@@ -1448,6 +1571,22 @@ class Parser:
                     # Parse the initializer expression
                     expr = self.expression(0)
 
+                # For size-inferred arrays, update the variable's type with the inferred size
+                if (registry.is_array_type(var_type) and
+                    registry.get_array_size(var_type) is None and
+                    registry.is_array_type(expr.expr_type)):
+                    # Get element types
+                    var_elem_type = registry.get_array_element_type(var_type)
+                    init_elem_type = registry.get_array_element_type(expr.expr_type)
+
+                    # Ensure element types are compatible
+                    if can_promote(init_elem_type, var_elem_type):
+                        # Get the inferred size
+                        inferred_size = registry.get_array_size(expr.expr_type)
+
+                        # Create a sized array with the variable's element type
+                        var_type = registry.register_array_type(var_elem_type, inferred_size)
+
                 # In global scope, ensure only literal initializers
                 if self.current_function == -1 and self.seen_main_function:
                     self.error("Global variables must be declared before main function")
@@ -1601,6 +1740,55 @@ class Parser:
                 # Method call or field access as expression statement
                 self.check_statement_end()
                 return ExprStmtNode(member_node)
+
+            # Array access (variable[index])
+            elif self.token.type == TT_LBRACKET:
+                # Create variable node for the array
+                if not self.is_variable_declared(var):
+                    self.error("Variable '%s' is not declared" % var)
+
+                var_type = self.get_variable_type(var)
+                var_ref_kind = self.get_variable_ref_kind(var)
+                array_node = VariableNode(var, var_type, var_ref_kind)
+
+                # Parse array access
+                array_access_node = self.parse_array_access(array_node)
+
+                # Handle possible assignment for array element
+                if self.token.type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
+                                       TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
+                    # Save the operator type
+                    op = self.token.type
+                    element_type = array_access_node.expr_type
+
+                    # Advance past the operator
+                    self.advance()
+
+                    # Parse the right-hand expression
+                    expr = self.expression(0)
+
+                    # Check type compatibility
+                    if not can_promote(expr.expr_type, element_type):
+                        self.type_mismatch_error("Array element assignment",
+                                                 expr.expr_type, element_type)
+
+                    # For compound operators, create a BinaryOpNode with the appropriate operation
+                    if op != TT_ASSIGN:
+                        # Create a binary op that combines the array access and the operation
+                        operator_char = get_operator_for_compound_assign(op)
+                        node = BinaryOpNode('=', array_access_node,
+                                            BinaryOpNode(operator_char, array_access_node, expr, element_type),
+                                            element_type)
+                    else:
+                        # Regular assignment
+                        node = BinaryOpNode('=', array_access_node, expr, element_type)
+
+                    self.check_statement_end()
+                    return node
+
+                # Array access as expression statement
+                self.check_statement_end()
+                return ExprStmtNode(array_access_node)
 
             # Variable reference
             else:

@@ -16,6 +16,34 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "array element assignment",
+            "code": """
+                def main() do
+                    var nums: int[5] = {1, 2, 3, 4, 5}
+                    nums[2] = 99     // Modify the 3rd element
+                    var dynamic: int[] = {10, 20, 30}
+                    dynamic[1] = 50  // Modify the 2nd element
+                end
+            """,
+            "expected_env": {
+                "nums": {"_0": 1, "_1": 2, "_2": 99, "_3": 4, "_4": 5},
+                "dynamic": {"_0": 10, "_1": 50, "_2": 30}
+            }
+        },
+        {
+           "name": "struct copy",
+           "code": """
+		struct Point do x:int; y:int end;
+		def main() do
+			var p:Point={20,30};
+			var q:Point={1,2};
+			q = p
+			var y:= q.y
+		end
+           """,
+           "expected_env": {"y": 30}
+        },
+        {
             "name": "byref return basic test",
             "code": """
                 def get_ref(byref x:int):byref int do

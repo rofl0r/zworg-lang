@@ -86,6 +86,8 @@ TT_TYPE_ULONGLONG = 77
 TT_ULONGLONG_LITERAL = 78
 TT_LONGLONG_LITERAL = 79
 TT_BYREF = 80
+TT_LBRACKET = 81      # '[' for array use
+TT_RBRACKET = 82      # ']' for array use
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -116,6 +118,7 @@ AST_NODE_MEMBER_ACCESS = 26 # field/method access
 AST_NODE_NEW = 28           # heap allocation with 'new'
 AST_NODE_DEL = 29           # heap deallocation with 'del'
 AST_NODE_GENERIC_INITIALIZER = 31
+AST_NODE_ARRAY_ACCESS = 32
 
 # Variable types - We depend on the order in interpreter.py when taking the max(type1, type2)
 TYPE_UNKNOWN = 0
@@ -269,6 +272,7 @@ BINARY_PRECEDENCE = {
     TT_LPAREN: 100,  # needed for function calls only
     # Member access has highest precedence
     TT_DOT: 120,     # Member access - must be even higher than unary!
+    TT_LBRACKET: 120,     # Array access - Needs same prec as Member access
 }
 
 # Unary operator precedence (higher than binary operators)
@@ -435,6 +439,7 @@ def ast_node_type_to_string(node_type):
         AST_NODE_NEW: "NEW",
         AST_NODE_DEL: "DEL",
         AST_NODE_GENERIC_INITIALIZER: "GENERIC_INITIALIZER",
+        AST_NODE_ARRAY_ACCESS: "ARRAY_ACCESS",
     }
     return type_names.get(node_type, "UNKNOWN")
 
