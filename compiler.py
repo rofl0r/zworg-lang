@@ -1225,55 +1225,26 @@ class Parser:
 
         # Handle assignment as an operator
         if t.type == TT_ASSIGN and left.node_type == AST_NODE_VARIABLE:
-            # Get variable name from left side
+            # Get variable name and info
             var_name = left.name
             var_type = self.get_variable_type(var_name)
             var_ref_kind = self.get_variable_ref_kind(var_name)
 
-            # Check if variable is a constant (declared with 'let')
-            if self.is_constant(var_name):
-                self.error("Cannot reassign to constant '%s'" % var_name)
-
-            # Parse the right side expression
-            right = self.expression(0)
-
-            # For assignments in conditions (e.g. while x = y do),
-            # use the fully resolved types
-            if right.node_type == AST_NODE_VARIABLE:
-                right_var = right.name
-                right_type = self.get_variable_type(right_var)
-
-            # Check type compatibility
-            self.check_type_compatibility(var_name, right)
-            # Create a VariableNode for the left side
+            # Create a proper variable node for handling
             var_node = VariableNode(var_name, var_type, var_ref_kind)
-            # Use BinaryOpNode instead of AssignNode
-            return BinaryOpNode('=', var_node, right, var_type, var_ref_kind)
+
+            # Use our centralized assignment handler
+            return self.handle_assignment(var_node, var_type, ASSIGN_CTX_VARIABLE, consume_token=False)
 
         # Handle member assignment (obj.field = value)
         elif t.type == TT_ASSIGN and left.node_type == AST_NODE_MEMBER_ACCESS:
-            # Parse the right side expression
-            right = self.expression(0)
-
-            # Check type compatibility
-            self.check_field_compatibility(right.expr_type, left.expr_type)
-
-            # Create a special binary operation that models the assignment
-            return BinaryOpNode('=', left, right, left.expr_type)
+            # Use our centralized assignment handler
+            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_MEMBER_ACCESS, consume_token=False)
 
         # Handle array element assignment (arr[idx] = value)
         elif t.type == TT_ASSIGN and left.node_type == AST_NODE_ARRAY_ACCESS:
-            # Parse the right side expression
-            right = self.expression(0)
-
-            # Check type compatibility
-            element_type = left.expr_type
-            if not can_promote(right.expr_type, element_type):
-                self.type_mismatch_error("Array element assignment",
-                                        right.expr_type, element_type)
-
-            # Create a binary operation for the assignment
-            return BinaryOpNode('=', left, right, element_type)
+            # Use our centralized assignment handler
+            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_ARRAY_ELEMENT, consume_token=False)
 
         if t.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD, TT_SHL, TT_SHR]:
             right = self.expression(self.lbp(t))
@@ -1419,7 +1390,7 @@ class Parser:
         return token_type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
                              TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]
 
-    def handle_assignment(self, lhs, target_type, context_type):
+    def handle_assignment(self, lhs, target_type, context_type, consume_token=True):
         """
         Handle an assignment operation based on context type.
 
@@ -1431,12 +1402,23 @@ class Parser:
         Returns:
             A BinaryOpNode representing the assignment
         """
-        # Save the operator type
-        op = self.token.type
+        # Save the operator type. If consume_token is False, this is called from
+        # led(), where the token was already consumed, however there it is always
+        # TT_ASSIGN at the moment.
+        op = self.token.type if consume_token else TT_ASSIGN
         ref_kind = lhs.ref_kind
 
+        # Pre-checks based on context
+        if context_type == ASSIGN_CTX_FUNCTION_RESULT:
+            if lhs.ref_kind == REF_KIND_NONE:
+                self.error("Cannot assign to a non-reference value")
+        elif context_type == ASSIGN_CTX_VARIABLE:
+            var_name = lhs.name
+            if self.is_constant(var_name):
+                self.error("Cannot reassign to constant '%s'"%var_name)
+
         # Advance past the operator
-        self.advance()
+        if consume_token: self.advance()
 
         # Parse the right-hand side
         if self.token.type == TT_LBRACE:
@@ -1704,9 +1686,6 @@ class Parser:
 
                 # Check if we're assigning to the function call result (regular or compound)
                 if self.is_assignment_operator(self.token.type):
-                    if node.ref_kind == REF_KIND_NONE:
-                        self.error("Cannot assign to a non-reference value")
-
                     result = self.handle_assignment(node, node.expr_type, ASSIGN_CTX_FUNCTION_RESULT)
                     self.check_statement_end()
                     return result
@@ -1787,10 +1766,6 @@ class Parser:
 
                 # Handle all assignment operators (regular and compound)
                 if self.is_assignment_operator(self.token.type):
-                    # Check if variable is a constant (declared with 'const')
-                    if self.is_constant(var):
-                        self.error("Cannot reassign to constant '%s'" % var)
-
                     var_type = self.get_variable_type(var)
                     var_ref_kind = self.get_variable_ref_kind(var)
                     var_node = VariableNode(var, var_type, var_ref_kind)
