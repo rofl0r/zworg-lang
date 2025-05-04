@@ -8,6 +8,12 @@ from scope import EnvironmentStack
 # import registry singleton
 registry = get_registry()
 
+# Constants for assignment context
+ASSIGN_CTX_FUNCTION_RESULT = 1
+ASSIGN_CTX_MEMBER_ACCESS = 2
+ASSIGN_CTX_ARRAY_ELEMENT = 3
+ASSIGN_CTX_VARIABLE = 4
+
 # Base class for all AST nodes
 class ASTNode(object):
     def __init__(self, node_type=AST_NODE_BASE):
@@ -1408,6 +1414,63 @@ class Parser:
         ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
         return CallNode(func_name, args, func_return_type, ref_kind=ref_kind)
 
+    def is_assignment_operator(self, token_type):
+        """Check if a token is an assignment operator"""
+        return token_type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
+                             TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]
+
+    def handle_assignment(self, lhs, target_type, context_type):
+        """
+        Handle an assignment operation based on context type.
+
+        Args:
+            lhs: The left-hand side node being assigned to
+            target_type: The type to assign to
+            context_type: The context in which this assignment occurs
+
+        Returns:
+            A BinaryOpNode representing the assignment
+        """
+        # Save the operator type
+        op = self.token.type
+        ref_kind = lhs.ref_kind
+
+        # Advance past the operator
+        self.advance()
+
+        # Parse the right-hand side
+        if self.token.type == TT_LBRACE:
+            # Only allow initializers with regular assignment
+            if op != TT_ASSIGN:
+                self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
+            expr = self.parse_initializer_expression(target_type)
+        else:
+            # Parse regular expression
+            expr = self.expression(0)
+
+        # Post-checks based on context
+        if context_type == ASSIGN_CTX_MEMBER_ACCESS:
+            self.check_field_compatibility(expr.expr_type, target_type)
+        elif context_type == ASSIGN_CTX_ARRAY_ELEMENT:
+            if not can_promote(expr.expr_type, target_type):
+                self.type_mismatch_error("Array element assignment", expr.expr_type, target_type)
+        elif context_type == ASSIGN_CTX_VARIABLE:
+            self.check_type_compatibility(lhs.name, expr)
+
+        # Handle compound operators
+        if op != TT_ASSIGN:
+            # Get the operator for this compound assignment
+            binary_op = get_operator_for_compound_assign(op)
+
+            # Create a binary operation node for the operation
+            binary_expr = BinaryOpNode(binary_op, lhs, expr, target_type)
+
+            # Create and return assignment node with binary expression
+            return BinaryOpNode('=', lhs, binary_expr, target_type, ref_kind)
+        else:
+            # Regular assignment
+            return BinaryOpNode('=', lhs, expr, target_type, ref_kind)
+
     def statement(self):
         self.skip_separators()
 
@@ -1640,38 +1703,11 @@ class Parser:
                 node = self.funccall(var)
 
                 # Check if we're assigning to the function call result (regular or compound)
-                if self.token.type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
-                                       TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
-                    # Verify this is a reference function
+                if self.is_assignment_operator(self.token.type):
                     if node.ref_kind == REF_KIND_NONE:
                         self.error("Cannot assign to a non-reference value")
 
-                    # Save the operator type
-                    op = self.token.type
-
-                    # Get assignment value
-                    self.advance()  # Skip the operator
-
-                    # Check for initializer syntax
-                    if self.token.type == TT_LBRACE:
-                        # Only allow initializers with regular assignment
-                        if op != TT_ASSIGN:
-                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
-                        expr = self.parse_initializer_expression(node.expr_type)
-                    else:
-                        expr = self.expression(0)
-
-                    # For compound operators, create a BinaryOpNode to calculate the value
-                    if op != TT_ASSIGN:
-                        # Create a binary op that calculates the operation first
-                        operator_char = get_operator_for_compound_assign(op)
-                        binary_expr = BinaryOpNode(operator_char, node, expr, node.expr_type)
-                        # Then create the assignment operation
-                        result = BinaryOpNode('=', node, binary_expr, node.expr_type)
-                    else:
-                        # Regular assignment
-                        result = BinaryOpNode('=', node, expr, node.expr_type)
-
+                    result = self.handle_assignment(node, node.expr_type, ASSIGN_CTX_FUNCTION_RESULT)
                     self.check_statement_end()
                     return result
 
@@ -1692,38 +1728,9 @@ class Parser:
                 member_node = self.parse_member_access(obj_node)
 
                 # Handle possible assignment for field access
-                if member_node.node_type == AST_NODE_MEMBER_ACCESS and self.token.type in [
-                    TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
-                    TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN
-                ]:
-                    # Save the operator type
-                    op = self.token.type
+                if member_node.node_type == AST_NODE_MEMBER_ACCESS and self.is_assignment_operator(self.token.type):
                     field_type = member_node.expr_type
-
-                    # Advance past the operator
-                    self.advance()
-
-                    # Check for initializer syntax
-                    if self.token.type == TT_LBRACE:
-                        # Only allow initializers with regular assignment
-                        if op != TT_ASSIGN:
-                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
-                        expr = self.parse_initializer_expression(field_type)
-                    else:
-                        expr = self.expression(0)
-
-                    # Check type compatibility
-                    self.check_field_compatibility(expr.expr_type, field_type)
-
-                    # For compound operators, create a BinaryOpNode with the appropriate operation
-                    if op != TT_ASSIGN:
-                        # Create a binary op that combines the field access and the operation
-                        node = BinaryOpNode('=', member_node,
-                                          BinaryOpNode(get_operator_for_compound_assign(op), member_node, expr, field_type), field_type)
-                    else:
-                        # Regular assignment
-                        node = BinaryOpNode('=', member_node, expr, member_node.expr_type)
-
+                    node = self.handle_assignment(member_node, field_type, ASSIGN_CTX_MEMBER_ACCESS)
                     self.check_statement_end()
                     return node
 
@@ -1758,40 +1765,9 @@ class Parser:
                 array_access_node = self.parse_array_access(array_node)
 
                 # Handle possible assignment for array element
-                if self.token.type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
-                                       TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
-                    # Save the operator type
-                    op = self.token.type
+                if self.is_assignment_operator(self.token.type):
                     element_type = array_access_node.expr_type
-
-                    # Advance past the operator
-                    self.advance()
-
-                    # Check for initializer syntax
-                    if self.token.type == TT_LBRACE:
-                        # Only allow initializers with regular assignment
-                        if op != TT_ASSIGN:
-                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
-                        expr = self.parse_initializer_expression(element_type)
-                    else:
-                        expr = self.expression(0)
-
-                    # Check type compatibility
-                    if not can_promote(expr.expr_type, element_type):
-                        self.type_mismatch_error("Array element assignment",
-                                                 expr.expr_type, element_type)
-
-                    # For compound operators, create a BinaryOpNode with the appropriate operation
-                    if op != TT_ASSIGN:
-                        # Create a binary op that combines the array access and the operation
-                        operator_char = get_operator_for_compound_assign(op)
-                        node = BinaryOpNode('=', array_access_node,
-                                            BinaryOpNode(operator_char, array_access_node, expr, element_type),
-                                            element_type)
-                    else:
-                        # Regular assignment
-                        node = BinaryOpNode('=', array_access_node, expr, element_type)
-
+                    node = self.handle_assignment(array_access_node, element_type, ASSIGN_CTX_ARRAY_ELEMENT)
                     self.check_statement_end()
                     return node
 
@@ -1810,55 +1786,17 @@ class Parser:
                     self.error("Cannot use ':=' with already declared variable '%s'. Use '=' instead" % var)
 
                 # Handle all assignment operators (regular and compound)
-                if self.token.type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN, 
-                                       TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]:
+                if self.is_assignment_operator(self.token.type):
                     # Check if variable is a constant (declared with 'const')
                     if self.is_constant(var):
                         self.error("Cannot reassign to constant '%s'" % var)
 
-                    # Save the operator type
-                    op = self.token.type
                     var_type = self.get_variable_type(var)
-
-                    # Advance past the operator
-                    self.advance()
-
-                    # Check for initializer syntax
-                    if self.token.type == TT_LBRACE:
-                        # Only allow initializers with regular assignment
-                        if op != TT_ASSIGN:
-                            self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
-                        expr = self.parse_initializer_expression(var_type)
-                    else:
-                        expr = self.expression(0)
-
-                    # Check type compatibility for assignments
-                    self.check_type_compatibility(var, expr)
-
-                    # For compound operators, desugar them
-                    if op != TT_ASSIGN:
-                        var_ref_kind = self.get_variable_ref_kind(var)
-                        # Desugar compound assignment into binary op + assignment
-                        # Convert "a += b" into "a = a + b"
-
-                        # Create a variable node for the left side
-                        var_node = VariableNode(var, var_type, var_ref_kind)
-
-                        # Get the binary operator corresponding to this compound assignment
-                        binary_op = get_operator_for_compound_assign(op)
-
-                        # Create the binary operation (var op expr)
-                        binary_expr = BinaryOpNode(binary_op, var_node, expr, var_type)
-
-                        # Create and return a regular assignment node
-
-                        self.check_statement_end()
-                        return BinaryOpNode('=', var_node, binary_expr, var_type, var_ref_kind)
-
-                    # Regular assignment
-                    var_node = VariableNode(var, var_type)
+                    var_ref_kind = self.get_variable_ref_kind(var)
+                    var_node = VariableNode(var, var_type, var_ref_kind)
+                    node = self.handle_assignment(var_node, var_type, ASSIGN_CTX_VARIABLE)
                     self.check_statement_end()
-                    return BinaryOpNode('=', var_node, expr, var_type)
+                    return node
 
                 # Handle expression statements (e.g., an identifier by itself)
                 # Get variable type for the identifier
