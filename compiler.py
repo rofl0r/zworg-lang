@@ -1246,6 +1246,13 @@ class Parser:
             # Use our centralized assignment handler
             return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_ARRAY_ELEMENT, consume_token=False)
 
+        # Handle function call result assignment
+        elif t.type == TT_ASSIGN and left.node_type == AST_NODE_CALL:
+            # Verify this is a reference function
+            if left.ref_kind == REF_KIND_NONE:
+                self.error("Cannot assign to a non-reference value")
+            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_FUNCTION_RESULT, consume_token=False)
+
         if t.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD, TT_SHL, TT_SHR]:
             right = self.expression(self.lbp(t))
 
