@@ -73,19 +73,6 @@ class UnaryOpNode(ASTNode):
             self.operator, repr(self.operand), registry.var_type_to_string(self.expr_type)
         )
 
-class AssignNode(ASTNode):
-    def __init__(self, var_name, expr, var_type, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_ASSIGN)
-        self.var_name = var_name
-        self.expr = expr
-        self.expr_type = var_type
-        self.ref_kind = ref_kind
-
-    def __repr__(self):
-        return "Assign(%s, %s) -> %s" % (
-            self.var_name, repr(self.expr), registry.format_type_with_ref_kind(self.expr_type)
-        )
-
 class PrintNode(ASTNode):
     def __init__(self, expr):
         ASTNode.__init__(self, AST_NODE_PRINT)
@@ -1252,8 +1239,10 @@ class Parser:
 
             # Check type compatibility
             self.check_type_compatibility(var_name, right)
-
-            return AssignNode(var_name, right, var_type, var_ref_kind)
+            # Create a VariableNode for the left side
+            var_node = VariableNode(var_name, var_type, var_ref_kind)
+            # Use BinaryOpNode instead of AssignNode
+            return BinaryOpNode('=', var_node, right, var_type, var_ref_kind)
 
         # Handle member assignment (obj.field = value)
         elif t.type == TT_ASSIGN and left.node_type == AST_NODE_MEMBER_ACCESS:
@@ -1864,11 +1853,12 @@ class Parser:
                         # Create and return a regular assignment node
 
                         self.check_statement_end()
-                        return AssignNode(var, binary_expr, var_type, var_ref_kind)
+                        return BinaryOpNode('=', var_node, binary_expr, var_type, var_ref_kind)
 
                     # Regular assignment
+                    var_node = VariableNode(var, var_type)
                     self.check_statement_end()
-                    return AssignNode(var, expr, var_type)
+                    return BinaryOpNode('=', var_node, expr, var_type)
 
                 # Handle expression statements (e.g., an identifier by itself)
                 # Get variable type for the identifier

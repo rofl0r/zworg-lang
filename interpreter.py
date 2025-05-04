@@ -52,7 +52,6 @@ class Interpreter(object):
             AST_NODE_VARIABLE: self.visit_variable,
             AST_NODE_BINARY_OP: self.visit_binary_op,
             AST_NODE_UNARY_OP: self.visit_unary_op,
-            AST_NODE_ASSIGN: self.visit_assign,
             AST_NODE_PRINT: self.visit_print,
             AST_NODE_IF: self.visit_if,
             AST_NODE_WHILE: self.visit_while,
@@ -377,6 +376,36 @@ class Interpreter(object):
             self.assign_through_reference(left_var, right_var)
             return right_var
 
+        # Handle variable assignment (variable = value)
+        elif node.operator == '=' and node.left.node_type == AST_NODE_VARIABLE:
+            # Extract variable name from the left node
+            var_name = node.left.name
+            value_var = self.evaluate(node.right)
+            var_obj = None
+
+            # Check if we're assigning to a variable passed by reference
+            var_obj = self.environment.get(var_name)
+            if var_obj is not None:
+                # If it's a reference, we need to assign through it
+                if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
+                    return self.assign_through_reference(var_obj, value_var)
+
+            # Check if type promotion is needed and allowed
+            if node.expr_type != node.right.expr_type:
+                if not can_promote(node.right.expr_type, node.expr_type):
+                    raise CompilerException("Cannot assign %s to %s" %
+                                          (var_type_to_string(node.right.expr_type), var_type_to_string(node.expr_type)))
+
+            # Handle number literal promotion
+            if node.right.node_type == AST_NODE_NUMBER:
+                raw_value = value_var.value
+                promoted = promote_literal_if_needed(raw_value, node.right.expr_type, node.expr_type)
+                if promoted != raw_value:
+                    value_var = self.make_direct_value(promoted, node.expr_type)
+
+            self.environment.set(var_name, value_var)
+            return value_var
+
         # Dereference operands if they are references
         left_var = self.dereference(left_var)
         right_var = self.dereference(right_var)
@@ -461,35 +490,6 @@ class Interpreter(object):
                 return True
             raise CompilerException("Invalid heap reference in assignment")
         raise CompilerException("Cannot assign through non-reference value")
-
-    def visit_assign(self, node):
-        """Evaluate an assignment node"""
-        value_var = self.evaluate(node.expr)
-        var_obj = None
-
-        # Check if we're assigning to a variable passed by reference
-        var_obj = self.environment.get(node.var_name)
-        if var_obj is not None:
-
-            # If it's a reference, we need to assign through it
-            if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
-                return self.assign_through_reference(var_obj, value_var)
-
-        # Check if type promotion is needed and allowed
-        if node.expr_type != node.expr.expr_type:
-            if not can_promote(node.expr.expr_type, node.expr_type):
-                raise CompilerException("Cannot assign %s to %s" %
-                                      (var_type_to_string(node.expr.expr_type), var_type_to_string(node.expr_type)))
-
-        # Handle number literal promotion
-        if node.expr.node_type == AST_NODE_NUMBER:
-            raw_value = value_var.value
-            promoted = promote_literal_if_needed(raw_value, node.expr.expr_type, node.expr_type)
-            if promoted != raw_value:
-                value_var = self.make_direct_value(promoted, node.expr_type)
-
-        self.environment.set(node.var_name, value_var)
-        return value_var
 
     def visit_print(self, node):
         """Evaluate a print statement node"""
