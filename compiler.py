@@ -1448,6 +1448,105 @@ class Parser:
             # Regular assignment
             return BinaryOpNode('=', lhs, expr, target_type, ref_kind)
 
+    def parse_var_declaration(self, var_name, decl_type):
+        """Parse a variable declaration after the identifier"""
+        # Process type annotation if present
+        var_type = self.parse_type()  # This will consume the type if present
+
+        # Check what kind of assignment we have
+        is_type_inference = (self.token.type == TT_TYPE_ASSIGN)
+
+        if is_type_inference:
+            # Type inference assignment (:=)
+            self.advance()  # Skip the := operator
+        elif self.token.type == TT_ASSIGN:
+            # Regular assignment with explicit type (=)
+            if var_type == TYPE_UNKNOWN:
+                self.error("Variable declaration with '=' requires explicit type annotation")
+            self.advance()  # Skip the = sign
+        else:
+            self.error("Variable declaration must include an initialization")
+
+        # Parse the initializer expression
+        if self.token.type == TT_LBRACE:
+            expr = self.parse_initializer_expression(TYPE_UNKNOWN if is_type_inference else var_type)
+        else:
+            expr = self.expression(0)
+
+        # In global scope, ensure only literal initializers
+        if self.current_function == -1 and self.seen_main_function:
+            self.error("Global variables must be declared before main function")
+
+        if self.current_function == -1 and not is_literal_node(expr):
+            self.error("Global variables can only be initialized with literals")
+
+        # Handle type resolution based on assignment type
+        if is_type_inference:
+            # Infer the type from expression
+            if expr.node_type == AST_NODE_NUMBER:
+                var_type = expr.expr_type
+            elif expr.node_type == AST_NODE_VARIABLE:
+                # Get type from referenced variable
+                ref_var = expr.name
+                var_type = self.get_variable_type(ref_var)
+                if var_type == TYPE_UNKNOWN:
+                    self.error("Cannot infer type from variable '%s' with unknown type" % ref_var)
+            elif expr.node_type == AST_NODE_STRUCT_INIT:
+                # Set var_type to struct type
+                var_type = expr.struct_id
+            elif expr.node_type == AST_NODE_NEW:
+                # Set var_type to reference type
+                var_type = expr.expr_type  # Already a reference type
+            elif expr.node_type == AST_NODE_GENERIC_INITIALIZER:
+                # For initializers, use the inferred type
+                var_type = expr.expr_type
+            elif hasattr(expr, 'expr_type'):
+                var_type = expr.expr_type
+            else:
+                # Default to int for other cases
+                var_type = TYPE_INT
+        else:
+            # For size-inferred arrays, update the variable's type with the inferred size
+            if (registry.is_array_type(var_type) and
+                registry.get_array_size(var_type) is None and
+                registry.is_array_type(expr.expr_type)):
+                # Get element types
+                var_elem_type = registry.get_array_element_type(var_type)
+                init_elem_type = registry.get_array_element_type(expr.expr_type)
+
+                # Ensure element types are compatible
+                if can_promote(init_elem_type, var_elem_type):
+                    # Get the inferred size
+                    inferred_size = registry.get_array_size(expr.expr_type)
+
+                    # Create a sized array with the variable's element type
+                    var_type = registry.register_array_type(var_elem_type, inferred_size)
+
+            # Check type compatibility with expression type
+            # Special cases for literals in declarations
+            if expr.node_type == AST_NODE_NUMBER:
+                if expr.expr_type == TYPE_INT:
+                    # Allow int literals to initialize any numeric type, but not string nor structs
+                    if var_type not in FLOAT_TYPES and var_type not in UNSIGNED_TYPES and var_type not in SIGNED_TYPES:
+                        self.type_mismatch_error("Type mismatch in initialization", expr.expr_type, var_type)
+                elif expr.expr_type == TYPE_DOUBLE and var_type == TYPE_FLOAT:
+                    # Allow double literals to initialize float variables
+                    pass
+            elif expr.expr_type != TYPE_UNKNOWN and var_type != expr.expr_type and not can_promote(expr.expr_type, var_type):
+                self.type_mismatch_error("Type mismatch in initialization", expr.expr_type, var_type)
+
+        # Register the variable as defined in the current scope
+        if self.env.get(var_name, all_scopes=False):
+            self.already_declared_error(var_name)
+
+        # If initializing with a reference (from new), keep the reference kind
+        ref_kind = expr.ref_kind
+
+        # Declare the variable in current scope
+        self.declare_variable(var_name, var_type, decl_type == TT_CONST, ref_kind=ref_kind)
+
+        return VarDeclNode(decl_type, var_name, var_type, expr, ref_kind=ref_kind)
+
     def statement(self):
         self.skip_separators()
 
@@ -1541,113 +1640,9 @@ class Parser:
             var_name = self.token.value
             self.advance()
 
-            # Process type annotation if present
-            var_type = self.parse_type()  # This will consume the type if present
-
-            # Check for assignment operator
-            if self.token.type == TT_TYPE_ASSIGN:
-                # Type inference assignment (:=)
-                self.advance()  # Skip the := operator
-
-                # Parse the initializer expression
-                if self.token.type == TT_LBRACE:
-                    expr = self.parse_initializer_expression()
-                else:
-                    expr = self.expression(0)
-
-                # In global scope, ensure only literal initializers
-                if self.current_function == -1 and self.seen_main_function:
-                    self.error("Global variables must be declared before main function")
-
-                if self.current_function == -1 and not is_literal_node(expr):
-                    self.error("Global variables can only be initialized with literals")
-
-                # Infer the type from expression
-                if expr.node_type == AST_NODE_NUMBER:
-                    var_type = expr.expr_type
-                elif expr.node_type == AST_NODE_VARIABLE:
-                    # Get type from referenced variable
-                    ref_var = expr.name
-                    var_type = self.get_variable_type(ref_var)
-                    if var_type == TYPE_UNKNOWN:
-                        self.error("Cannot infer type from variable '%s' with unknown type" % ref_var)
-                elif expr.node_type == AST_NODE_STRUCT_INIT:
-                    # Set var_type to struct type
-                    var_type = expr.struct_id
-                elif expr.node_type == AST_NODE_NEW:
-                    # Set var_type to reference type
-                    var_type = expr.expr_type  # Already a reference type
-                elif expr.node_type == AST_NODE_GENERIC_INITIALIZER:
-                    # For initializers, use the inferred type
-                    var_type = expr.expr_type
-                elif hasattr(expr, 'expr_type'):
-                    var_type = expr.expr_type
-                else:
-                    # Default to int for other cases
-                    var_type = TYPE_INT
-
-            elif self.token.type == TT_ASSIGN:
-                # Regular assignment with explicit type (=)
-                if var_type == TYPE_UNKNOWN:
-                    self.error("Variable declaration with '=' requires explicit type annotation")
-
-                self.advance()  # Skip the = sign
-
-                # Check for initializer syntax
-                if self.token.type == TT_LBRACE:
-                    expr = self.parse_initializer_expression(var_type)
-                else:
-                    # Parse the initializer expression
-                    expr = self.expression(0)
-
-                # For size-inferred arrays, update the variable's type with the inferred size
-                if (registry.is_array_type(var_type) and
-                    registry.get_array_size(var_type) is None and
-                    registry.is_array_type(expr.expr_type)):
-                    # Get element types
-                    var_elem_type = registry.get_array_element_type(var_type)
-                    init_elem_type = registry.get_array_element_type(expr.expr_type)
-
-                    # Ensure element types are compatible
-                    if can_promote(init_elem_type, var_elem_type):
-                        # Get the inferred size
-                        inferred_size = registry.get_array_size(expr.expr_type)
-
-                        # Create a sized array with the variable's element type
-                        var_type = registry.register_array_type(var_elem_type, inferred_size)
-
-                # In global scope, ensure only literal initializers
-                if self.current_function == -1 and self.seen_main_function:
-                    self.error("Global variables must be declared before main function")
-
-                if self.current_function == -1 and not is_literal_node(expr):
-                    self.error("Global variables can only be initialized with literals")
-
-                # Check type compatibility with expression type
-                # Special cases for literals in declarations
-                if expr.node_type == AST_NODE_NUMBER:
-                    if expr.expr_type == TYPE_INT:
-                        # Allow int literals to initialize any numeric type, but not string nor structs
-                        if var_type not in FLOAT_TYPES and var_type not in UNSIGNED_TYPES and var_type not in SIGNED_TYPES:
-                            self.type_mismatch_error("Type mismatch in initialization", expr.expr_type, var_type)
-                    elif expr.expr_type == TYPE_DOUBLE and var_type == TYPE_FLOAT:
-                        # Allow double literals to initialize float variables
-                        pass
-                elif expr.expr_type != TYPE_UNKNOWN and var_type != expr.expr_type and not can_promote(expr.expr_type, var_type):
-                    self.type_mismatch_error("Type mismatch in initialization", expr.expr_type, var_type)
-            else:
-                self.error("Variable declaration must include an initialization")
-            # Register the variable as defined in the current scope
-            if self.env.get(var_name, all_scopes=False):
-                self.already_declared_error(var_name)
-
-            # If initializing with a reference (from new), keep the reference kind
-            ref_kind = expr.ref_kind
-
-            # Declare the variable in current scope
-            self.declare_variable(var_name, var_type, decl_type == TT_CONST, ref_kind=ref_kind)
+            node = self.parse_var_declaration(var_name, decl_type)
             self.check_statement_end()
-            return VarDeclNode(decl_type, var_name, var_type, expr, ref_kind=ref_kind)
+            return node
 
         if self.token.type == TT_IF:
             return self.if_statement()
