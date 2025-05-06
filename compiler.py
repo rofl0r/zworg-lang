@@ -1146,13 +1146,10 @@ class Parser:
 
             # For a variable in an expression context:
             # Could be a function name.
-            # FIXME: we actually need to check whether the var_name token is
-            # a struct name or "self" followed by TT_DOT and used inside a
-            # method, then derive
-            # the full struct_name + function_name "tuple" for full function
-            # lookup in type_registry
             func_id = registry.lookup_function(var_name)
             if func_id != -1:
+                if self.token.type == TT_LPAREN:
+                    return self.funccall(var_name)
                 return_type = registry.get_func_from_id(func_id).return_type
                 return VariableNode(var_name, return_type)
 
@@ -1222,7 +1219,7 @@ class Parser:
             return self.funccall(left.name, consume_lparen=False)
 
         # Handle assignment as an operator
-        if t.type == TT_ASSIGN and left.node_type == AST_NODE_VARIABLE:
+        if self.is_assignment_operator(t.type) and left.node_type == AST_NODE_VARIABLE:
             # Get variable name and info
             var_name = left.name
             var_type = self.get_variable_type(var_name)
@@ -1232,24 +1229,24 @@ class Parser:
             var_node = VariableNode(var_name, var_type, var_ref_kind)
 
             # Use our centralized assignment handler
-            return self.handle_assignment(var_node, var_type, ASSIGN_CTX_VARIABLE, consume_token=False)
+            return self.handle_assignment(var_node, var_type, ASSIGN_CTX_VARIABLE, t.type)
 
         # Handle member assignment (obj.field = value)
-        elif t.type == TT_ASSIGN and left.node_type == AST_NODE_MEMBER_ACCESS:
+        elif self.is_assignment_operator(t.type) and left.node_type == AST_NODE_MEMBER_ACCESS:
             # Use our centralized assignment handler
-            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_MEMBER_ACCESS, consume_token=False)
+            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_MEMBER_ACCESS, t.type)
 
         # Handle array element assignment (arr[idx] = value)
-        elif t.type == TT_ASSIGN and left.node_type == AST_NODE_ARRAY_ACCESS:
+        elif self.is_assignment_operator(t.type) and left.node_type == AST_NODE_ARRAY_ACCESS:
             # Use our centralized assignment handler
-            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_ARRAY_ELEMENT, consume_token=False)
+            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_ARRAY_ELEMENT, t.type)
 
         # Handle function call result assignment
-        elif t.type == TT_ASSIGN and left.node_type == AST_NODE_CALL:
+        elif self.is_assignment_operator(t.type) and left.node_type == AST_NODE_CALL:
             # Verify this is a reference function
             if left.ref_kind == REF_KIND_NONE:
                 self.error("Cannot assign to a non-reference value")
-            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_FUNCTION_RESULT, consume_token=False)
+            return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_FUNCTION_RESULT, t.type)
 
         if t.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD, TT_SHL, TT_SHR]:
             right = self.expression(self.lbp(t))
@@ -1397,7 +1394,7 @@ class Parser:
         return token_type in [TT_ASSIGN, TT_PLUS_ASSIGN, TT_MINUS_ASSIGN,
                              TT_MULT_ASSIGN, TT_DIV_ASSIGN, TT_MOD_ASSIGN]
 
-    def handle_assignment(self, lhs, target_type, context_type, consume_token=True):
+    def handle_assignment(self, lhs, target_type, context_type, op):
         """
         Handle an assignment operation based on context type.
 
@@ -1405,14 +1402,11 @@ class Parser:
             lhs: The left-hand side node being assigned to
             target_type: The type to assign to
             context_type: The context in which this assignment occurs
+            op: the assignment operator token, e.g. TT_DIV_ASSIGN
 
         Returns:
             A BinaryOpNode representing the assignment
         """
-        # Save the operator type. If consume_token is False, this is called from
-        # led(), where the token was already consumed, however there it is always
-        # TT_ASSIGN at the moment.
-        op = self.token.type if consume_token else TT_ASSIGN
         ref_kind = lhs.ref_kind
 
         # Pre-checks based on context
@@ -1423,9 +1417,6 @@ class Parser:
             var_name = lhs.name
             if self.is_constant(var_name):
                 self.error("Cannot reassign to constant '%s'"%var_name)
-
-        # Advance past the operator
-        if consume_token: self.advance()
 
         old_initializer_type = self.current_initializer_type
         self.current_initializer_type = target_type
@@ -1680,128 +1671,6 @@ class Parser:
             self.advance()
             self.check_statement_end()
             return ContinueNode()
-        elif self.token.type == TT_IDENT:
-            var = self.token.value
-            self.advance()
-
-            # Function call
-            if self.token.type == TT_LPAREN:
-                node = self.funccall(var)
-
-                # Check if we're assigning to the function call result (regular or compound)
-                if self.is_assignment_operator(self.token.type):
-                    result = self.handle_assignment(node, node.expr_type, ASSIGN_CTX_FUNCTION_RESULT)
-                    self.check_statement_end()
-                    return result
-
-                self.check_statement_end()
-                return node
-
-            # Member access (variable.field)
-            elif self.token.type == TT_DOT:
-                # Create variable node for the object
-                if not self.is_variable_declared(var):
-                    self.error("Variable '%s' is not declared" % var)
-
-                var_type = self.get_variable_type(var)
-                obj_node = VariableNode(var, var_type)
-
-                # Parse member access
-                self.advance() # skip dot
-                member_node = self.parse_member_access(obj_node)
-
-                # Handle possible assignment for field access
-                if member_node.node_type == AST_NODE_MEMBER_ACCESS and self.is_assignment_operator(self.token.type):
-                    field_type = member_node.expr_type
-                    node = self.handle_assignment(member_node, field_type, ASSIGN_CTX_MEMBER_ACCESS)
-                    self.check_statement_end()
-                    return node
-
-                # Handle method chaining - if we have a method call result followed by a dot
-                if member_node.node_type == AST_NODE_CALL and self.token.type == TT_DOT:
-                    # Continue parsing the chain
-                    expr = member_node
-                    while self.token.type == TT_DOT:
-                        self.advance()  # Skip dot
-                        # Parse next member in the chain
-                        expr = self.parse_member_access(expr)
-
-                    # Now we're at the end of the chain
-                    self.check_statement_end()
-                    return ExprStmtNode(expr)
-
-                # Method call or field access as expression statement
-                self.check_statement_end()
-                return ExprStmtNode(member_node)
-
-            # Array access (variable[index])
-            elif self.token.type == TT_LBRACKET:
-                # Create variable node for the array
-                if not self.is_variable_declared(var):
-                    self.error("Variable '%s' is not declared" % var)
-
-                var_type = self.get_variable_type(var)
-                var_ref_kind = self.get_variable_ref_kind(var)
-                array_node = VariableNode(var, var_type, var_ref_kind)
-
-                # Parse array access
-                array_access_node = self.parse_array_access(array_node)
-
-                # Handle possible assignment for array element
-                if self.is_assignment_operator(self.token.type):
-                    element_type = array_access_node.expr_type
-                    node = self.handle_assignment(array_access_node, element_type, ASSIGN_CTX_ARRAY_ELEMENT)
-                    self.check_statement_end()
-                    return node
-
-                # Array access as expression statement
-                self.check_statement_end()
-                return ExprStmtNode(array_access_node)
-
-            # Variable reference
-            else:
-                # Check if variable has been declared
-                if not self.is_variable_declared(var):
-                    self.error("Variable '%s' is not declared" % var)
-
-                # Explicitly check for type-inference assignment on already declared variable
-                if self.token.type == TT_TYPE_ASSIGN:
-                    self.error("Cannot use ':=' with already declared variable '%s'. Use '=' instead" % var)
-
-                # Handle all assignment operators (regular and compound)
-                if self.is_assignment_operator(self.token.type):
-                    var_type = self.get_variable_type(var)
-                    var_ref_kind = self.get_variable_ref_kind(var)
-                    var_node = VariableNode(var, var_type, var_ref_kind)
-                    node = self.handle_assignment(var_node, var_type, ASSIGN_CTX_VARIABLE)
-                    self.check_statement_end()
-                    return node
-
-                # Handle expression statements (e.g., an identifier by itself)
-                # Get variable type for the identifier
-                var_type = self.get_variable_type(var)
-
-                # Create the variable node
-                var_node = VariableNode(var, var_type)
-
-                # Check if this is the start of a binary expression (identifier followed by operator)
-                if self.token.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD,
-                                     TT_EQ, TT_NE, TT_GT, TT_LT, TT_GE, TT_LE]:
-                    # This is a binary operation starting with a variable
-                    op = self.token.value
-                    self.advance()  # Consume the operator token
-
-                    # Parse the right-hand side of the binary operation
-                    right = self.expression(0)
-
-                    # Create the binary operation node
-                    expr = BinaryOpNode(op, var_node, right, var_type)
-                else:
-                    # Just a variable reference on its own
-                    expr = var_node
-
-                self.check_statement_end()
-                return ExprStmtNode(expr)
         else:
             # First check if we're in global scope, where only declarations are allowed
             if self.current_function == -1:
