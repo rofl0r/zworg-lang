@@ -250,6 +250,7 @@ KEYWORDS = {
 # Global precedence table for binary operators
 BINARY_PRECEDENCE = {
     TT_ASSIGN: 10,   # lowest precedence (Python: assignments)
+    TT_TYPE_ASSIGN: 10,
     TT_PLUS_ASSIGN: 10,
     TT_MINUS_ASSIGN: 10,
     TT_MULT_ASSIGN: 10,

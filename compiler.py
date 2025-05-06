@@ -1248,6 +1248,16 @@ class Parser:
                 self.error("Cannot assign to a non-reference value")
             return self.handle_assignment(left, left.expr_type, ASSIGN_CTX_FUNCTION_RESULT, t.type)
 
+        # Handle type-inference assignment (:=)
+        if t.type == TT_TYPE_ASSIGN and left.node_type == AST_NODE_VARIABLE:
+            var = left.name
+            # Check if variable is already declared - if so, this is an error
+            if self.is_variable_declared(var):
+                self.error("Cannot use ':=' with already declared variable '%s'. Use '=' instead" % var)
+            # Type inference doesn't make sense in expression context without a proper declaration
+            # This is unusual, but we'll handle the error here to ensure consistent behavior
+            self.error("Type inference assignment (:=) is only valid in variable declarations")
+
         if t.type in [TT_PLUS, TT_MINUS, TT_MULT, TT_DIV, TT_MOD, TT_SHL, TT_SHR]:
             right = self.expression(self.lbp(t))
 
