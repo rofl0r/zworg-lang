@@ -1690,6 +1690,18 @@ def test():
             "expected_error": "Cannot use ':=' with already declared variable 'x'. Use '=' instead"
         },
         {
+            "name": "non-void function with empty return",
+            "code": """
+                def should_return_int() :int do
+                    return
+                end
+                def main() do
+                    var x := should_return_int();
+                end
+            """,
+            "expected_error": "Non-void function 'should_return_int' must return a value"
+        },
+        {
             "name": "invalid redeclaration of variable",
             "code": """
                 def main() do var x:=10; var x:=20 // x is already declared, so "var x" must fail

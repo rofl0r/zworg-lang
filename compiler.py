@@ -1579,23 +1579,25 @@ class Parser:
 
             self.advance()
 
+            # Get function return type for context
+            current_func_obj = registry.get_func_from_id(self.current_function)
+            func_return_type = current_func_obj.return_type
+
             # Return with no value
             if self.token.type in [TT_SEMI, TT_NEWLINE, TT_EOF] or (self.prev_token and self.token.line > self.prev_token.line):
+                # Check if empty return is allowed
+                if func_return_type != TYPE_VOID:
+                    self.error("Non-void function '%s' must return a value" % current_func_obj.name)
+
                 self.check_statement_end()
                 return ReturnNode(None)
 
             # Return with value
-            # Special handling for initializers in return statements
-            if self.token.type == TT_LBRACE:
-                # Get return type from current function
-                func_return_type = registry.get_func_from_id(self.current_function).return_type
-                expr = self.parse_initializer_expression(func_return_type)
-            else:
-                expr = self.expression(0)
-
-            # Check if return type matches function return type
-            current_func_obj = registry.get_func_from_id(self.current_function)
-            func_return_type = current_func_obj.return_type
+            # Set context for expression parsing
+            old_initializer_type = self.current_initializer_type
+            self.current_initializer_type = func_return_type
+            expr = self.expression(0)
+            self.current_initializer_type = old_initializer_type
 
             if func_return_type == TYPE_VOID:
                 fn = registry.get_func_from_id(self.current_function).name
