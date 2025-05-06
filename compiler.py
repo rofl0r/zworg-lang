@@ -358,12 +358,6 @@ class Parser:
         self.prev_token = None
         self.env = EnvironmentStack()
 
-        self.scopes = ["global"]  # Stack of scope names
-        self.variables = {"global": set()}  # Track declared variables per scope
-        self.constants = {"global": set()}  # Track constants (let declarations) per scope
-        self.var_types = {"global": {}}     # Track variable types per scope
-        self.var_ref_kinds = {"global": {}} # Track variable reference kinds per scope
-
         # Track if we've seen functions - used to enforce globals-before-functions rule
         self.seen_main_function = False
         self.current_function = -1  # Track current function for return checking
