@@ -1781,7 +1781,7 @@ def test():
         {
             "name": "else-if without proper end before else",
             "code": "def main() do var x := 3; if x == 1 do print 1; else if x == 2 do print 2; else if x == 3 do print 3; end end",
-            "expected_error": 'Invalid statement starting with "else" (TT_ELSE)'
+            "expected_error": "Missing 'end' before 'else'"
         },
         {
             "name": "Unterminated string literal",

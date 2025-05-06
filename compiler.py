@@ -1338,6 +1338,8 @@ class Parser:
         while self.token.type != TT_END:
             if self.token.type == TT_EOF:
                 self.error("Unexpected end of file while parsing a block (missing 'end')")
+            if self.token.type == TT_ELSE:
+                self.error("Missing 'end' before 'else'")
             self.skip_separators()  # Skip any separators before checking for END again
             if self.token.type == TT_END: break
             stmt = self.statement()
@@ -1800,20 +1802,14 @@ class Parser:
 
                 self.check_statement_end()
                 return ExprStmtNode(expr)
-        elif self.token.type in [TT_INT_LITERAL, TT_UINT_LITERAL, TT_LONG_LITERAL, TT_ULONG_LITERAL, 
-                                TT_FLOAT_LITERAL, TT_STRING_LITERAL, TT_LPAREN, TT_MINUS, TT_NOT, TT_BITNOT]:
-            # Also handle expressions that start with other tokens
+        else:
+            # First check if we're in global scope, where only declarations are allowed
+            if self.current_function == -1:
+                self.error("Only variable declarations and function declarations are allowed in global scope")
+            # handle everything else in the pratt expression parser
             expr = self.expression(0)
             self.check_statement_end()
             return ExprStmtNode(expr)
-
-        # If we're in global scope and not at a var/let/function declaration, error
-        if self.current_function == -1:
-            self.error("Only variable declarations and function declarations are allowed in global scope")
-
-        token_type_name = token_name(self.token.type)
-        self.error('Invalid statement starting with "%s" (%s)' %
-                  (self.token.value, token_type_name))
 
     def check_statement_end(self, allow_also=None):
         """Check if a statement is properly terminated by semicolon, newline, or EOF"""
