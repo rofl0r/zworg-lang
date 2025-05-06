@@ -1467,11 +1467,11 @@ class Parser:
         else:
             self.error("Variable declaration must include an initialization")
 
-        # Parse the initializer expression
-        if self.token.type == TT_LBRACE:
-            expr = self.parse_initializer_expression(TYPE_UNKNOWN if is_type_inference else var_type)
-        else:
-            expr = self.expression(0)
+        # Use the current_initializer_type pattern
+        old_initializer_type = self.current_initializer_type
+        self.current_initializer_type = TYPE_UNKNOWN if is_type_inference else var_type
+        expr = self.expression(0)
+        self.current_initializer_type = old_initializer_type
 
         # In global scope, ensure only literal initializers
         if self.current_function == -1 and self.seen_main_function:
