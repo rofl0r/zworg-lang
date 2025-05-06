@@ -16,6 +16,47 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "initializer assignments in expressions",
+            "code": """
+                def main() do
+                    var x := 0
+                    var y := 0
+                    // Array initializer in assignment expression
+                    if x = 1 do
+                        var arr: int[3] = {10, 20, 30}
+                        y = arr[1]  // y = 20
+                    end
+                    var nums: int[3] = {0, 0, 0}
+                    // Test initializer as rhs in an if condition
+                    if nums = {5, 6, 7} do
+                        x = 42
+                    end
+                    var sum := nums[0] + nums[1] + nums[2]  // 5 + 6 + 7 = 18
+                end
+            """,
+            "expected_env": {"x": 42, "y": 20, "sum": 18}
+        },
+        {
+            "name": "variable assignments in expressions",
+            "code": """
+                def main() do
+                    var x := 0
+                    var y := 0
+                    var z := 0
+                    // Simple assignment in if condition
+                    if x = 42 do
+                        y = 10
+                    end
+                    // Assignment with initializer in if condition
+                    if z = {1, 2, 3}._1 do
+                        y = 20
+                    end
+                    var result := x + z  // Should be 42 + 2 = 44
+                end
+            """,
+            "expected_env": {"x": 42, "y": 20, "z": 2, "result": 44}
+        },
+        {
             "name": "array byref parameter modification",
             "code": """
                 def modifyArray(byref arr: int[3]) do

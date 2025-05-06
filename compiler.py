@@ -364,6 +364,7 @@ class Parser:
 
         # Track current struct for method definitions
         self.current_struct = None
+        self.current_initializer_type = TYPE_UNKNOWN
 
     def get_common_type(self, type1, type2):
         """
@@ -490,11 +491,13 @@ class Parser:
     def expression(self, rbp=0):
         t = self.token
         self.advance()
+        old_initializer_type = self.current_initializer_type
         left = self.nud(t)
         while rbp < self.lbp(self.token):
             t = self.token
             self.advance()
             left = self.led(t, left)
+        self.current_initializer_type = old_initializer_type
         return left
 
     def check_type_compatibility(self, var_name, expr):
@@ -971,9 +974,10 @@ class Parser:
             # For all other types (int, etc.), use 0
             return NumberNode(0, field_type)
 
-    def parse_initializer_expression(self, target_type=TYPE_UNKNOWN):
+    def parse_initializer_expression(self, target_type=TYPE_UNKNOWN, consume_token=True):
         """Parse an initializer expression: {expr1, expr2, ...} or {{...}, {...}}"""
-        self.consume(TT_LBRACE)  # Skip '{'
+        if consume_token: self.consume(TT_LBRACE)  # Skip '{'
+        if target_type == TYPE_UNKNOWN: target_type = self.current_initializer_type
 
         elements = []
         subtype = INITIALIZER_SUBTYPE_TUPLE  # Default
@@ -1179,7 +1183,7 @@ class Parser:
             return UnaryOpNode(t.value, expr, expr.expr_type)
 
         if t.type == TT_LBRACE:
-            return self.parse_initializer_expression()
+            return self.parse_initializer_expression(consume_token=False)
 
         if t.type == TT_LPAREN:
             expr = self.expression(0)
@@ -1421,15 +1425,12 @@ class Parser:
         # Advance past the operator
         if consume_token: self.advance()
 
-        # Parse the right-hand side
-        if self.token.type == TT_LBRACE:
-            # Only allow initializers with regular assignment
-            if op != TT_ASSIGN:
-                self.error("Initializer syntax can only be used with regular assignment (=), not compound operators")
-            expr = self.parse_initializer_expression(target_type)
-        else:
-            # Parse regular expression
-            expr = self.expression(0)
+        old_initializer_type = self.current_initializer_type
+        self.current_initializer_type = target_type
+
+        expr = self.expression(0)
+
+        self.current_initializer_type = old_initializer_type
 
         # Post-checks based on context
         if context_type == ASSIGN_CTX_MEMBER_ACCESS:
