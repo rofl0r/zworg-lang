@@ -1496,9 +1496,7 @@ class Parser:
             if expr.expr_type == TYPE_VOID:
                 self.error("Cannot assign void expression to variable '%s'" % var_name)
             # Infer the type from expression
-            if expr.node_type == AST_NODE_NUMBER:
-                var_type = expr.expr_type
-            elif expr.node_type == AST_NODE_VARIABLE:
+            if expr.node_type == AST_NODE_VARIABLE:
                 # Get type from referenced variable
                 ref_var = expr.name
                 var_type = self.get_variable_type(ref_var)
@@ -1507,17 +1505,8 @@ class Parser:
             elif expr.node_type == AST_NODE_STRUCT_INIT:
                 # Set var_type to struct type
                 var_type = expr.struct_id
-            elif expr.node_type == AST_NODE_NEW:
-                # Set var_type to reference type
-                var_type = expr.expr_type  # Already a reference type
-            elif expr.node_type == AST_NODE_GENERIC_INITIALIZER:
-                # For initializers, use the inferred type
+            else: # for everything else, infer the type from the expression
                 var_type = expr.expr_type
-            elif hasattr(expr, 'expr_type'):
-                var_type = expr.expr_type
-            else:
-                # Default to int for other cases
-                var_type = TYPE_INT
         else:
             # For size-inferred arrays, update the variable's type with the inferred size
             if (registry.is_array_type(var_type) and
