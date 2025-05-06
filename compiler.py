@@ -1492,6 +1492,9 @@ class Parser:
 
         # Handle type resolution based on assignment type
         if is_type_inference:
+            # Check if expression is void
+            if expr.expr_type == TYPE_VOID:
+                self.error("Cannot assign void expression to variable '%s'" % var_name)
             # Infer the type from expression
             if expr.node_type == AST_NODE_NUMBER:
                 var_type = expr.expr_type

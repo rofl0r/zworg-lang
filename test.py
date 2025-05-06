@@ -1702,6 +1702,19 @@ def test():
             "expected_error": "Non-void function 'should_return_int' must return a value"
         },
         {
+            "name": "type inference with void function",
+            "code": """
+                def voidfunc() do
+                    return
+                end
+                def main() do
+                    var x := voidfunc();
+                end
+            """,
+            "expected_error": "Cannot assign void expression to variable"
+        },
+
+        {
             "name": "invalid redeclaration of variable",
             "code": """
                 def main() do var x:=10; var x:=20 // x is already declared, so "var x" must fail
