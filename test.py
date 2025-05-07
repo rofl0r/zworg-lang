@@ -16,6 +16,173 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "basic enum declaration and use",
+            "code": """
+                enum Color do
+                    Red;
+                    Green;
+                    Blue
+                end
+                def main() do
+                    var x := Color.Red;
+                    var y := Color.Green;
+                    var z := Color.Blue
+                end
+            """,
+            "expected_env": {"x": 0, "y": 1, "z": 2}
+        },
+        {
+            "name": "enum with explicit base type",
+            "code": """
+                enum Status:u8 do
+                    Success;
+                    Error;
+                    Pending
+                end
+                def main() do
+                    var s := Status.Error;
+                    var p := Status.Pending
+                end
+            """,
+            "expected_env": {"s": 1, "p": 2}
+        },
+        {
+            "name": "enum with explicit values",
+            "code": """
+                enum HttpStatus do
+                    OK = 200;
+                    NotFound = 404;
+                    ServerError = 500
+                end
+                def main() do
+                    var ok := HttpStatus.OK;
+                    var notfound := HttpStatus.NotFound;
+                    var error := HttpStatus.ServerError
+                end
+            """,
+            "expected_env": {"ok": 200, "notfound": 404, "error": 500}
+        },
+        {
+            "name": "enum with mixed explicit and auto-increment values",
+            "code": """
+                enum Priority do
+                    Low = 10;
+                    Medium;
+                    High;
+                    Critical = 100
+                end
+                def main() do
+                    var l := Priority.Low;
+                    var m := Priority.Medium;
+                    var h := Priority.High;
+                    var c := Priority.Critical
+                end
+            """,
+            "expected_env": {"l": 10, "m": 11, "h": 12, "c": 100}
+        },
+        {
+            "name": "enum used in function parameters",
+            "code": """
+                enum Direction do
+                    North;
+                    East;
+                    South;
+                    West
+                end
+                def move(dir:Direction) :int do
+                    if dir == Direction.North do
+                        return 1
+                    end
+                    if dir == Direction.East do
+                        return 2
+                    end
+                    return 0
+                end
+                def main() do
+                    var n := move(Direction.North);
+                    var e := move(Direction.East);
+                    var s := move(Direction.South)
+                end
+            """,
+            "expected_env": {"n": 1, "e": 2, "s": 0}
+        },
+        {
+            "name": "nested enum declaration - error",
+            "code": """
+                def test() do
+                    enum Invalid do
+                        One;
+                        Two
+                    end
+                    var x := Invalid.One
+                end
+                def main() do
+                    test()
+                end
+            """,
+            "expected_error": "Enum definitions are not allowed inside functions"
+        },
+        {
+            "name": "duplicate enum name - error",
+            "code": """
+                enum Status do
+                    Ok;
+                    Error
+                end
+                enum Status do
+                    Success;
+                    Failure
+                end
+                def main() do
+                    var x := Status.Ok
+                end
+            """,
+            "expected_error": "Type 'Status' is already defined"
+        },
+        {
+            "name": "non-literal enum value - error",
+            "code": """
+                def get_value() :int do
+                    return 42
+                end
+                enum Invalid do
+                    One = 1;
+                    Two = get_value()
+                end
+                def main() do
+                    var x := Invalid.One
+                end
+            """,
+            "expected_error": "Only numeric literals supported for enum values"
+        },
+        {
+            "name": "assignment to enum value - error",
+            "code": """
+                enum Color do
+                    Red;
+                    Green;
+                    Blue
+                end
+                def main() do
+                    Color.Green = 100
+                end
+            """,
+            "expected_error": "Cannot modify field 'Green' of constant 'Color'"
+        },
+        {
+            "name": "missing end token - error",
+            "code": """
+                enum Incomplete do
+                    First;
+                    Second;
+                    Third
+                def main() do
+                    var x := Incomplete.First
+                end
+            """,
+            "expected_error": "Expected enum member identifier"
+        },
+        {
             "name": "initializer assignments in expressions",
             "code": """
                 def main() do

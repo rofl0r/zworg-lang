@@ -89,6 +89,7 @@ TT_BYREF = 80
 TT_LBRACKET = 81      # '[' for array use
 TT_RBRACKET = 82      # ']' for array use
 TT_TYPEDEF = 83
+TT_ENUM = 84
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -236,6 +237,7 @@ KEYWORDS = {
     'new': TT_NEW,
     'del': TT_DEL,
     'byref': TT_BYREF,
+    'enum': TT_ENUM,
     'double': TT_TYPE_DOUBLE,  # Double type
     'i8': TT_TYPE_I8,
     'u8': TT_TYPE_U8,
@@ -346,6 +348,8 @@ TOKEN_NAMES = {
     TT_ELSE: "TT_ELSE",
     TT_END: "TT_END",
     TT_PRINT: "TT_PRINT",
+    TT_BYREF: "TT_BYREF",
+    TT_ENUM: "TT_ENUM",
     TT_EQ: "TT_EQ",
     TT_NE: "TT_NE",
     TT_GE: "TT_GE",

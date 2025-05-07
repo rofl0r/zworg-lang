@@ -356,12 +356,29 @@ class Variable:
         self.is_const = is_const
         self.ref_kind = ref_kind
 
+class EnumBuilder:
+    """Helper class for building enum declarations"""
+    def __init__(self, name, base_type):
+        self.name = name
+        self.base_type = base_type
+        self.members = []  # List of (name, value) tuples
+        self.next_value = 0  # For auto-incrementing
+
+    def add_member(self, name, value=None):
+        """Add a member with explicit value or auto-increment"""
+        if value is None:
+            value = self.next_value
+
+        self.members.append((name, value))
+        self.next_value = value + 1
+
 class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
         self.token = self.lexer.next_token()
         self.prev_token = None
         self.env = EnvironmentStack()
+        self.statements = None
 
         # Track if we've seen functions - used to enforce globals-before-functions rule
         self.seen_main_function = False
@@ -1588,6 +1605,104 @@ class Parser:
 
         return VarDeclNode(decl_type, var_name, var_type, expr, ref_kind=ref_kind)
 
+    def parse_enum_declaration(self):
+        """Parse an enum declaration and transform it into struct + const"""
+        # Check if we're in global scope
+        if self.current_function != -1:
+            self.error("Enum definitions are not allowed inside functions")
+
+        self.advance()  # Skip 'enum' token
+
+        # Parse enum name
+        if self.token.type != TT_IDENT:
+            self.error("Expected enum name")
+
+        enum_name = self.token.value
+        self.advance()
+
+        # Create hidden struct name for enum implementation
+        hidden_struct_name = "__enum_%s" % enum_name
+
+        # Check if a struct with this name already exists
+        for n in [enum_name, hidden_struct_name]:
+            if registry.struct_exists(enum_name):
+                self.error("Type '%s' is already defined" % n)
+
+        # Parse optional base type
+        base_type = TYPE_INT  # Default
+        if self.token.type == TT_COLON:
+            self.advance()
+            base_type = self.parse_type_reference()
+
+        # Create builder to track state during parsing
+        builder = EnumBuilder(enum_name, base_type)
+
+        # Parse enum body
+        self.consume(TT_DO)
+        self.skip_separators()
+
+        # Parse enum members
+        while self.token.type not in [TT_END, TT_EOF]:
+            if self.token.type != TT_IDENT:
+                self.error("Expected enum member identifier")
+
+            member_name = self.token.value
+            self.advance()
+
+            # Check for explicit value
+            if self.token.type == TT_ASSIGN:
+                self.advance()
+                # Call expression parser to evaluate the value
+                value_expr = self.expression(0)
+
+                # For now, only support literal values
+                if value_expr.node_type != AST_NODE_NUMBER:
+                    self.error("Only numeric literals supported for enum values")
+
+                value = value_expr.value
+                builder.add_member(member_name, value)
+            else:
+                # Auto-increment value
+                builder.add_member(member_name)
+
+            # Skip separator (semicolon or newline)
+            self.skip_separators()
+
+        if self.token.type != TT_END:
+            self.error("Expected 'end' to close enum declaration")
+        self.advance()
+
+        # Register struct type
+        struct_id = registry.register_struct(hidden_struct_name, None, self.token)
+
+        # Register a typedef from enum_name to the enum's base type
+        registry.register_typedef(enum_name, base_type, self.token)
+
+        # Transform to struct declaration and const initialization
+        struct_members = []
+        init_values = []
+
+        for name, value in builder.members:
+            struct_members.append(VarDeclNode(TT_CONST, name, base_type, None))
+            init_values.append(NumberNode(value, base_type))
+            # register the fields of the struct in the type_registry
+            registry.add_field(hidden_struct_name, name, base_type, self.token)
+
+        # Create struct declaration for the hidden implementation
+        struct_decl = StructDefNode(hidden_struct_name, None, [(name, base_type) for name, _ in builder.members], struct_id)
+
+        # Register the enum in the environment so it can be referenced
+        self.declare_variable(enum_name, struct_id, is_const=True)
+
+        # Create const declaration with initializer
+        initializer = GenericInitializerNode(init_values, INITIALIZER_SUBTYPE_LINEAR, struct_id)
+        const_decl = VarDeclNode(TT_CONST, enum_name, struct_id, initializer)
+
+        # We need to directly add the struct declaration to program statements
+        # Then return the const declaration
+        self.statements.append(struct_decl)
+        return const_decl
+
     def statement(self):
         self.skip_separators()
 
@@ -1605,6 +1720,10 @@ class Parser:
         # Handle function/method definitions
         if self.token.type == TT_DEF:
             return self.function_declaration()
+
+        # Handle enum definitions
+        if self.token.type == TT_ENUM:
+            return self.parse_enum_declaration()
 
         # Handle return statements
         if self.token.type == TT_RETURN:
@@ -1739,10 +1858,10 @@ class Parser:
             self.error("Expected semicolon between statements on the same line")
 
     def parse(self):
-        statements = []
+        self.statements = []
         while self.token.type != TT_EOF:
-            statements.append(self.statement())
-        return statements
+            self.statements.append(self.statement())
+        return self.statements
 
 
 ### END OF COMPILER.PY
