@@ -151,7 +151,7 @@ class VarDeclNode(ASTNode):
         self.ref_kind = ref_kind
 
     def __repr__(self):
-        decl_type_str = "var" if self.decl_type == TT_VAR else "let"
+        decl_type_str = "var" if self.decl_type == TT_VAR else "const"
         return "VarDecl(%s, %s, %s, %s)" % (
             decl_type_str, self.var_name, registry.var_type_to_string(self.var_type), repr(self.expr)
         )
@@ -1632,14 +1632,14 @@ class Parser:
             self.check_statement_end()
             return DelNode(expr)
 
-        # Handle variable declarations (var and let)
+        # Handle variable declarations (var and const)
         if self.token.type in [TT_VAR, TT_CONST]:
-            decl_type = self.token.type  # Save the declaration type (var or let)
+            decl_type = self.token.type  # Save the declaration type (var or const)
             self.advance()
 
-            # Expect an identifier after var/let
+            # Expect an identifier after var/const
             if self.token.type != TT_IDENT:
-                self.error("Expected identifier after '%s'" % ('var' if decl_type == TT_VAR else 'let'))
+                self.error("Expected identifier after '%s'" % ('var' if decl_type == TT_VAR else 'const'))
 
             var_name = self.token.value
             self.advance()
