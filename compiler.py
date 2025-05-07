@@ -1432,6 +1432,13 @@ class Parser:
             var_name = lhs.name
             if self.is_constant(var_name):
                 self.error("Cannot reassign to constant '%s'"%var_name)
+        elif context_type == ASSIGN_CTX_MEMBER_ACCESS:
+            # Check if trying to assign to a field of a constant variable
+            if lhs.obj.node_type == AST_NODE_VARIABLE:
+                obj_name = lhs.obj.name
+                if self.is_constant(obj_name):
+                    self.error("Cannot modify field '%s' of constant '%s'" %
+                               (lhs.member_name, obj_name))
 
         old_initializer_type = self.current_initializer_type
         self.current_initializer_type = target_type
