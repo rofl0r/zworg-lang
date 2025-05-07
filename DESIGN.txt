@@ -315,6 +315,49 @@ def copy_array(arr: int[3]) do          // By value
     arr[0] = 99;                        // Does not modify the original
 end
 
+### 3.7 Type Aliases (Typedefs)
+Type aliases allow creating alternative names for existing types:
+
+EXAMPLE:
+typedef <alias_name>: <target_type>
+
+Examples:
+typedef Integer: int           // Simple type alias
+typedef Points: int[5]         // Array type alias
+typedef MyTuple: {int, string} // Tuple type alias [TODO: untested]
+
+Type aliases are resolved at compile time and have no runtime overhead.
+They provide better code readability and allow for easier type refactoring.
+
+[TODO] In the future, function prototype typedefs looking like
+typedef Callback:(x:int, y:int):long will make it possible to define types
+that can be used for function callbacks.
+
+### 3.8 Enum Declarations
+Enums provide a way to define named constants:
+
+EXAMPLE:
+enum <enum_name> [: <base_type>] do
+    <member_name> [= <value>]
+    // ... more members
+end
+
+Examples:
+enum Color do
+    Red    // Implicitly 0
+    Green  // Implicitly 1
+    Blue   // Implicitly 2
+end
+
+enum FileMode : u8 do
+    Read = 1
+    Write = 2
+    ReadWrite = 3  // Can specify explicit values
+end
+
+Enums create a type alias to their base type (int by default) and a constant
+with the enum name that can be used to access the enum values (e.g., Color.Red).
+
 ## 4. Statements
 
 ### 4.1 Expression Statements
