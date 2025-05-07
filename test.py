@@ -617,6 +617,19 @@ def test():
             "expected_env": {"x": 10, "s": "coordinate"}
         },
         {
+            "name": "struct literal in global scope",
+            "code": """
+                struct Color do Red:int; Green:int; Blue:int; end
+                const Color:Color={0,1,2}
+                def main() do
+                    var x := Color.Red;
+                    var y := Color.Green;
+                    var z := Color.Blue
+                end
+            """,
+            "expected_env": {"x": 0, "y": 1, "z": 2}
+        },
+        {
             "name": "operator precedence - unary op vs member access",
             "code": """
                 struct BitHolder do value: int; end

@@ -343,7 +343,12 @@ class ArrayAccessNode(ASTNode):
 
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
-    return node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING]
+    if node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING]:
+        return True
+    elif node.node_type == AST_NODE_GENERIC_INITIALIZER:
+        # Allow initializers where all elements are literals
+        return all(is_literal_node(elem) for elem in node.elements)
+    return False
 
 class Variable:
     def __init__(self, expr_type, is_const=False, ref_kind=REF_KIND_NONE):
