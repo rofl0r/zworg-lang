@@ -88,6 +88,7 @@ TT_LONGLONG_LITERAL = 79
 TT_BYREF = 80
 TT_LBRACKET = 81      # '[' for array use
 TT_RBRACKET = 82      # ']' for array use
+TT_TYPEDEF = 83
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -216,6 +217,7 @@ KEYWORDS = {
     'while': TT_WHILE,
     'break': TT_BREAK,
     'continue': TT_CONTINUE,
+    'typedef': TT_TYPEDEF,
     'xor': TT_XOR,
     'bitnot': TT_BITNOT,
     'shl': TT_SHL,
@@ -387,6 +389,7 @@ TOKEN_NAMES = {
     TT_STRING_LITERAL: "TT_STRING_LITERAL",
     TT_TYPE_STRING: "TT_TYPE_STRING",
     TT_DEF: "TT_DEF",
+    TT_TYPEDEF: "TT_TYPEDEF",
     TT_RETURN: "TT_RETURN",
     TT_COMMA: "TT_COMMA",
     TT_NEWLINE: "TT_NEWLINE",

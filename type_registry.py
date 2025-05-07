@@ -167,6 +167,18 @@ class TypeRegistry:
         descriptor = self._type_descriptors.get(type_id)
         return descriptor is not None and descriptor.kind == self.TYPE_KIND_STRUCT
 
+    def register_typedef(self, alias_name, target_type_id, token=None):
+        """Register a type alias"""
+        # Check if alias already exists
+        if alias_name in self._struct_registry:
+            if token:
+                raise CompilerException("Type alias '%s' is already defined" % alias_name, token)
+            return False
+
+        # Add the alias to struct_registry, pointing to the same ID as the target
+        self._struct_registry[alias_name] = (target_type_id, -1, [])
+        return True
+
     def add_field(self, struct_name, field_name, field_type, token=None):
         """Add a field to a struct definition"""
         if struct_name not in self._struct_registry:

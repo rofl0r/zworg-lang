@@ -1470,6 +1470,33 @@ class Parser:
             # Regular assignment
             return BinaryOpNode('=', lhs, expr, target_type, ref_kind)
 
+    def typedef_declaration(self):
+        """Parse typedef Name: Type"""
+        # TODO: parse also function prototype typedefs looking like:
+        # typedef callback:(x:int, y:int):long
+        self.advance()  # Skip 'typedef'
+
+        # Parse the alias name
+        if self.token.type != TT_IDENT:
+            self.error("Expected identifier after 'typedef'")
+
+        alias_name = self.token.value
+        current_token = self.token  # Save for error reporting
+        self.advance()
+
+        # Parse the colon and target type
+        self.consume(TT_COLON)
+
+        # Parse the target type (primitive or user-defined)
+        target_type_id = self.parse_type_reference()
+
+        # Register the typedef
+        registry.register_typedef(alias_name, target_type_id, current_token)
+
+        self.check_statement_end()
+        # return a NOP node :)
+        return ExprStmtNode(NumberNode(0, TYPE_INT))
+
     def parse_var_declaration(self, var_name, decl_type):
         """Parse a variable declaration after the identifier"""
         # Process type annotation if present
@@ -1571,7 +1598,11 @@ class Parser:
                 self.error("Struct definitions are not allowed inside functions")
             return self.struct_definition()
 
-        # Handle method definitions
+        # Handle typedef definitions
+        if self.token.type == TT_TYPEDEF:
+            return self.typedef_declaration()
+
+        # Handle function/method definitions
         if self.token.type == TT_DEF:
             return self.function_declaration()
 

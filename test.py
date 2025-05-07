@@ -153,6 +153,22 @@ def test():
             "expected_env": {"n_2": 99, "i_1": 50}
         },
         {
+            "name": "basic typedef test",
+            "code": """
+                typedef Integer: int
+                typedef Points: int[5]
+                def main() do
+                    var a: Integer = 42
+                    var points: Points = {10, 20, 30, 40, 50}
+                    points[2] = 99  // Modify using array semantics
+                    var raw_int: int = a + 10
+                    var point_val := points[2]
+                    var type_compat := a + point_val  // Should work since both are ultimately ints
+                end
+            """,
+            "expected_env": {"a": 42, "raw_int": 52, "point_val": 99, "type_compat": 141}
+        },
+        {
            "name": "struct copy",
            "code": """
 		struct Point do x:int; y:int end;
