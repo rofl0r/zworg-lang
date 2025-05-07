@@ -2,7 +2,10 @@
 
 ## Overview
 
-The language is a statically-typed imperative language with primitive types, variables and constants, control flow statements, functions, structs, object-oriented features, and expressions with operator precedence.
+The language is a statically-typed imperative language with primitive types,
+variables and constants, control flow statements, functions, structs, arrays,
+tuples, light-weight object-oriented features, and expressions with operator
+precedence.
 
 The end goal is a lightweight language that's easy on the eye, easy and fun to
 write in, with a concise and logically consistent syntax.
@@ -20,7 +23,7 @@ Targeting C has the following benefits:
   in, or using the C ABI.
 - with tinycc, there's an extremely fast (regarding its own execution speed)
   C compiler available that can be used for a fast development cycle.
-  It's almost as fast as Turbo Pascal in the DOS days was, which was written in
+  It's almost as fast as Turbo Pascal in the DOS days, which was written in
   hand-optimized assembly for a 16-bit CPU.
 
 There's a number of other languages using C as a backend, but they typically
@@ -41,6 +44,9 @@ built-in data structures like hashmaps and dynamic arrays.
 
 Python 2.7 was chosen as the current implementation language because writing
 a compiler is a huge task and it's far easier to achieve in a dynamic language.
+Only a subset of Python 2.7 that's compatible with Python 3 is used for the
+implementation, with care taken to not use functional or dynamic language
+features that are absent in other languages.
 Eventually, when the language is more mature, we might make the compiler
 self-hosted, which unlike in the case of rust, java, and others, will be easy
 to bootstrap because of the portable C it outputs.
@@ -138,6 +144,8 @@ Composite Types:
 - Struct types: User-defined composite types
 - Tuple types: Anonymous composite types with ordered fields
 - Reference types: Created when allocating structs with 'new'
+- Array types: Fixed-size collections of elements of the same type
+- Reference parameters: Created with 'byref' keyword
 
 ### 2.2 Type Compatibility and Promotion
 - String type compatibility is strict - only same types can be assigned directly.
@@ -156,6 +164,16 @@ Composite Types:
   generics replacement - such a function shall be specialized to the type of the specific
   arguments that's passed in at the call-site.
 
+### 2.4 References
+- References are created with the 'byref' keyword for parameters
+- Functions can return references with ':byref type' return type annotation
+- References can only point to:
+  - Global variables
+  - Parameters passed by reference
+  - Heap-allocated objects
+- References to local variables cannot be returned (enforced at compile-time)
+- References to struct fields are not supported
+
 ## 3. Declarations
 
 ### 3.1 Variable Declarations
@@ -171,6 +189,10 @@ var y : float = 3.14;  // Type explicitly specified
 var z := 42u;          // Type inferred as uint
 var w : long = 42l;    // Type explicitly as long
 var s := "Hello";      // Type inferred as string
+
+Array declarations:
+var arr: int[5] = {1, 2, 3, 4, 5};  // Fixed-size array with explicit initialization
+var inferred: int[] = {10, 20, 30};  // Array size inferred from initializer
 
 ### 3.2 Constant Declarations
 Constants are declared with 'const' and must have an initializer:
@@ -193,7 +215,7 @@ end
   [TODO: in the future, allow usecase for generics as mentioned earlier]
 - Return type is optional (defaults to 'void' if not specified)
   The 'void' type cannot be explicitly used, only implicitly by omitting the return type.
-- All functions must require a 'do' ... 'end' block.
+- All functions require a 'do' ... 'end' block.
 [TODO in the future it shall be possible to have optional parameters with a default value
  at the tail of the parameter list, for example def foo(bar:int, baz:double=0.0, blah:=0)
  it shall support the type inference operator for those]
@@ -205,6 +227,17 @@ end
 def print_message(msg: string) do
     print msg;
 end
+
+Reference parameters and return values:
+def modify(byref x: int) do  // x is passed by reference
+    x = x * 2;               // Modifies the original variable
+end
+
+def get_ref(byref x: int): byref int do  // Returns a reference to x
+    return x;                            // Can be assigned to directly
+end
+
+get_ref(value) = 42;  // Assigns 42 to the variable that x references
 
 ### 3.4 Struct Declarations
 Structs are declared with the 'struct' keyword:
@@ -239,7 +272,7 @@ struct Circle:Shape do
     radius: float
 end
 
-+### 3.5 Tuple Declarations
+### 3.5 Tuple Declarations
 Tuples represent ordered collections of values with different types.
 They are implemented as anonymous structs with sequentially numbered fields.
 
@@ -257,6 +290,30 @@ var point: {int, int} = {30, 40};  // Create a tuple with explicit type
 const x_coord:= point._0;  // access first tuple element
 
 Tuple types can be used anywhere a type is expected.
+
+### 3.6 Array Declarations
+Arrays represent fixed-size collections of elements with the same type.
+
+Array type declarations:
+var arr: int[5];                // Fixed-size array of 5 integers
+var matrix: float[3][3];        // 2D array of floats
+
+Array initialization:
+var arr: int[3] = {1, 2, 3};    // Initialize with values
+var inferred: int[] = {4, 5, 6}; // Size inferred from initializer
+
+Array operations:
+arr[0] = 10;                    // Element assignment
+var x := arr[1];                // Element access
+
+Arrays can be passed to functions either by value or by reference:
+def modify_array(byref arr: int[3]) do  // By reference
+    arr[0] = 99;                        // Modifies the original array
+end
+
+def copy_array(arr: int[3]) do          // By value
+    arr[0] = 99;                        // Does not modify the original
+end
 
 ## 4. Statements
 
@@ -333,6 +390,19 @@ Tuples are created using curly braces containing comma-separated expressions:
 
 Elements of a tuple can be accessed using struct-like field syntax.
 The first element is `._0`, the second `._1`, etc.
+
+### 5.0a Array Expressions
+Array elements are accessed using square brackets:
+array[index]
+
+Array elements can be used in expressions:
+var sum := array[0] + array[1];
+
+Arrays can be initialized with curly braces:
+{value1, value2, ...}
+
+Nested arrays can be initialized with nested curly braces:
+{{value1, value2}, {value3, value4}}
 
 ### 5.1 Arithmetic Operators
 - Addition: '+'
@@ -459,13 +529,11 @@ The language reports various errors:
 - The 'self' keyword refers to the struct instance in method bodies
 - 'self' is always treated as a reference type in methods
 - Methods can access fields and other methods of the struct
-[TODO we need to make sure this is always passed by reference! (i.e. adding the reference type bit)]
-[TODO add testcases checking the semantics of struct args by-ref vs by-value in function arguments - more in another TODO]
 
 ### 9.2 Inheritance
 - Structs can inherit from a parent struct using the syntax:
   
-  struct ChildName(ParentName) do
+  struct ChildName:ParentName do
       // additional fields
   end
   
@@ -494,7 +562,7 @@ The language reports various errors:
   - Creates a reference type
   - Reference semantics for assignment
   - Supports polymorphic assignment
-  - Must be explicitly deallocated with 'del' [TODO this will be relaxed in the future once refcounting is implemented - then del CAN be used, but the object will be deallocated when no refs exist]
+  - Must be explicitly deallocated with 'del' [TODO this will be relaxed in the future IFF ref-counting is implemented - then del CAN be used, but the object will be deallocated when no refs exist]
 
 ## 10. Semantics Highlights
 
@@ -525,12 +593,27 @@ The language reports various errors:
 - Type notation uses the same syntax: {type1, type2, ...}
 - Unlike structs, tuple fields are referenced by position rather than name
 
+### 11.1a Arrays
+- Arrays are fixed-size collections of homogeneous values
+- Declared using bracket syntax after the type: int[5]
+- Size can be inferred from initializer: int[] = {1, 2, 3}
+- Initialized with curly braces: {value1, value2, ...}
+- Elements accessed using array indexing syntax: array[index]
+- Arrays can be passed by value or by reference to functions
+- When passed by value, a copy of the array is made
+- When passed by reference (using byref), the original array can be modified
+
 ### 11.2 Collection Initializers
 Curly braces are used consistently across different collection types:
 
 - Tuples: {value1, value2, ...}
-- Struct initializers: {.field1=value1, .field2=value2} [TODO]
-- Array initializers: {value1, value2, value3}          [TODO]
+- Struct initializers: {1, 2, 3}
+- Named Struct initializers: {.field1=value1, .field2=value2} [TODO]
+- Array initializers: {value1, value2, value3}
+  Partial initialization is supported for arrays with explicit size, it's
+  possible to e.g. initialize an int[3] with = {0,1}. The not listed members
+  will be initialized with zero or "" for strings. Initialization starts with
+  the first struct/array member.
 
 Similarities and differences:
 - All use curly braces {} for consistent syntax
@@ -542,4 +625,7 @@ Examples:
 var point := {10, 20};                  // Tuple with inferred type {int, int}
 var p: Point = {.x=1, .y=2};            // Struct with named fields
 var fixed: int[10] = {1, 2, 3, 4, 5};   // Fixed-size array, remaining elements initialized to 0
+
+var nested: int[2][3] = {{1, 2, 3}, {4, 5, 6}}; // Nested array initialization
+var rect: Rect = {{1, 2}, {3, 4}};    // Nested initializer for struct with struct fields
 
