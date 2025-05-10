@@ -216,6 +216,7 @@ KEYWORDS = {
     'print': TT_PRINT,
     'and': TT_AND,
     'or': TT_OR,
+    'not': TT_NOT,
     'do': TT_DO,
     'while': TT_WHILE,
     'break': TT_BREAK,

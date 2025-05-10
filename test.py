@@ -28,7 +28,7 @@ def test():
                     end
                     // Test 2: Nil in conditional
                     var conditional_result := 0
-                    if ! ref do
+                    if not ref do
                         conditional_result = 1
                     end
                     // Test 3: Dynamic integer array initialized to nil

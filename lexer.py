@@ -259,6 +259,8 @@ class Lexer:
 
         # Then check other keywords
         token_type = KEYWORDS.get(value_str, TT_IDENT)
+        if token_type == TT_NOT:
+            return self.make_token(token_type, "!", do_advance=False)
         return self.make_token(token_type, value_str, do_advance=False)
 
     def handle_compound_op(self, base_value, base_type, compound_type):
