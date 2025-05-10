@@ -16,7 +16,9 @@ ASSIGN_CTX_VARIABLE = 4
 
 # Base class for all AST nodes
 class ASTNode(object):
-    def __init__(self, node_type=AST_NODE_BASE):
+    def __init__(self, node_type=AST_NODE_BASE, token=None):
+        assert(token)
+        self.token = token
         self.node_type = node_type
         self.expr_type = TYPE_UNKNOWN
         self.ref_kind = REF_KIND_NONE
@@ -25,8 +27,8 @@ class ASTNode(object):
         return "%s" % ast_node_type_to_string(self.node_type)
 
 class NilNode(ASTNode):
-    def __init__(self, target_type=TYPE_UNKNOWN):
-        ASTNode.__init__(self, AST_NODE_NIL)
+    def __init__(self, token, target_type=TYPE_UNKNOWN):
+        ASTNode.__init__(self, AST_NODE_NIL, token)
         self.ref_kind = REF_KIND_GENERIC
         self.expr_type = target_type
         self.value = 0
@@ -35,8 +37,8 @@ class NilNode(ASTNode):
         return "Nil()"
 
 class NumberNode(ASTNode):
-    def __init__(self, value, expr_type):
-        ASTNode.__init__(self, AST_NODE_NUMBER)
+    def __init__(self, token, value, expr_type):
+        ASTNode.__init__(self, AST_NODE_NUMBER, token)
         self.value = value
         self.expr_type = expr_type  # TYPE_INT, TYPE_FLOAT, etc.
 
@@ -44,8 +46,8 @@ class NumberNode(ASTNode):
         return "Number(%s, %s)" % (self.value, registry.var_type_to_string(self.expr_type))
 
 class StringNode(ASTNode):
-    def __init__(self, value):
-        ASTNode.__init__(self, AST_NODE_STRING)
+    def __init__(self, token, value):
+        ASTNode.__init__(self, AST_NODE_STRING, token)
         self.value = value
         self.expr_type = TYPE_STRING
 
@@ -53,8 +55,8 @@ class StringNode(ASTNode):
         return "String(\"%s\")" % self.value
 
 class VariableNode(ASTNode):
-    def __init__(self, name, var_type, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_VARIABLE)
+    def __init__(self, token, name, var_type, ref_kind=REF_KIND_NONE):
+        ASTNode.__init__(self, AST_NODE_VARIABLE, token)
         self.name = name
         self.expr_type = var_type
         self.ref_kind = ref_kind
@@ -63,8 +65,8 @@ class VariableNode(ASTNode):
         return "Var(%s, %s)" % (self.name, registry.format_type_with_ref_kind(self.expr_type))
 
 class BinaryOpNode(ASTNode):
-    def __init__(self, operator, left, right, result_type, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_BINARY_OP)
+    def __init__(self, token, operator, left, right, result_type, ref_kind=REF_KIND_NONE):
+        ASTNode.__init__(self, AST_NODE_BINARY_OP, token)
         self.operator = operator
         self.left = left
         self.right = right
@@ -78,8 +80,8 @@ class BinaryOpNode(ASTNode):
         )
 
 class UnaryOpNode(ASTNode):
-    def __init__(self, operator, operand, result_type):
-        ASTNode.__init__(self, AST_NODE_UNARY_OP)
+    def __init__(self, token, operator, operand, result_type):
+        ASTNode.__init__(self, AST_NODE_UNARY_OP, token)
         self.operator = operator
         self.operand = operand
         self.expr_type = result_type
@@ -90,16 +92,16 @@ class UnaryOpNode(ASTNode):
         )
 
 class PrintNode(ASTNode):
-    def __init__(self, expr):
-        ASTNode.__init__(self, AST_NODE_PRINT)
+    def __init__(self, token, expr):
+        ASTNode.__init__(self, AST_NODE_PRINT, token)
         self.expr = expr
 
     def __repr__(self):
         return "Print(%s)" % repr(self.expr)
 
 class IfNode(ASTNode):
-    def __init__(self, condition, then_body, else_body=None):
-        ASTNode.__init__(self, AST_NODE_IF)
+    def __init__(self, token, condition, then_body, else_body=None):
+        ASTNode.__init__(self, AST_NODE_IF, token)
         self.condition = condition
         self.then_body = then_body  # List of statement nodes
         self.else_body = else_body  # List of statement nodes or None
@@ -118,8 +120,8 @@ class IfNode(ASTNode):
             )
 
 class WhileNode(ASTNode):
-    def __init__(self, condition, body):
-        ASTNode.__init__(self, AST_NODE_WHILE)
+    def __init__(self, token, condition, body):
+        ASTNode.__init__(self, AST_NODE_WHILE, token)
         self.condition = condition
         self.body = body  # List of statement nodes
 
@@ -130,30 +132,30 @@ class WhileNode(ASTNode):
         )
 
 class BreakNode(ASTNode):
-    def __init__(self):
-        ASTNode.__init__(self, AST_NODE_BREAK)
+    def __init__(self, token):
+        ASTNode.__init__(self, AST_NODE_BREAK, token)
 
     def __repr__(self):
         return "Break()"
 
 class ContinueNode(ASTNode):
-    def __init__(self):
-        ASTNode.__init__(self, AST_NODE_CONTINUE)
+    def __init__(self, token):
+        ASTNode.__init__(self, AST_NODE_CONTINUE, token)
 
     def __repr__(self):
         return "Continue()"
 
 class ExprStmtNode(ASTNode):
-    def __init__(self, expr):
-        ASTNode.__init__(self, AST_NODE_EXPR_STMT)
+    def __init__(self, token, expr):
+        ASTNode.__init__(self, AST_NODE_EXPR_STMT, token)
         self.expr = expr
 
     def __repr__(self):
         return "ExprStmt(%s)" % repr(self.expr)
 
 class VarDeclNode(ASTNode):
-    def __init__(self, decl_type, var_name, var_type, expr, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_VAR_DECL)
+    def __init__(self, token, decl_type, var_name, var_type, expr, ref_kind=REF_KIND_NONE):
+        ASTNode.__init__(self, AST_NODE_VAR_DECL, token)
         self.decl_type = decl_type
         self.var_name = var_name
         self.var_type = var_type
@@ -167,8 +169,8 @@ class VarDeclNode(ASTNode):
         )
 
 class FunctionDeclNode(ASTNode):
-    def __init__(self, name, params, return_type, body, parent_struct_id=-1, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_FUNCTION_DECL)
+    def __init__(self, token, name, params, return_type, body, parent_struct_id=-1, ref_kind=REF_KIND_NONE):
+        ASTNode.__init__(self, AST_NODE_FUNCTION_DECL, token)
         self.name = name
         self.params = params  # List of (name, type) tuples
         self.return_type = return_type
@@ -204,8 +206,8 @@ class FunctionDeclNode(ASTNode):
         )
 
 class ReturnNode(ASTNode):
-    def __init__(self, expr=None, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_RETURN)
+    def __init__(self, token, expr=None, ref_kind=REF_KIND_NONE):
+        ASTNode.__init__(self, AST_NODE_RETURN, token)
         self.expr = expr  # Can be None for return with no value
         self.expr_type = TYPE_VOID if expr is None else (expr.expr_type if hasattr(expr, 'expr_type') else TYPE_UNKNOWN)
         self.ref_kind = ref_kind  # Whether this return is from a byref function
@@ -218,8 +220,8 @@ class ReturnNode(ASTNode):
             return "Return()"
 
 class CompareNode(ASTNode):
-    def __init__(self, operator, left, right):
-        ASTNode.__init__(self, AST_NODE_COMPARE)
+    def __init__(self, token, operator, left, right):
+        ASTNode.__init__(self, AST_NODE_COMPARE, token)
         self.operator = operator
         self.left = left
         self.right = right
@@ -229,8 +231,8 @@ class CompareNode(ASTNode):
         return "Compare(%s, %s, %s)" % (self.operator, repr(self.left), repr(self.right))
 
 class LogicalNode(ASTNode):
-    def __init__(self, operator, left, right):
-        ASTNode.__init__(self, AST_NODE_LOGICAL)
+    def __init__(self, token, operator, left, right):
+        ASTNode.__init__(self, AST_NODE_LOGICAL, token)
         self.operator = operator
         self.left = left
         self.right = right
@@ -240,8 +242,8 @@ class LogicalNode(ASTNode):
         return "Logical(%s, %s, %s)" % (self.operator, repr(self.left), repr(self.right))
 
 class BitOpNode(ASTNode):
-    def __init__(self, operator, left, right):
-        ASTNode.__init__(self, AST_NODE_BITOP)
+    def __init__(self, token, operator, left, right):
+        ASTNode.__init__(self, AST_NODE_BITOP, token)
         self.operator = operator
         self.left = left
         self.right = right
@@ -251,8 +253,8 @@ class BitOpNode(ASTNode):
         return "BitOp(%s, %s, %s)" % (self.operator, repr(self.left), repr(self.right))
 
 class StructDefNode(ASTNode):
-    def __init__(self, name, parent_name, fields, struct_id):
-        ASTNode.__init__(self, AST_NODE_STRUCT_DEF)
+    def __init__(self, token, name, parent_name, fields, struct_id):
+        ASTNode.__init__(self, AST_NODE_STRUCT_DEF, token)
         self.name = name
         self.parent_name = parent_name
         self.fields = fields  # [(name, type), ...]
@@ -265,8 +267,8 @@ class StructDefNode(ASTNode):
         return "StructDef(%s%s, [%s])" % (self.name, parent_str, fields_str)
 
 class StructInitNode(ASTNode):
-    def __init__(self, struct_name, struct_id, args=None):
-        ASTNode.__init__(self, AST_NODE_STRUCT_INIT)
+    def __init__(self, token, struct_name, struct_id, args=None):
+        ASTNode.__init__(self, AST_NODE_STRUCT_INIT, token)
         self.struct_name = struct_name
         self.struct_id = struct_id
         self.args = args or []  # Args for constructor
@@ -277,8 +279,8 @@ class StructInitNode(ASTNode):
         return "StructInit(%s(%s))" % (self.struct_name, args_str)
 
 class MemberAccessNode(ASTNode):
-    def __init__(self, obj, member_name, member_type, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_MEMBER_ACCESS)
+    def __init__(self, token, obj, member_name, member_type, ref_kind=REF_KIND_NONE):
+        ASTNode.__init__(self, AST_NODE_MEMBER_ACCESS, token)
         self.obj = obj  # Object expression
         self.member_name = member_name
         self.expr_type = member_type
@@ -288,8 +290,8 @@ class MemberAccessNode(ASTNode):
         return "MemberAccess(%s.%s)" % (repr(self.obj), self.member_name)
 
 class CallNode(ASTNode):
-    def __init__(self, name, args, return_type, obj=None, ref_kind=REF_KIND_NONE):
-        ASTNode.__init__(self, AST_NODE_CALL)
+    def __init__(self, token, name, args, return_type, obj=None, ref_kind=REF_KIND_NONE):
+        ASTNode.__init__(self, AST_NODE_CALL, token)
         self.name = name
         self.args = args
         self.expr_type = return_type
@@ -307,8 +309,8 @@ class CallNode(ASTNode):
             return "Call(%s(%s))" % (self.name, args_str)
 
 class NewNode(ASTNode):
-    def __init__(self, struct_init):
-        ASTNode.__init__(self, AST_NODE_NEW)
+    def __init__(self, token, struct_init):
+        ASTNode.__init__(self, AST_NODE_NEW, token)
         self.struct_init = struct_init
         self.expr_type = struct_init.expr_type
         self.ref_kind = REF_KIND_HEAP
@@ -317,8 +319,8 @@ class NewNode(ASTNode):
         return "New(%s) -> heap_ref<%s>" % (repr(self.struct_init), registry.var_type_to_string(self.expr_type))
 
 class DelNode(ASTNode):
-    def __init__(self, expr):
-        ASTNode.__init__(self, AST_NODE_DEL)
+    def __init__(self, token, expr):
+        ASTNode.__init__(self, AST_NODE_DEL, token)
         self.expr = expr
         self.expr_type = TYPE_VOID
 
@@ -326,8 +328,8 @@ class DelNode(ASTNode):
         return "Del(%s)" % repr(self.expr)
 
 class GenericInitializerNode(ASTNode):
-    def __init__(self, elements, subtype, target_type=TYPE_UNKNOWN):
-        ASTNode.__init__(self, AST_NODE_GENERIC_INITIALIZER)
+    def __init__(self, token, elements, subtype, target_type=TYPE_UNKNOWN):
+        ASTNode.__init__(self, AST_NODE_GENERIC_INITIALIZER, token)
         self.elements = elements    # List of expressions or nested initializers
         self.subtype = subtype
         self.target_type = target_type  # The expected type (struct/array)
@@ -340,8 +342,8 @@ class GenericInitializerNode(ASTNode):
             subtype_str, registry.var_type_to_string(self.target_type), elements_str)
 
 class ArrayAccessNode(ASTNode):
-    def __init__(self, array, index, element_type):
-        ASTNode.__init__(self, AST_NODE_ARRAY_ACCESS)
+    def __init__(self, token, array, index, element_type):
+        ASTNode.__init__(self, AST_NODE_ARRAY_ACCESS, token)
         self.array = array
         self.index = index
         self.expr_type = element_type
@@ -410,10 +412,10 @@ class Parser:
                 elements = []
                 for _ in range(size):
                     elements.append(self.create_default_initializer(element_type))
-                return GenericInitializerNode(elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+                return GenericInitializerNode(self.token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
             else:
                 # Dynamic arrays default to nil
-                return NilNode()
+                return NilNode(self.token)
 
         elif registry.is_struct_type(type_id):
             # Get all fields including inherited ones
@@ -426,17 +428,17 @@ class Parser:
                 elements.append(self.create_default_initializer(field_type))
 
             # Create struct initializer with default values
-            return GenericInitializerNode(elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+            return GenericInitializerNode(self.token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
 
         else:
             # Primitives get appropriate zero values
             if type_id == TYPE_STRING:
-                return StringNode("")
+                return StringNode(self.token, "")
             elif is_float_type(type_id):
-                return NumberNode(0.0, type_id)
+                return NumberNode(self.token, 0.0, type_id)
             else:
                 # For all integer types and unknown types
-                return NumberNode(0, type_id)
+                return NumberNode(self.token, 0, type_id)
 
     def get_common_type(self, type1, type2):
         """
@@ -700,14 +702,14 @@ class Parser:
             self.check_arg_count("Method '%s'" % member_name, func_obj.params, args, is_method=True)
             self.check_argument_types(args, func_obj.params, "method '%s'" % member_name)
             ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
-            return CallNode(member_name, args, func_obj.return_type, obj_node, ref_kind=ref_kind)
+            return CallNode(self.token, member_name, args, func_obj.return_type, obj_node, ref_kind=ref_kind)
         else:
             # Field access
             field_type = registry.get_field_type(struct_name, member_name)
             if field_type is None:
                 self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
 
-            return MemberAccessNode(obj_node, member_name, field_type, obj_ref_kind)
+            return MemberAccessNode(self.token, obj_node, member_name, field_type, obj_ref_kind)
 
     def function_declaration(self):
         """Parse a function declaration or method definition"""
@@ -804,7 +806,7 @@ class Parser:
         self.current_function = registry.register_function(name, return_type, params, parent_struct_id=struct_id, is_ref_return=is_ref_return)
         # create a new node with empty body - we'll add it later
         # That's needed so type checking inside the body can find it
-        node = FunctionDeclNode(name, params, return_type, body=None, parent_struct_id=struct_id, ref_kind=ref_kind)
+        node = FunctionDeclNode(self.token, name, params, return_type, body=None, parent_struct_id=struct_id, ref_kind=ref_kind)
         registry.set_function_ast_node(self.current_function, node)
 
         if struct_name:
@@ -964,7 +966,7 @@ class Parser:
 
         self.advance()  # Skip 'end'
 
-        return StructDefNode(struct_name, parent_name, fields, struct_id)
+        return StructDefNode(self.token, struct_name, parent_name, fields, struct_id)
 
     def register_tuple_type(self, elements_or_types, is_type_annotation=False):
         """
@@ -1026,9 +1028,9 @@ class Parser:
     def create_zero_value_node(self, field_type):
         """Create an AST node with the appropriate zero/default value for a given type"""
         if field_type == TYPE_STRING:
-            return StringNode("")
+            return StringNode(self.token, "")
         elif is_float_type(field_type):
-            return NumberNode(0.0, field_type)
+            return NumberNode(self.token, 0.0, field_type)
         elif registry.is_struct_type(field_type):
             # For struct fields, create a zero-filled initializer recursively
             struct_name = registry.get_struct_name(field_type)
@@ -1039,12 +1041,12 @@ class Parser:
                 zero_elements.append(self.create_zero_value_node(nested_field_type))
 
             # Create initializer with zero elements
-            init_node = GenericInitializerNode(zero_elements, INITIALIZER_SUBTYPE_LINEAR, field_type)
+            init_node = GenericInitializerNode(self.token, zero_elements, INITIALIZER_SUBTYPE_LINEAR, field_type)
             init_node.expr_type = field_type
             return init_node
         else:
             # For all other types (int, etc.), use 0
-            return NumberNode(0, field_type)
+            return NumberNode(self.token, 0, field_type)
 
     def parse_initializer_expression(self, target_type=TYPE_UNKNOWN, consume_token=True):
         """Parse an initializer expression: {expr1, expr2, ...} or {{...}, {...}}"""
@@ -1106,7 +1108,7 @@ class Parser:
         self.consume(TT_RBRACE)
 
         # Create initializer node
-        init_node = GenericInitializerNode(elements, subtype, target_type)
+        init_node = GenericInitializerNode(self.token, elements, subtype, target_type)
 
         # Handle array dimension inference for arrays with inferred size
         if (subtype == INITIALIZER_SUBTYPE_LINEAR and
@@ -1189,7 +1191,7 @@ class Parser:
 
         if init_method:
             # Add self placeholder to arguments list
-            args_with_self = [VariableNode("", struct_id)]  # Placeholder for self
+            args_with_self = [VariableNode(self.token, "", struct_id)]  # Placeholder for self
             args_with_self.extend(args)
             args = args_with_self
 
@@ -1198,18 +1200,18 @@ class Parser:
             self.check_argument_types(args, init_method.params, "Constructor for '%s'" % struct_name)
 
         # Create and return struct initialization node with self included in args
-        return StructInitNode(struct_name, struct_id, args)
+        return StructInitNode(self.token, struct_name, struct_id, args)
 
     def nud(self, t):
         # Handle number literals using the type mapping
         if t.type in TOKEN_TO_TYPE_MAP:
-            return NumberNode(t.value, TOKEN_TO_TYPE_MAP[t.type])
+            return NumberNode(t, t.value, TOKEN_TO_TYPE_MAP[t.type])
 
         if t.type == TT_STRING_LITERAL:
-            return StringNode(t.value)
+            return StringNode(t, t.value)
 
         if t.type == TT_NIL:
-            return NilNode()
+            return NilNode(t)
 
         if t.type == TT_IDENT:
             var_name = t.value
@@ -1229,7 +1231,7 @@ class Parser:
                 if self.token.type == TT_LPAREN:
                     return self.funccall(var_name)
                 return_type = registry.get_func_from_id(func_id).return_type
-                return VariableNode(var_name, return_type)
+                return VariableNode(t, var_name, return_type)
 
             # It's a variable name, see if it's declared
             if not self.is_variable_declared(var_name):
@@ -1242,7 +1244,7 @@ class Parser:
 
             # All variables can be referenced, even if not declared with byref
             # This allows functions to return references to variables
-            variable_node = VariableNode(var_name, var_type, ref_kind)
+            variable_node = VariableNode(t, var_name, var_type, ref_kind)
 
             # Mark variables as referenceable for byref return functions
             if self.current_function != -1:
@@ -1255,7 +1257,7 @@ class Parser:
 
         if t.type in [TT_MINUS, TT_NOT, TT_BITNOT]:  # Unary operators
             expr = self.expression(UNARY_PRECEDENCE)
-            return UnaryOpNode(t.value, expr, expr.expr_type)
+            return UnaryOpNode(t, t.value, expr, expr.expr_type)
 
         if t.type == TT_LBRACE:
             return self.parse_initializer_expression(consume_token=False)
@@ -1313,9 +1315,9 @@ class Parser:
                         elements.append(self.create_default_initializer(element_type))
 
                 # Return the array with properly initialized elements
-                return NewNode(GenericInitializerNode(elements, INITIALIZER_SUBTYPE_LINEAR, array_type_id))
+                return NewNode(t, GenericInitializerNode(t, elements, INITIALIZER_SUBTYPE_LINEAR, array_type_id))
 
-            return NewNode(self.parse_constructor_call(type_name, type_id))
+            return NewNode(t, self.parse_constructor_call(type_name, type_id))
 
         raise CompilerException('Unexpected token %s' % token_name(t), t)
 
@@ -1340,7 +1342,7 @@ class Parser:
             var_ref_kind = self.get_variable_ref_kind(var_name)
 
             # Create a proper variable node for handling
-            var_node = VariableNode(var_name, var_type, var_ref_kind)
+            var_node = VariableNode(t, var_name, var_type, var_ref_kind)
 
             # Use our centralized assignment handler
             return self.handle_assignment(var_node, var_type, ASSIGN_CTX_VARIABLE, t.type)
@@ -1380,7 +1382,7 @@ class Parser:
             if result_type is None:
                 self.type_mismatch_error("Type mismatch in binary operation", left.expr_type, right.expr_type)
 
-            return BinaryOpNode(t.value, left, right, result_type)
+            return BinaryOpNode(t, t.value, left, right, result_type)
 
         elif t.type in [TT_EQ, TT_NE, TT_GE, TT_LE, TT_LT, TT_GT]:
             right = self.expression(self.lbp(t))
@@ -1389,12 +1391,12 @@ class Parser:
             result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
             if result_type is None:
                 self.type_mismatch_error("Type mismatch in comparison", left.expr_type, right.expr_type)
-            return CompareNode(t.value, left, right)
+            return CompareNode(t, t.value, left, right)
 
         elif t.type in [TT_AND, TT_OR]:
             right = self.expression(self.lbp(t))
             # Logical operations always return an integer (0/1 representing false/true)
-            return LogicalNode(t.value, left, right)
+            return LogicalNode(t, t.value, left, right)
 
         elif t.type in [TT_XOR, TT_BITOR, TT_BITAND]:
             right = self.expression(self.lbp(t))
@@ -1402,7 +1404,7 @@ class Parser:
             if is_integer_type(left.expr_type) and is_integer_type(right.expr_type):
                 result_type = self.calculate_result_type(t.value, left.expr_type, right.expr_type)
                 if result_type is not None:
-                    return BitOpNode(t.value, left, right)
+                    return BitOpNode(t, t.value, left, right)
             self.error("Bitwise operators require integer operands")
 
         raise CompilerException('Unexpected token type %d' % t.type, t)
@@ -1432,7 +1434,7 @@ class Parser:
         element_type = registry.get_array_element_type(array_node.expr_type)
 
         # Create and return the array access node
-        access_node = ArrayAccessNode(array_node, index_expr, element_type)
+        access_node = ArrayAccessNode(self.token, array_node, index_expr, element_type)
 
         # Handle reference kind propagation - array elements can be referenced for modification
         if array_node.ref_kind != REF_KIND_NONE:
@@ -1479,7 +1481,7 @@ class Parser:
             condition = self.expression(0)
             then_body = self.doblock()
             if self.token.type != TT_ELSE:
-                return IfNode(condition, then_body, None)
+                return IfNode(self.token, condition, then_body, None)
 
             self.advance()
             self.skip_separators()
@@ -1492,7 +1494,7 @@ class Parser:
                 else_body = self.doblock()
             else:
                 self.error("Expected 'if' or 'do' after 'else'")
-            return IfNode(condition, then_body, else_body)
+            return IfNode(self.token, condition, then_body, else_body)
 
     def funccall(self, func_name, consume_lparen=True):
         """Parse a function call and return a CallNode"""
@@ -1516,7 +1518,7 @@ class Parser:
         self.check_arg_count("Function '%s'" % func_name, func_params, args, is_method=False)
         self.check_argument_types(args, func_params, "function '%s'" % func_name)
         ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
-        return CallNode(func_name, args, func_return_type, ref_kind=ref_kind)
+        return CallNode(self.token, func_name, args, func_return_type, ref_kind=ref_kind)
 
     def is_assignment_operator(self, token_type):
         """Check if a token is an assignment operator"""
@@ -1576,13 +1578,13 @@ class Parser:
             binary_op = get_operator_for_compound_assign(op)
 
             # Create a binary operation node for the operation
-            binary_expr = BinaryOpNode(binary_op, lhs, expr, target_type)
+            binary_expr = BinaryOpNode(self.token, binary_op, lhs, expr, target_type)
 
             # Create and return assignment node with binary expression
-            return BinaryOpNode('=', lhs, binary_expr, target_type, ref_kind)
+            return BinaryOpNode(self.token, '=', lhs, binary_expr, target_type, ref_kind)
         else:
             # Regular assignment
-            return BinaryOpNode('=', lhs, expr, target_type, ref_kind)
+            return BinaryOpNode(self.token, '=', lhs, expr, target_type, ref_kind)
 
     def typedef_declaration(self):
         """Parse typedef Name: Type"""
@@ -1609,7 +1611,7 @@ class Parser:
 
         self.check_statement_end()
         # return a NOP node :)
-        return ExprStmtNode(NumberNode(0, TYPE_INT))
+        return ExprStmtNode(self.token, NumberNode(self.token, 0, TYPE_INT))
 
     def parse_var_declaration(self, var_name, decl_type):
         """Parse a variable declaration after the identifier"""
@@ -1643,7 +1645,7 @@ class Parser:
             self.declare_variable(var_name, var_type, decl_type == TT_CONST, ref_kind=ref_kind)
 
             # Skip to expression evaluation logic
-            return VarDeclNode(decl_type, var_name, var_type, expr, ref_kind=ref_kind)
+            return VarDeclNode(self.token, decl_type, var_name, var_type, expr, ref_kind=ref_kind)
 
         # Use the current_initializer_type pattern
         old_initializer_type = self.current_initializer_type
@@ -1715,7 +1717,7 @@ class Parser:
         # Declare the variable in current scope
         self.declare_variable(var_name, var_type, decl_type == TT_CONST, ref_kind=ref_kind)
 
-        return VarDeclNode(decl_type, var_name, var_type, expr, ref_kind=ref_kind)
+        return VarDeclNode(self.token, decl_type, var_name, var_type, expr, ref_kind=ref_kind)
 
     def parse_enum_declaration(self):
         """Parse an enum declaration and transform it into struct + const"""
@@ -1795,20 +1797,20 @@ class Parser:
         init_values = []
 
         for name, value in builder.members:
-            struct_members.append(VarDeclNode(TT_CONST, name, base_type, None))
-            init_values.append(NumberNode(value, base_type))
+            struct_members.append(VarDeclNode(self.token, TT_CONST, name, base_type, None))
+            init_values.append(NumberNode(self.token, value, base_type))
             # register the fields of the struct in the type_registry
             registry.add_field(hidden_struct_name, name, base_type, self.token)
 
         # Create struct declaration for the hidden implementation
-        struct_decl = StructDefNode(hidden_struct_name, None, [(name, base_type) for name, _ in builder.members], struct_id)
+        struct_decl = StructDefNode(self.token, hidden_struct_name, None, [(name, base_type) for name, _ in builder.members], struct_id)
 
         # Register the enum in the environment so it can be referenced
         self.declare_variable(enum_name, struct_id, is_const=True)
 
         # Create const declaration with initializer
-        initializer = GenericInitializerNode(init_values, INITIALIZER_SUBTYPE_LINEAR, struct_id)
-        const_decl = VarDeclNode(TT_CONST, enum_name, struct_id, initializer)
+        initializer = GenericInitializerNode(self.token, init_values, INITIALIZER_SUBTYPE_LINEAR, struct_id)
+        const_decl = VarDeclNode(self.token, TT_CONST, enum_name, struct_id, initializer)
 
         # We need to directly add the struct declaration to program statements
         # Then return the const declaration
@@ -1856,7 +1858,7 @@ class Parser:
                     self.error("Non-void function '%s' must return a value" % current_func_obj.name)
 
                 self.check_statement_end()
-                return ReturnNode(None)
+                return ReturnNode(self.token, None)
 
             # Return with value
             # Set context for expression parsing
@@ -1892,7 +1894,7 @@ class Parser:
                 self.type_mismatch_error("Type mismatch in return", expr.expr_type, func_return_type)
 
             self.check_statement_end()
-            return ReturnNode(expr, REF_KIND_GENERIC if current_func_obj.is_ref_return else REF_KIND_NONE)
+            return ReturnNode(self.token, expr, REF_KIND_GENERIC if current_func_obj.is_ref_return else REF_KIND_NONE)
 
         # Handle del statement for heap deallocation
         if self.token.type == TT_DEL:
@@ -1904,7 +1906,7 @@ class Parser:
                 self.error("'del' can only be used with reference types (created with 'new')")
 
             self.check_statement_end()
-            return DelNode(expr)
+            return DelNode(self.token, expr)
 
         # Handle variable declarations (var and const)
         if self.token.type in [TT_VAR, TT_CONST]:
@@ -1930,20 +1932,20 @@ class Parser:
             self.advance()
             condition = self.expression(0)
             body = self.doblock()
-            return WhileNode(condition, body)
+            return WhileNode(self.token, condition, body)
         elif self.token.type == TT_PRINT:
             self.advance()
             expr = self.expression(0)
             self.check_statement_end()
-            return PrintNode(expr)
+            return PrintNode(self.token, expr)
         elif self.token.type == TT_BREAK:
             self.advance()
             self.check_statement_end()
-            return BreakNode()
+            return BreakNode(self.token)
         elif self.token.type == TT_CONTINUE:
             self.advance()
             self.check_statement_end()
-            return ContinueNode()
+            return ContinueNode(self.token)
         else:
             # First check if we're in global scope, where only declarations are allowed
             if self.current_function == -1:
@@ -1951,7 +1953,7 @@ class Parser:
             # handle everything else in the pratt expression parser
             expr = self.expression(0)
             self.check_statement_end()
-            return ExprStmtNode(expr)
+            return ExprStmtNode(self.token, expr)
 
     def check_statement_end(self, allow_also=None):
         """Check if a statement is properly terminated by semicolon, newline, or EOF"""
