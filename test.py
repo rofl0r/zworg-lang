@@ -16,6 +16,84 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "nil initialization test",
+            "code": """
+                struct TestRef do value: int; end
+                def main() do
+                    // Test 1: Basic nil assignment and comparison
+                    var ref: TestRef = nil
+                    var is_nil := 0
+                    if ref == nil do
+                        is_nil = 1
+                    end
+                    // Test 2: Nil in conditional
+                    var conditional_result := 0
+                    if ! ref do
+                        conditional_result = 1
+                    end
+                    // Test 3: Dynamic integer array initialized to nil
+                    var intArray: int[] = nil
+                    var intArrayIsNil := 0
+                    if intArray == nil do
+                        intArrayIsNil = 1
+                    end
+                    // Test 4: Dynamic array of references initialized to nil
+                    var refArray: TestRef[] = nil
+                    var refArrayIsNil := 0
+                    if refArray == nil do
+                        refArrayIsNil = 1
+                    end
+                end
+            """,
+            "expected_env": {
+                "is_nil": 1,
+                "conditional_result": 1,
+                "intArrayIsNil": 1,
+                "refArrayIsNil": 1
+            }
+        },
+        {
+           "name": "struct array initialization test",
+           "code": """
+                struct Point do x: int; y: int; end
+                def Point.init(x_val: int, y_val: int) do
+                    self.x = x_val
+                    self.y = y_val
+                end
+                def Point.sum() : int do
+                    return self.x + self.y;
+                end
+                def main() do
+                    // Test 1: Stack array with constructor calls
+                    var stack_points :Point[]= {Point(1,2), Point(3,4), Point(5,6)}
+                    var stack_sum := stack_points[1].sum()  // Should be 7 (3+4)
+
+                    // Test 2: Zero-initialized array (no constructors)
+                    var zero_points: Point[3]  // Zero-initialized
+                    var zero_sum := zero_points[0].sum()  // Should be 0 (0+0)
+
+                    // Test 3: Heap array without constructors
+                    var heap_points := new Point[2]  // Zero-initialized
+                    var heap_sum := heap_points[0].sum()  // Should be 0 (0+0)
+
+                    // Test 4: Heap array with default constructor
+                    // Note: This syntax is for future implementation
+                    var heap_init_points := new Point[2](0, 0)
+                    heap_init_points[0].init(10, 20)
+                    var init_sum := heap_init_points[0].sum()  // Should be 30 (10+20)
+
+                    // Return values to check initialization behavior
+                    var result := {
+                        stack_sum,    // 7
+                        zero_sum,     // 0
+                        heap_sum,     // 0
+                        init_sum      // 30
+                    }
+                end
+           """,
+           "expected_env": {"stack_sum": 7, "zero_sum": 0, "heap_sum": 0, "init_sum": 30 }
+        },
+        {
             "name": "basic enum declaration and use",
             "code": """
                 enum Color do

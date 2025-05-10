@@ -41,9 +41,8 @@ class Interpreter(object):
     def __init__(self, environment=None):
         """Initialize the interpreter with an optional environment"""
         self.environment = environment if environment else EnvironmentStack()
-        # Initialize heap management
-        self.heap_objects = {}  # obj_id -> (Variable, is_freed)
-        self.next_heap_id = 1
+        # Initialize heap management via reset
+        self.reset()
 
         # Create node type to visitor method mapping
         self.visitor_map = {
@@ -72,6 +71,7 @@ class Interpreter(object):
             AST_NODE_ARRAY_ACCESS: self.visit_array_access,
             AST_NODE_NEW: self.visit_new,
             AST_NODE_DEL: self.visit_del,
+            AST_NODE_NIL: self.visit_nil,
             AST_NODE_GENERIC_INITIALIZER: self.visit_generic_initializer,
         }
 
@@ -79,7 +79,10 @@ class Interpreter(object):
         registry.reset()
         if self.environment: self.environment.reset()
         # Reset heap tracking
-        self.heap_objects = {}
+        self.heap_objects = {} # obj_id -> (Variable, is_freed)
+        # Reserve heap ID 0 for nil references - simplifies comparison logic
+        # We use the integer value 0 for it so our C-style operators don't hiccup on None
+        self.heap_objects[0] = (self.make_direct_value(0, TYPE_VOID), False)
         self.next_heap_id = 1
 
     def make_direct_value(self, value, expr_type):
@@ -130,6 +133,11 @@ class Interpreter(object):
             
         # This should never happen if code is consistent
         raise CompilerException("Unknown reference tag")
+
+    def visit_nil(self, node):
+        """Visit a nil literal node"""
+        # We use a special heap-id of 0 to denote the nil status
+        return self.make_heap_ref(None, node.expr_type, 0)
 
     def deep_copy(self, var):
         """Create a deep copy of a variable and its value"""

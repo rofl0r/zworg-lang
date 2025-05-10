@@ -90,6 +90,7 @@ TT_LBRACKET = 81      # '[' for array use
 TT_RBRACKET = 82      # ']' for array use
 TT_TYPEDEF = 83
 TT_ENUM = 84
+TT_NIL = 85
 
 # AST Node types (C-style enums)
 AST_NODE_BASE = 0
@@ -120,6 +121,7 @@ AST_NODE_NEW = 28           # heap allocation with 'new'
 AST_NODE_DEL = 29           # heap deallocation with 'del'
 AST_NODE_GENERIC_INITIALIZER = 31
 AST_NODE_ARRAY_ACCESS = 32
+AST_NODE_NIL = 33
 
 # Variable types - We depend on the order in interpreter.py when taking the max(type1, type2)
 TYPE_UNKNOWN = 0
@@ -236,6 +238,7 @@ KEYWORDS = {
     'struct': TT_STRUCT,
     'new': TT_NEW,
     'del': TT_DEL,
+    'nil': TT_NIL,
     'byref': TT_BYREF,
     'enum': TT_ENUM,
     'double': TT_TYPE_DOUBLE,  # Double type
@@ -349,6 +352,7 @@ TOKEN_NAMES = {
     TT_END: "TT_END",
     TT_PRINT: "TT_PRINT",
     TT_BYREF: "TT_BYREF",
+    TT_NIL: "TT_NIL",
     TT_ENUM: "TT_ENUM",
     TT_EQ: "TT_EQ",
     TT_NE: "TT_NE",
@@ -449,6 +453,7 @@ def ast_node_type_to_string(node_type):
         AST_NODE_MEMBER_ACCESS: "MEMBER_ACCESS",
         AST_NODE_NEW: "NEW",
         AST_NODE_DEL: "DEL",
+        AST_NODE_NIL: "NIL",
         AST_NODE_GENERIC_INITIALIZER: "GENERIC_INITIALIZER",
         AST_NODE_ARRAY_ACCESS: "ARRAY_ACCESS",
     }

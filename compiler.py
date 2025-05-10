@@ -24,6 +24,16 @@ class ASTNode(object):
     def __repr__(self):
         return "%s" % ast_node_type_to_string(self.node_type)
 
+class NilNode(ASTNode):
+    def __init__(self, target_type=TYPE_UNKNOWN):
+        ASTNode.__init__(self, AST_NODE_NIL)
+        self.ref_kind = REF_KIND_GENERIC
+        self.expr_type = target_type
+        self.value = 0
+
+    def __repr__(self):
+        return "Nil()"
+
 class NumberNode(ASTNode):
     def __init__(self, value, expr_type):
         ASTNode.__init__(self, AST_NODE_NUMBER)
@@ -387,6 +397,46 @@ class Parser:
         # Track current struct for method definitions
         self.current_struct = None
         self.current_initializer_type = TYPE_UNKNOWN
+
+    def create_default_initializer(self, type_id):
+        """Create an AST node with the default value for given type"""
+        if registry.is_array_type(type_id):
+            # For arrays with fixed size, create array of zeros
+            element_type = registry.get_array_element_type(type_id)
+            size = registry.get_array_size(type_id)
+
+            if size is not None:
+                # Create array with default-initialized elements
+                elements = []
+                for _ in range(size):
+                    elements.append(self.create_default_initializer(element_type))
+                return GenericInitializerNode(elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+            else:
+                # Dynamic arrays default to nil
+                return NilNode()
+
+        elif registry.is_struct_type(type_id):
+            # Get all fields including inherited ones
+            struct_name = registry.get_struct_name(type_id)
+            fields = registry.get_all_fields(struct_name)
+
+            # Create default initializer for each field
+            elements = []
+            for _, field_type in fields:
+                elements.append(self.create_default_initializer(field_type))
+
+            # Create struct initializer with default values
+            return GenericInitializerNode(elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+
+        else:
+            # Primitives get appropriate zero values
+            if type_id == TYPE_STRING:
+                return StringNode("")
+            elif is_float_type(type_id):
+                return NumberNode(0.0, type_id)
+            else:
+                # For all integer types and unknown types
+                return NumberNode(0, type_id)
 
     def get_common_type(self, type1, type2):
         """
@@ -1158,6 +1208,9 @@ class Parser:
         if t.type == TT_STRING_LITERAL:
             return StringNode(t.value)
 
+        if t.type == TT_NIL:
+            return NilNode()
+
         if t.type == TT_IDENT:
             var_name = t.value
 
@@ -1215,18 +1268,54 @@ class Parser:
         if t.type == TT_NEW:
             # Parse the struct name after 'new'
             if self.token.type != TT_IDENT:
-                self.error("Expected struct name after 'new'")
+                self.error("Expected type name after 'new'")
 
-            struct_name = self.token.value
+            type_name = self.token.value
             self.advance()
 
-            # Verify struct exists
-            if not registry.struct_exists(struct_name):
-                self.error("Struct '%s' is not defined" % struct_name)
+            # Verify type exists
+            if not registry.struct_exists(type_name):
+                self.error("Type '%s' is not defined" % type_name)
 
             # Get the struct type ID
-            struct_id = registry.get_struct_id(struct_name)
-            return NewNode(self.parse_constructor_call(struct_name, struct_id))
+            type_id = registry.get_struct_id(type_name)
+
+            # Check if this is an array allocation: new Type[N]
+            if self.token.type == TT_LBRACKET:
+                # Parse array dimensions - this creates the array type
+                array_type_id = self.parse_array_dimensions(type_id)
+
+                # Get element type and array size
+                element_type = registry.get_array_element_type(array_type_id)
+                array_size = registry.get_array_size(array_type_id)
+
+                if array_size is None:
+                    self.error("Array size must be specified for new operator")
+
+                # Create array elements
+                elements = []
+
+                constructor_node = None
+
+                # Check if we need to call constructors (has parentheses)
+                if self.token.type == TT_LPAREN:
+                    # Parse the constructor call once
+                    constructor_node = self.parse_constructor_call(type_name, element_type)
+
+                # Initialize all elements
+                for i in range(array_size):
+                    if constructor_node:
+                        # re-use the constructor node for all elements
+                        # WARNING: this requires that the interpreter NOT modify it!
+                        elements.append(constructor_node)
+                    else:
+                        # Default initialization (zero values)
+                        elements.append(self.create_default_initializer(element_type))
+
+                # Return the array with properly initialized elements
+                return NewNode(GenericInitializerNode(elements, INITIALIZER_SUBTYPE_LINEAR, array_type_id))
+
+            return NewNode(self.parse_constructor_call(type_name, type_id))
 
         raise CompilerException('Unexpected token %s' % token_name(t), t)
 
@@ -1362,6 +1451,11 @@ class Parser:
     def skip_separators(self):
         while self.token.type == TT_SEMI or self.token.type == TT_NEWLINE:
             self.advance() # Skip empty lines or semicolon (as statement separator)
+
+    def skip_newlines(self):
+        """Skip just newlines (used inside expressions that can span multiple lines)"""
+        while self.token.type == TT_NEWLINE:
+            self.advance()
 
     def doblock(self):
         self.skip_separators()
@@ -1534,7 +1628,22 @@ class Parser:
                 self.error("Variable declaration with '=' requires explicit type annotation")
             self.advance()  # Skip the = sign
         else:
-            self.error("Variable declaration must include an initialization")
+            # No initializer provided - check if we have a type annotation
+            if var_type == TYPE_UNKNOWN:
+                self.error("Variable declaration must include either a type annotation or initialization")
+
+            # Create default initialization based on the type
+            expr = self.create_default_initializer(var_type)
+
+            # Set appropriate reference kind for dynamic arrays
+            ref_kind = REF_KIND_GENERIC if (registry.is_array_type(var_type) and registry.get_array_size(var_type) is None) else REF_KIND_NONE
+
+            if self.env.get(var_name, all_scopes=False):
+                self.already_declared_error(var_name)
+            self.declare_variable(var_name, var_type, decl_type == TT_CONST, ref_kind=ref_kind)
+
+            # Skip to expression evaluation logic
+            return VarDeclNode(decl_type, var_name, var_type, expr, ref_kind=ref_kind)
 
         # Use the current_initializer_type pattern
         old_initializer_type = self.current_initializer_type
