@@ -1248,14 +1248,15 @@ class Parser:
 
         if t.type == TT_NEW:
             # Parse the struct name after 'new'
-            if self.token.type != TT_IDENT:
+            is_primitive_type = self.token.type in TYPE_TOKEN_MAP
+            if self.token.type != TT_IDENT and not is_primitive_type:
                 self.error("Expected type name after 'new'")
 
             type_name = self.token.value
             self.advance()
 
             # Verify type exists
-            if not registry.struct_exists(type_name):
+            if not is_primitive_type and not registry.struct_exists(type_name):
                 self.error("Type '%s' is not defined" % type_name)
 
             # Get the struct type ID

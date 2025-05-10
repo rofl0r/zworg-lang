@@ -2241,22 +2241,22 @@ def test():
         "expected_error": "Constructor for 'Point' expects 2 arguments, got 0"
     },
     {
-        "name": "New operator on built-in non-struct type",
+        "name": "Constructor on built-in non-struct type",
         "code": """
             def main() do
                 var x := new int(10);
             end
         """,
-        "expected_error": "Expected struct name after 'new'"
+        "expected_error": "Cannot use constructor syntax"
     },
     {
-        "name": "New operator on non-struct",
+        "name": "New operator on non-existing struct",
         "code": """
             def main() do
                 var x := new Foo(10);
             end
         """,
-        "expected_error": "Struct 'Foo' is not defined"
+        "expected_error": "Type 'Foo' is not defined"
     },
     {
         "name": "Self parameter redefinition",
