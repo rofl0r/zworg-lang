@@ -400,8 +400,8 @@ class Parser:
         self.current_struct = None
         self.current_initializer_type = TYPE_UNKNOWN
 
-    def create_default_initializer(self, type_id):
-        """Create an AST node with the default value for given type"""
+    def create_default_value(self, type_id):
+        """Create an AST node with the default/zero value for given type"""
         if registry.is_array_type(type_id):
             # For arrays with fixed size, create array of zeros
             element_type = registry.get_array_element_type(type_id)
@@ -411,7 +411,7 @@ class Parser:
                 # Create array with default-initialized elements
                 elements = []
                 for _ in range(size):
-                    elements.append(self.create_default_initializer(element_type))
+                    elements.append(self.create_default_value(element_type))
                 return GenericInitializerNode(self.token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
             else:
                 # Dynamic arrays default to nil
@@ -425,10 +425,12 @@ class Parser:
             # Create default initializer for each field
             elements = []
             for _, field_type in fields:
-                elements.append(self.create_default_initializer(field_type))
+                elements.append(self.create_default_value(field_type))
 
             # Create struct initializer with default values
-            return GenericInitializerNode(self.token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+            init_node = GenericInitializerNode(self.token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+            init_node.expr_type = type_id  # Ensure expression type is set
+            return init_node
 
         else:
             # Primitives get appropriate zero values
@@ -1025,29 +1027,6 @@ class Parser:
         # Register and return the tuple type ID
         return self.register_tuple_type(element_types, is_type_annotation=True)
 
-    def create_zero_value_node(self, field_type):
-        """Create an AST node with the appropriate zero/default value for a given type"""
-        if field_type == TYPE_STRING:
-            return StringNode(self.token, "")
-        elif is_float_type(field_type):
-            return NumberNode(self.token, 0.0, field_type)
-        elif registry.is_struct_type(field_type):
-            # For struct fields, create a zero-filled initializer recursively
-            struct_name = registry.get_struct_name(field_type)
-            fields = registry.get_all_fields(struct_name)
-            zero_elements = []
-
-            for _, nested_field_type in fields:
-                zero_elements.append(self.create_zero_value_node(nested_field_type))
-
-            # Create initializer with zero elements
-            init_node = GenericInitializerNode(self.token, zero_elements, INITIALIZER_SUBTYPE_LINEAR, field_type)
-            init_node.expr_type = field_type
-            return init_node
-        else:
-            # For all other types (int, etc.), use 0
-            return NumberNode(self.token, 0, field_type)
-
     def parse_initializer_expression(self, target_type=TYPE_UNKNOWN, consume_token=True):
         """Parse an initializer expression: {expr1, expr2, ...} or {{...}, {...}}"""
         if consume_token: self.consume(TT_LBRACE)  # Skip '{'
@@ -1144,7 +1123,7 @@ class Parser:
             if len(elements) < len(fields):
                 for i in range(len(elements), len(fields)):
                     _, field_type = fields[i]
-                    elements.append(self.create_zero_value_node(field_type))
+                    elements.append(self.create_default_value(field_type))
 
             # Validate field types
             for i, elem in enumerate(elements):
@@ -1312,7 +1291,7 @@ class Parser:
                         elements.append(constructor_node)
                     else:
                         # Default initialization (zero values)
-                        elements.append(self.create_default_initializer(element_type))
+                        elements.append(self.create_default_value(element_type))
 
                 # Return the array with properly initialized elements
                 return NewNode(t, GenericInitializerNode(t, elements, INITIALIZER_SUBTYPE_LINEAR, array_type_id))
@@ -1635,7 +1614,7 @@ class Parser:
                 self.error("Variable declaration must include either a type annotation or initialization")
 
             # Create default initialization based on the type
-            expr = self.create_default_initializer(var_type)
+            expr = self.create_default_value(var_type)
 
             # Set appropriate reference kind for dynamic arrays
             ref_kind = REF_KIND_GENERIC if (registry.is_array_type(var_type) and registry.get_array_size(var_type) is None) else REF_KIND_NONE
