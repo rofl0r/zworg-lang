@@ -999,6 +999,7 @@ class Parser:
     def parse_initializer_expression(self, target_type=TYPE_UNKNOWN, consume_token=True):
         """Parse an initializer expression: {expr1, expr2, ...} or {{...}, {...}}"""
         if consume_token: self.consume(TT_LBRACE)  # Skip '{'
+        self.skip_newlines()
         if target_type == TYPE_UNKNOWN: target_type = self.current_initializer_type
 
         elements = []
@@ -1044,11 +1045,13 @@ class Parser:
                 # Regular expression element
                 elements.append(self.expression(0))
 
+            self.skip_newlines()
             # Check for end of initializer or comma
             if self.token.type != TT_COMMA:
                 break
 
             self.advance()  # Skip comma
+            self.skip_newlines()
 
         self.consume(TT_RBRACE)
 
