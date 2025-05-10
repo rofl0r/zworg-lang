@@ -2417,7 +2417,7 @@ def test():
                 env = result['main_env']
 
                 # Check if environment values match
-		mismatches = []
+                mismatches = []
                 for k in test_case["expected_env"].keys():
                     v = test_case["expected_env"][k]
                     if k not in env:
