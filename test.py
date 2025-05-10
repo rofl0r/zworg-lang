@@ -2020,7 +2020,7 @@ def test():
         {
             "name": "error when declaring variable without initialization",
             "code": "def main() do var x; x = 5; end",  # Missing initialization
-            "expected_error": "Variable declaration must include an initialization"
+            "expected_error": "Variable declaration must include either a type annotation or initialization"
         },
         {
             "name": "error when using undeclared variable in a logical expression",
