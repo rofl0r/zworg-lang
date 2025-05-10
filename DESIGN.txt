@@ -180,8 +180,9 @@ Composite Types:
 Variables must be declared before use with an initializer:
 
 EXAMPLE:
-var <identifier> [: <type>] := <expression>;  // Type inferred
-var <identifier> : <type> = <expression>;     // Type explicitly specified
+var <identifier> := <expression>          // Type inferred from expression
+var <identifier> : <type> = <expression>  // Type explicitly specified with initializer
+var <identifier> : <type>                 // Type explicitly specified with default initialization
 
 Examples:
 var x := 5;            // Type inferred as int
@@ -189,10 +190,15 @@ var y : float = 3.14;  // Type explicitly specified
 var z := 42u;          // Type inferred as uint
 var w : long = 42l;    // Type explicitly as long
 var s := "Hello";      // Type inferred as string
+var i : int;           // Default initialized to 0
+var f : float;         // Default initialized to 0.0
+var str : string;      // Default initialized to ""
 
 Array declarations:
 var arr: int[5] = {1, 2, 3, 4, 5};  // Fixed-size array with explicit initialization
-var inferred: int[] = {10, 20, 30};  // Array size inferred from initializer
+var inferred: int[] = {10, 20, 30}; // Array size inferred from initializer
+var defaulted: int[5];              // Fixed-size array with default initialization (all zeros)
+var dynamic: int[] = nil;           // Dynamic array initialized to nil (no storage allocated yet)
 
 ### 3.2 Constant Declarations
 Constants are declared with 'const' and must have an initializer:
@@ -292,15 +298,24 @@ const x_coord:= point._0;  // access first tuple element
 Tuple types can be used anywhere a type is expected.
 
 ### 3.6 Array Declarations
-Arrays represent fixed-size collections of elements with the same type.
+Arrays represent collections of elements with the same type, either fixed-size or dynamic.
 
 Array type declarations:
 var arr: int[5];                // Fixed-size array of 5 integers
-var matrix: float[3][3];        // 2D array of floats
+var arr2: int[5] = {1, 2, 3};   // Fixed-size array with first 3 elements initialized, rest are 0
+var arr3: int[] = {1, 2, 3};    // Fixed-size array with size inferred from initializer
+var arr4: int[];                // Dynamic array default-initialized to nil (no storage allocated yet)
+var arr5: int[] = nil;          // Dynamic array initialized to nil (not allocated yet)
+
+var matrix: float[3][3];        // 2D array of floats [TODO: check whether this actually works]
 
 Array initialization:
 var arr: int[3] = {1, 2, 3};    // Initialize with values
 var inferred: int[] = {4, 5, 6}; // Size inferred from initializer
+
+Heap allocation with 'new':
+var heapArr := new int[5];           // Heap-allocated array with default initialization
+var objArray := new Point[2](0, 0);  // Array of Points with constructor arguments (constructor is called on all elements with same values)
 
 Array operations:
 arr[0] = 10;                    // Element assignment
@@ -422,8 +437,10 @@ return;               // For void functions
 Heap allocation and deallocation:
 
 EXAMPLE:
-var obj := new StructName(args);  // Allocate on heap - creates reference type
-del obj;                          // Deallocate and call destructor
+var ref: StructName = nil;       // Initialize reference to nil (no allocation)
+var obj := new StructName(args); // Allocate on heap - creates reference type
+var arr := new ArrayType[size];  // Allocate array on heap - creates reference type
+del obj;                         // Deallocate and call destructor
 
 ## 5. Expressions
 
@@ -558,6 +575,7 @@ The language reports various errors:
 - Undefined struct fields or methods
 - Invalid arguments to functions or methods
 - Memory management errors
+- Constructor argument errors for struct arrays initialization
 
 ## 9. Object-Oriented Features
 
@@ -588,6 +606,7 @@ The language reports various errors:
 
 ### 9.3 Constructors and Destructors
 - Constructors are defined as methods named 'init'
+- Constructor calls with arrays use the syntax: StructName[size](arg1, ...)
 - Destructors are defined as methods named 'fini'
 - Constructors are called automatically when:
   - A struct is stack allocated with direct initialization
@@ -606,6 +625,15 @@ The language reports various errors:
   - Reference semantics for assignment
   - Supports polymorphic assignment
   - Must be explicitly deallocated with 'del' [TODO this will be relaxed in the future IFF ref-counting is implemented - then del CAN be used, but the object will be deallocated when no refs exist]
+  - Array allocation: var arr := new StructType[size]
+    - Zero-initializes all elements by default
+    - With parentheses: var arr := new StructType[size](args)
+      - Calls constructor for each element with the same arguments
+  - nil reference value:
+    - Used for uninitialized references: var ref: StructType = nil
+    - Used for uninitialized dynamic arrays: var arr: Type[] = nil
+    - Reference comparison: if ref == nil do ... end
+    - Boolean context: if !ref do ... end  (nil evaluates to false)
 
 ## 10. Semantics Highlights
 
@@ -619,13 +647,16 @@ The language reports various errors:
 - **Extended Type System**: Support for fixed-size integers, unsigned types, and double precision floats
 - **C-Style Type Semantics**: Division, comparison, and other operations follow C language rules
 - **All of those were selected to make C interop as painless as possible.
-- **Object-Oriented Features**: 
+- **Object-Oriented Features**:
   - Structs with methods
   - Single inheritance
   - Constructors and destructors
   - Reference/value type distinction
   - Polymorphism for reference types
+  - Array constructor support with consistent arguments
 - **Memory Management**: Manual memory management with deterministic cleanup [TODO ref-counting is planned for future, though manual new/del will be allowed regardless]
+- **Nil References**: Support for null references with consistent semantics
+  - Used to represent uninitialized or invalid references
 
 ## 11. Collection Types and Initializers
 
@@ -640,6 +671,8 @@ The language reports various errors:
 - Arrays are fixed-size collections of homogeneous values
 - Declared using bracket syntax after the type: int[5]
 - Size can be inferred from initializer: int[] = {1, 2, 3}
+- Dynamic arrays can be declared with nil: int[] = nil
+- ... or can be allocated on heap using 'new': new int[5]
 - Initialized with curly braces: {value1, value2, ...}
 - Elements accessed using array indexing syntax: array[index]
 - Arrays can be passed by value or by reference to functions
