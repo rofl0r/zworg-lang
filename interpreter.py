@@ -270,13 +270,6 @@ class Interpreter(object):
 
         self.last_token = node.token
 
-        # If given a list of nodes (program), execute each one
-        if isinstance(node, list):
-            result = self.make_direct_value(None, TYPE_VOID)
-            for n in node:
-                result = self.evaluate(n)
-            return result
-
         # Dispatch to the appropriate visitor method
         if node.node_type in self.visitor_map:
             visitor = self.visitor_map[node.node_type]
