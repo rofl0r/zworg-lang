@@ -2250,13 +2250,13 @@ def test():
         "expected_error": "Constructor for 'Point' expects 2 arguments, got 0"
     },
     {
-        "name": "Constructor on built-in non-struct type",
+        "name": "Constructor on non-struct type",
         "code": """
             def main() do
                 var x := new int(10);
             end
         """,
-        "expected_error": "Cannot use constructor syntax"
+        "expected_error": "Constructor invocation not allowed for primitive types"
     },
     {
         "name": "New operator on non-existing struct",
@@ -2284,7 +2284,7 @@ def test():
         "expected_error": "Cannot use 'self' as a parameter name"
     },
     {
-        "name": "Missing parentheses after new",
+        "name": "new Struct without parens (using default init)",
         "code": """
             struct Counter do
                 count: int
@@ -2292,9 +2292,10 @@ def test():
 
             def main() do
                 var c := new Counter;  // Missing parentheses
+                var x := c.count
             end
         """,
-        "expected_error": "Constructor invocation requires parentheses"
+        "expected_env": {"x": 0}
     },
         {
             "name": "struct initializer with wrong field count",

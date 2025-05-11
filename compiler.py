@@ -878,7 +878,7 @@ class Parser:
                     return self.parse_array_dimensions(type_id)
                 return type_id
             else:
-                self.error("Unknown type '%s'" % type_name)
+                self.error("Type '%s' is not defined" % type_name)
         else:
             self.error("Expected a type")
 
