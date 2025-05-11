@@ -1247,31 +1247,13 @@ class Parser:
             return expr
 
         if t.type == TT_NEW:
-            # Parse the struct name after 'new'
-            is_primitive_type = self.token.type in TYPE_TOKEN_MAP
-            if self.token.type != TT_IDENT and not is_primitive_type:
-                self.error("Expected type name after 'new'")
-
-            type_name = self.token.value
-
-            # Verify type exists
-            if not is_primitive_type and not registry.struct_exists(type_name):
-                self.error("Type '%s' is not defined" % type_name)
-
-            # Get the struct type ID
-            type_id = registry.get_struct_id(type_name)
-            if is_primitive_type and type_id == -1: type_id = TYPE_TOKEN_MAP[self.token.type]
-
-            self.advance()
-
-            # Check if this is an array allocation: new Type[N]
-            if self.token.type == TT_LBRACKET:
-                # Parse array dimensions - this creates the array type
-                array_type_id = self.parse_array_dimensions(type_id)
-
+            # Parse the type name after 'new'
+            type_id = self.parse_type_reference()
+            # Check if this is an array type (parse_type_reference would have consumed [N] already)
+            if registry.is_array_type(type_id):
                 # Get element type and array size
-                element_type = registry.get_array_element_type(array_type_id)
-                array_size = registry.get_array_size(array_type_id)
+                element_type = registry.get_array_element_type(type_id)
+                array_size = registry.get_array_size(type_id)
 
                 if array_size is None:
                     self.error("Array size must be specified for new operator")
@@ -1281,10 +1263,14 @@ class Parser:
 
                 constructor_node = None
 
-                # Check if we need to call constructors (has parentheses)
-                if self.token.type == TT_LPAREN:
+                # Only allow constructor call for struct elements
+                if registry.is_struct_type(element_type) and self.token.type == TT_LPAREN:
+                    # Get struct name for constructor
+                    element_type_name = registry.get_struct_name(element_type)
                     # Parse the constructor call once
-                    constructor_node = self.parse_constructor_call(type_name, element_type)
+                    constructor_node = self.parse_constructor_call(element_type_name, element_type)
+                elif self.token.type == TT_LPAREN:
+                    self.error("Constructor invocation not allowed for primitive types")
 
                 # Initialize all elements
                 for i in range(array_size):
@@ -1293,17 +1279,23 @@ class Parser:
                         # WARNING: this requires that the interpreter NOT modify it!
                         elements.append(constructor_node)
                     else:
-                        # Default initialization (zero values)
                         elements.append(self.create_default_value(element_type))
 
                 # Return the array with properly initialized elements
-                return NewNode(t, GenericInitializerNode(t, elements, INITIALIZER_SUBTYPE_LINEAR, array_type_id))
+                return NewNode(t, GenericInitializerNode(t, elements, INITIALIZER_SUBTYPE_LINEAR, type_id))
 
-            # Check if this is a constructor call
+            elif registry.is_struct_type(type_id):
+                # If parentheses are present, call the constructor
+                if self.token.type == TT_LPAREN:
+                    struct_name = registry.get_struct_name(type_id)
+                    return NewNode(t, self.parse_constructor_call(struct_name, type_id))
+                # fall through to use default initialization, just like primitive types
+
+            # For primitive types, no constructor allowed
             elif self.token.type == TT_LPAREN:
-                return NewNode(t, self.parse_constructor_call(type_name, type_id))
+                self.error("Constructor invocation not allowed for primitive types")
 
-            # likely a primitive type
+            # No parentheses or primitive type - use default initialization
             return NewNode(t, self.create_default_value(type_id))
 
         raise CompilerException('Unexpected token %s' % token_name(t), t)
