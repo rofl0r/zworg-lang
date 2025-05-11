@@ -122,10 +122,10 @@ Primitive Types:
 - Integer Types:
   - 'int': Default signed integer (32-bit)
   - 'uint': Default unsigned integer (32-bit)
-  - 'long': Long signed integer (64-bit)
-  - 'ulong': Long unsigned integer (64-bit)
-  - 'longlong': Long long signed integer (64-bit)
-  - 'ulonglong': Long long unsigned integer (64-bit)
+  - 'long': Long signed integer (implementation defined - either 32 or 64 bit depending on register size, just like in C)
+  - 'ulong': Long unsigned integer (implementation defined - either 32 or 64 bit depending on register size, just like in C)
+  - 'longlong': Long long signed integer (64-bit, guaranteed)
+  - 'ulonglong': Long long unsigned integer (64-bit, guaranteed)
 
 - Fixed-size Integer Types:
   - 'i8', 'u8': 8-bit signed/unsigned
@@ -144,7 +144,7 @@ Composite Types:
 - Struct types: User-defined composite types
 - Tuple types: Anonymous composite types with ordered fields
 - Reference types: Created when allocating structs with 'new'
-- Array types: Fixed-size collections of elements of the same type
+- Array types: Fixed- or dynamic-size collections of elements of the same type.
 - Reference parameters: Created with 'byref' keyword
 
 ### 2.2 Type Compatibility and Promotion
@@ -298,7 +298,19 @@ const x_coord:= point._0;  // access first tuple element
 Tuple types can be used anywhere a type is expected.
 
 ### 3.6 Array Declarations
-Arrays represent collections of elements with the same type, either fixed-size or dynamic.
+Arrays represent collections of elements with the same type, either fixed-size
+or dynamic.
+
+Fixed-sized arrays require either the array dimensions specified, or an
+initializer expression which is used to infer the size, e.g.:
+var fixed:int[] = {1,2,3} // inferred as int[3]
+
+Dynamic arrays are always heap allocated with the new keyword,
+or initialized to nil, e.g.:
+var dynamic:int[] // nil-initialized, must be resized with new() before access
+
+Multi-dimensional arrays are not supported at this point.
+They can be easily emulated with a flat array and some arithmetic.
 
 Array type declarations:
 var arr: int[5];                // Fixed-size array of 5 integers
@@ -307,8 +319,6 @@ var arr3: int[] = {1, 2, 3};    // Fixed-size array with size inferred from init
 var arr4: int[];                // Dynamic array default-initialized to nil (no storage allocated yet)
 var arr5: int[] = nil;          // Dynamic array initialized to nil (not allocated yet)
 
-var matrix: float[3][3];        // 2D array of floats [TODO: check whether this actually works]
-
 Array initialization:
 var arr: int[3] = {1, 2, 3};    // Initialize with values
 var inferred: int[] = {4, 5, 6}; // Size inferred from initializer
@@ -316,6 +326,7 @@ var inferred: int[] = {4, 5, 6}; // Size inferred from initializer
 Heap allocation with 'new':
 var heapArr := new int[5];           // Heap-allocated array with default initialization
 var objArray := new Point[2](0, 0);  // Array of Points with constructor arguments (constructor is called on all elements with same values)
+var resized := new(oldArray, 10);    // Resize an existing array to a new size, copying existing elements (realloc-like behavior)
 
 Array operations:
 arr[0] = 10;                    // Element assignment
@@ -329,6 +340,11 @@ end
 def copy_array(arr: int[3]) do          // By value
     arr[0] = 99;                        // Does not modify the original
 end
+
+Resize a dynamic array:
+var arr:u8[]                            // defaults to nil
+arr = new(arr, 5);                      // Resizes array to 5 elements
+arr[3] = 42;                            // Access new elements
 
 ### 3.7 Type Aliases (Typedefs)
 Type aliases allow creating alternative names for existing types:
@@ -674,6 +690,10 @@ The language reports various errors:
 - Dynamic arrays can be declared with nil: int[] = nil
 - ... or can be allocated on heap using 'new': new int[5]
 - Initialized with curly braces: {value1, value2, ...}
+- Resized using new with existing array: new(array, new_size)
+  - If successful, returns a new array with copied elements and frees the old array
+  - If allocation fails, returns nil and leaves the original array untouched
+  - Like realloc() in C, but with explicit error handling through nil
 - Elements accessed using array indexing syntax: array[index]
 - Arrays can be passed by value or by reference to functions
 - When passed by value, a copy of the array is made
@@ -701,7 +721,32 @@ Examples:
 var point := {10, 20};                  // Tuple with inferred type {int, int}
 var p: Point = {.x=1, .y=2};            // Struct with named fields
 var fixed: int[10] = {1, 2, 3, 4, 5};   // Fixed-size array, remaining elements initialized to 0
-
-var nested: int[2][3] = {{1, 2, 3}, {4, 5, 6}}; // Nested array initialization
 var rect: Rect = {{1, 2}, {3, 4}};    // Nested initializer for struct with struct fields
 
+## 12. Reference Semantics
+
+### 12.1 Reference Types
+- References are pointers to values that can be reassigned
+- Two kinds of references exist:
+  - Stack references (created with 'byref' keyword for function parameters)
+  - Heap references (created with 'new' for dynamic allocation)
+
+### 12.2 Reference Assignment Rules
+- When assigning to a variable containing a reference:
+  - If the reference is nil OR the right side is an array resize operation (new(oldvar, newsize)):
+    - Direct assignment (the reference itself is updated)
+  - Otherwise:
+    - Assignment through the reference (the referenced value is updated)
+
+### 12.3 Reference Comparison Rules
+- When comparing references with == or != operators:
+  - References are compared by identity (like pointer comparison in C)
+  - Two references are equal if they point to the same object
+  - A reference is equal to nil if and only if it is nil
+- Attempting to assign through a nil reference will raise a runtime error
+
+### 12.4 Memory Management with References
+- The 'del' operator:
+  - Calls the destructor if defined
+  - Frees the heap-allocated memory
+  - Sets the reference to nil automatically, allowing it to be reused
