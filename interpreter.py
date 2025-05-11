@@ -84,6 +84,8 @@ class Interpreter(object):
         # We use the integer value 0 for it so our C-style operators don't hiccup on None
         self.heap_objects[0] = (self.make_direct_value(0, TYPE_VOID), False)
         self.next_heap_id = 1
+        # Store last evaluated token for error reporting (line number)
+        self.last_token = None
 
     def make_direct_value(self, value, expr_type):
         """Create a direct value variable"""
@@ -107,11 +109,11 @@ class Interpreter(object):
             # Check heap reference validity
             heap_id = var.ref_data
             if heap_id not in self.heap_objects:
-                raise CompilerException("Invalid heap reference")
+                raise CompilerException("Invalid heap reference", self.last_token)
                 
             obj, is_freed = self.heap_objects[heap_id]
             if is_freed and not skip_checks:
-                raise CompilerException("Use after free")
+                raise CompilerException("Use after free", self.last_token)
                 
             return obj
             
@@ -122,17 +124,17 @@ class Interpreter(object):
             # Check if scope still exists
             scope_exists = scope_id <= self.environment.stackptr
             if not scope_exists:
-                raise CompilerException("Reference to variable from destroyed scope")
+                raise CompilerException("Reference to variable from destroyed scope", self.last_token)
             
             # Find the variable in the appropriate scope
             for i in range(scope_id, -1, -1):
                 if var_name in self.environment.stack[i]:
                     return self.environment.stack[i][var_name]
                     
-            raise CompilerException("Referenced variable '%s' not found" % var_name)
+            raise CompilerException("Referenced variable '%s' not found" % var_name, self.last_token)
             
         # This should never happen if code is consistent
-        raise CompilerException("Unknown reference tag")
+        raise CompilerException("Unknown reference tag", self.last_token)
 
     def visit_nil(self, node):
         """Visit a nil literal node"""
@@ -167,11 +169,11 @@ class Interpreter(object):
 
         # Handle nil references
         if var.value is None:
-            raise CompilerException("Attempt to access None")
+            raise CompilerException("Attempt to access None", self.last_token)
             # return self.make_direct_value(None, var.expr_type)
 
         # If we get here, we encountered an unknown type
-        raise CompilerException("Cannot deep copy value of type %s"%registry.var_type_to_string(var.expr_type))
+        raise CompilerException("Cannot deep copy value of type %s"%registry.var_type_to_string(var.expr_type), self.last_token)
 
     def get_raw_value(self, var):
         """Get the underlying raw value from a Variable, following references"""
@@ -266,6 +268,8 @@ class Interpreter(object):
         if node is None:
             return self.make_direct_value(None, TYPE_VOID)
 
+        self.last_token = node.token
+
         # If given a list of nodes (program), execute each one
         if isinstance(node, list):
             result = self.make_direct_value(None, TYPE_VOID)
@@ -278,7 +282,7 @@ class Interpreter(object):
             visitor = self.visitor_map[node.node_type]
             return visitor(node)
 
-        raise CompilerException("No visit method defined for node type: %s" % ast_node_type_to_string(node.node_type))
+        raise CompilerException("No visit method defined for node type: %s" % ast_node_type_to_string(node.node_type), node.token)
 
     def check_and_set_params(self, method_name, method_params, args, arg_nodes):
         """Helper function to check parameter types and set them in current scope
@@ -291,7 +295,7 @@ class Interpreter(object):
         if len(args) != len(method_params):
             self.environment.leave_scope()
             raise CompilerException("%s expects %d arguments, got %d" %
-                                   (method_name, len(method_params), len(args)))
+                                   (method_name, len(method_params), len(args)), self.last_token)
 
         for i in range(len(method_params)):
             param_name, param_type, is_byref = method_params[i]
@@ -307,7 +311,7 @@ class Interpreter(object):
                 self.environment.leave_scope()
                 raise CompilerException("Type mismatch in %s argument: cannot convert %s to %s" %
                                        (method_name, registry.var_type_to_string(arg_nodes[i].expr_type),
-                                        registry.var_type_to_string(param_type)))
+                                        registry.var_type_to_string(param_type)), self.last_token)
             self.environment.set(param_name, arg_value)
 
     def visit_number(self, node):
@@ -322,7 +326,7 @@ class Interpreter(object):
         """Evaluate a variable reference node"""
         var = self.environment.get(node.name)
         if var is None:
-            raise CompilerException("Variable '%s' is not defined" % node.name)
+            raise CompilerException("Variable '%s' is not defined" % node.name, self.last_token)
         return var
 
     def visit_binary_op(self, node):
@@ -341,7 +345,7 @@ class Interpreter(object):
 
             # Check if obj is a struct instance
             if not isinstance(obj, StructInstance):
-                raise CompilerException("Cannot assign to field of non-struct value")
+                raise CompilerException("Cannot assign to field of non-struct value", self.last_token)
 
             # Set the field value
             obj.fields[node.left.member_name] = right_var
@@ -367,7 +371,7 @@ class Interpreter(object):
 
             # Make sure it's a struct instance (arrays are represented as structs)
             if not isinstance(arr, StructInstance):
-                raise CompilerException("Cannot perform array indexing on non-array value")
+                raise CompilerException("Cannot perform array indexing on non-array value", self.last_token)
 
             # Set the element value
             field_name = "_%d" % idx
@@ -378,7 +382,7 @@ class Interpreter(object):
         elif node.operator == '=' and node.left.node_type == AST_NODE_CALL:
             # Function calls that return references can be assigned to
             if left_var.tag not in (TAG_STACK_REF, TAG_HEAP_REF):
-                raise CompilerException("Cannot assign to non-reference function result")
+                raise CompilerException("Cannot assign to non-reference function result", self.last_token)
 
             # Assign through the reference
             self.assign_through_reference(left_var, right_var)
@@ -402,7 +406,7 @@ class Interpreter(object):
             if node.expr_type != node.right.expr_type:
                 if not can_promote(node.right.expr_type, node.expr_type):
                     raise CompilerException("Cannot assign %s to %s" %
-                                          (var_type_to_string(node.right.expr_type), var_type_to_string(node.expr_type)))
+                                          (var_type_to_string(node.right.expr_type), var_type_to_string(node.expr_type)), self.last_token)
 
             # Handle number literal promotion
             if node.right.node_type == AST_NODE_NUMBER:
@@ -449,9 +453,9 @@ class Interpreter(object):
             result = shift_right(left_val, right_val, node.left.expr_type, node.right.expr_type)
             return self.make_direct_value(result, node.expr_type)
         elif node.operator == '=':
-            raise CompilerException("= Operator for binary operator used in unspecified context!")
+            raise CompilerException("= Operator for binary operator used in unspecified context!", self.last_token)
 
-        raise CompilerException("Unknown binary operator: %s" % node.operator)
+        raise CompilerException("Unknown binary operator: %s" % node.operator, self.last_token)
 
     def visit_unary_op(self, node):
         """Evaluate a unary operation node"""
@@ -471,7 +475,7 @@ class Interpreter(object):
             result = bitwise_not(value, node.operand.expr_type)
             return self.make_direct_value(result, node.expr_type)
 
-        raise CompilerException("Unknown unary operator: %s" % node.operator)
+        raise CompilerException("Unknown unary operator: %s" % node.operator, self.last_token)
 
     def assign_through_reference(self, ref_var, value_var):
         """Assign a value through a reference"""
@@ -485,7 +489,7 @@ class Interpreter(object):
                     self.environment.stack[i][var_name] = value_var
                     return True
 
-            raise CompilerException("Reference target '%s' not found" % var_name)
+            raise CompilerException("Reference target '%s' not found" % var_name, self.last_token)
 
         elif ref_var.tag == TAG_HEAP_REF:
             # Heap reference - update the heap object
@@ -493,11 +497,11 @@ class Interpreter(object):
             if heap_id in self.heap_objects:
                 _, is_freed = self.heap_objects[heap_id]
                 if is_freed:
-                    raise CompilerException("Use after free in assignment")
+                    raise CompilerException("Use after free in assignment", self.last_token)
                 self.heap_objects[heap_id] = (value_var, is_freed)
                 return True
-            raise CompilerException("Invalid heap reference in assignment")
-        raise CompilerException("Cannot assign through non-reference value")
+            raise CompilerException("Invalid heap reference in assignment", self.last_token)
+        raise CompilerException("Cannot assign through non-reference value", self.last_token)
 
     def visit_print(self, node):
         """Evaluate a print statement node"""
@@ -601,7 +605,7 @@ class Interpreter(object):
 
             # Validate that we're actually returning a reference
             if value_var is None or value_var.tag == TAG_DIRECT_VALUE:
-                raise CompilerException("Function with 'byref' return type must return a reference")
+                raise CompilerException("Function with 'byref' return type must return a reference", self.last_token)
 
         elif value_var and value_var.tag != TAG_DIRECT_VALUE:
             # Non-reference return function - dereference
@@ -633,10 +637,10 @@ class Interpreter(object):
                 return self.make_direct_value(result, TYPE_INT)
             # Other comparison operators are not supported for strings
             elif node.operator in ['>', '>=', '<', '<=']:
-                raise CompilerException("Operator %s not supported for strings" % node.operator)
+                raise CompilerException("Operator %s not supported for strings" % node.operator, self.last_token)
             else:
                 # Unknown operator
-                raise CompilerException("Unknown comparison operator: %s" % node.operator)
+                raise CompilerException("Unknown comparison operator: %s" % node.operator, self.last_token)
 
         if node.operator == '==':
             result = compare_eq(left_val, right_val, node.left.expr_type, node.right.expr_type)
@@ -657,7 +661,7 @@ class Interpreter(object):
             result = compare_le(left_val, right_val, node.left.expr_type, node.right.expr_type)
             return self.make_direct_value(result, TYPE_INT)
 
-        raise CompilerException("Unknown comparison operator: %s" % node.operator)
+        raise CompilerException("Unknown comparison operator: %s" % node.operator, self.last_token)
 
     def visit_logical(self, node):
         """Evaluate a logical operation node"""
@@ -690,7 +694,7 @@ class Interpreter(object):
             result = logical_or(left_val, right_val)
             return self.make_direct_value(result, TYPE_INT)
 
-        raise CompilerException("Unknown logical operator: %s" % node.operator)
+        raise CompilerException("Unknown logical operator: %s" % node.operator, self.last_token)
 
     def visit_bitop(self, node):
         """Evaluate a bitwise operation node"""
@@ -715,7 +719,7 @@ class Interpreter(object):
             result = bitwise_xor(left_val, right_val, node.left.expr_type, node.right.expr_type)
             return self.make_direct_value(result, node.expr_type)
 
-        raise CompilerException("Unknown bitwise operator: %s" % node.operator)
+        raise CompilerException("Unknown bitwise operator: %s" % node.operator, self.last_token)
 
     # Struct-related visitor methods
     def visit_struct_def(self, node):
@@ -786,15 +790,15 @@ class Interpreter(object):
 
         # Handle nil reference
         if obj is None:
-            raise CompilerException("Attempt to access field of a nil reference")
+            raise CompilerException("Attempt to access field of a nil reference", self.last_token)
 
         # Make sure it's a struct instance
         if not isinstance(obj, StructInstance):
-            raise CompilerException("Cannot access member '%s' on non-struct value" % node.member_name)
+            raise CompilerException("Cannot access member '%s' on non-struct value" % node.member_name, self.last_token)
 
         # Get the field value
         if node.member_name not in obj.fields:
-            raise CompilerException("Field '%s' not found in struct '%s'" % (node.member_name, obj.struct_name))
+            raise CompilerException("Field '%s' not found in struct '%s'" % (node.member_name, obj.struct_name), self.last_token)
 
         return obj.fields[node.member_name]
 
@@ -816,18 +820,18 @@ class Interpreter(object):
 
         # Handle nil reference
         if arr is None:
-            raise CompilerException("Attempt to access element of a nil reference")
+            raise CompilerException("Attempt to access element of a nil reference", self.last_token)
 
         # Make sure it's a struct instance (arrays are represented as structs)
         if not isinstance(arr, StructInstance):
-            raise CompilerException("xCannot perform array indexing on non-array value")
+            raise CompilerException("xCannot perform array indexing on non-array value", self.last_token)
 
         # Convert index to field name format (arrays use _0, _1, etc. like tuples)
         field_name = "_%d" % idx
 
         # Get the element value
         if field_name not in arr.fields:
-            raise CompilerException("Array index %d out of bounds" % idx)
+            raise CompilerException("Array index %d out of bounds" % idx, self.last_token)
 
         return arr.fields[field_name]
 
@@ -882,22 +886,22 @@ class Interpreter(object):
 
             # Handle nil reference
             if obj is None:
-                raise CompilerException("Attempt to call method '%s' on a nil reference" % node.name)
+                raise CompilerException("Attempt to call method '%s' on a nil reference" % node.name, self.last_token)
 
             # Make sure it's a struct instance
             if not isinstance(obj_value, StructInstance):
-                raise CompilerException("Cannot call method '%s' on non-struct value" % node.name)
+                raise CompilerException("Cannot call method '%s' on non-struct value" % node.name, self.last_token)
 
             # Get the method ID from registry
             method_id = registry.lookup_function(node.name, obj_value.struct_id)
             if method_id == -1:
-                raise CompilerException("Method '%s' not found in struct '%s'" % (node.name, obj.struct_name))
+                raise CompilerException("Method '%s' not found in struct '%s'" % (node.name, obj.struct_name), self.last_token)
 
         else:
             # Get function ID from registry
             method_id = registry.lookup_function(node.name)
             if method_id == -1:
-                raise CompilerException("Function '%s' is not defined" % node.name)
+                raise CompilerException("Function '%s' is not defined" % node.name, self.last_token)
 
         # Get function details from registry
         func_obj = registry.get_func_from_id(method_id)
@@ -938,14 +942,14 @@ class Interpreter(object):
             # If no return and non-void return type, that's an error
             if func_obj.return_type != TYPE_VOID:
                 self.environment.leave_scope()  # Clean up before raising exception
-                raise CompilerException("%s has non-void return type but reached end without returning" % context_name)
+                raise CompilerException("%s has non-void return type but reached end without returning" % context_name, self.last_token)
 
         except ReturnException as ret:
             # Check return value type against function's return type
             if func_obj.return_type == TYPE_VOID and ret.value is not None:
                 self.environment.leave_scope()  # Clean up before raising exception
-                raise CompilerException("Void %s returned a value" % 
-                                      ("method" if is_method_call else "function"))
+                raise CompilerException("Void %s returned a value" %
+                                      ("method" if is_method_call else "function"), self.last_token)
 
             result = ret.value if ret.value else self.make_direct_value(None, TYPE_VOID)
 
@@ -954,7 +958,7 @@ class Interpreter(object):
                 # Ensure reference is valid - should already be checked in visit_return
                 if result.tag == TAG_DIRECT_VALUE:
                     raise CompilerException("Function '%s' with byref return type must return a reference" % 
-                                           (func_obj.name))
+                                           (func_obj.name), self.last_token)
 
                 # No need to create new reference, already properly validated
             elif result.tag != TAG_DIRECT_VALUE:
@@ -986,24 +990,24 @@ class Interpreter(object):
         
         # Check if it's a heap reference
         if obj_var.tag != TAG_HEAP_REF:
-            raise CompilerException("'del' can only be used with heap references (created with 'new')")
+            raise CompilerException("'del' can only be used with heap references (created with 'new')", self.last_token)
         
         # Get heap ID
         heap_id = obj_var.ref_data
 
         if heap_id not in self.heap_objects:
-            raise CompilerException("Invalid heap reference or double free")
+            raise CompilerException("Invalid heap reference or double free", self.last_token)
 
         instance_var, is_freed = self.heap_objects[heap_id]
         if is_freed:
-            raise CompilerException("Double free detected")
+            raise CompilerException("Double free detected", self.last_token)
             
         # Get the actual instance
         instance = instance_var.value
 
         # Handle nil reference
         if instance is None:
-            raise CompilerException("Attempt to delete a nil reference")
+            raise CompilerException("Attempt to delete a nil reference", self.last_token)
 
         # Call destructor if it exists
         if isinstance(instance, StructInstance):
@@ -1033,7 +1037,7 @@ class Interpreter(object):
         # Get struct name from type registry
         struct_name = registry.get_struct_name(node.expr_type)
         if not struct_name:
-            raise CompilerException("Unknown initializer type")
+            raise CompilerException("Unknown initializer type", self.last_token)
 
         # Create a struct instance
         instance = StructInstance(node.expr_type, struct_name)
@@ -1092,7 +1096,7 @@ class Interpreter(object):
 
         elif node.subtype == INITIALIZER_SUBTYPE_NAMED:
             # Reserved for future C99-style named initializers
-            raise CompilerException("Named initializers not yet implemented")
+            raise CompilerException("Named initializers not yet implemented", self.last_token)
 
         return self.make_direct_value(instance, node.expr_type)
 
