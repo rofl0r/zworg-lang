@@ -2433,7 +2433,7 @@ def test():
                 print("Success! Failed with expected error: %s" % result['error'])
             else:
                 printc("red", "Test didn't fail as expected! Result: %s" % result)
-                printc("red", "Input: %s" % test_case["code"])
+                printc("red", "Input: %s" % add_line_numbers(test_case["code"]))
                 failed_tests.append(test_num)
                 # Add AST dump for unexpected failures
                 if result.get('ast'):
@@ -2463,7 +2463,7 @@ def test():
                 if len(mismatches) == 0:
                     print("Success! Environment matches expectations.")
                 else:
-                    printc("red", "Input: %s" % test_case["code"])
+                    printc("red", "Input: %s" % add_line_numbers(test_case["code"]))
                     print("Test passed but with incorrect environment values:")
                     print("  Expected env: %s" % test_case["expected_env"])
                     print("  Actual env: %s" % env)
@@ -2475,7 +2475,7 @@ def test():
 
             else:
                 printc("red", "Failed! Error: %s" % result['error'])
-                printc("red", "Input: %s" % test_case["code"])
+                printc("red", "Input: %s" % add_line_numbers(test_case["code"]))
                 if os.getenv("DEBUG"):
                     import time
                     time.sleep(10000)
@@ -2488,6 +2488,14 @@ def test():
     print("Total tests: %d" % len(test_cases))
     print("Failed test IDs: %s" % (", ".join(str(num) for num in failed_tests) if failed_tests else "None"))
     print("All tests passed: %s" % ("No" if failed_tests else "Yes"))
+
+def add_line_numbers(text):
+    out = ''
+    line = 1
+    for s in text.split('\n'):
+        out += "%.4d %s\n"%(line, s)
+        line += 1
+    return out
 
 def printc(color, text, file=sys.stdout):
 	cols = {
