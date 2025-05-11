@@ -1253,7 +1253,6 @@ class Parser:
                 self.error("Expected type name after 'new'")
 
             type_name = self.token.value
-            self.advance()
 
             # Verify type exists
             if not is_primitive_type and not registry.struct_exists(type_name):
@@ -1261,6 +1260,9 @@ class Parser:
 
             # Get the struct type ID
             type_id = registry.get_struct_id(type_name)
+            if is_primitive_type and type_id == -1: type_id = TYPE_TOKEN_MAP[self.token.type]
+
+            self.advance()
 
             # Check if this is an array allocation: new Type[N]
             if self.token.type == TT_LBRACKET:
@@ -1297,7 +1299,12 @@ class Parser:
                 # Return the array with properly initialized elements
                 return NewNode(t, GenericInitializerNode(t, elements, INITIALIZER_SUBTYPE_LINEAR, array_type_id))
 
-            return NewNode(t, self.parse_constructor_call(type_name, type_id))
+            # Check if this is a constructor call
+            elif self.token.type == TT_LPAREN:
+                return NewNode(t, self.parse_constructor_call(type_name, type_id))
+
+            # likely a primitive type
+            return NewNode(t, self.create_default_value(type_id))
 
         raise CompilerException('Unexpected token %s' % token_name(t), t)
 

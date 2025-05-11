@@ -16,6 +16,15 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "heap primitive type",
+            "code": """
+                def main() do
+                    var x:= new int
+                end
+            """,
+            "expected_env": {"x": 0}
+        },
+        {
             "name": "nil initialization test",
             "code": """
                 struct TestRef do value: int; end
