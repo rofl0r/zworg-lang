@@ -16,6 +16,163 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "dynamic array resize basic functionality",
+            "code": """
+                def main() do
+                    // Test 1: Initialize a dynamic array with new
+                    var x: int[] = nil
+                    x = new(x, 5)
+                    // Set values to verify persistence
+                    x[0] = 10
+                    x[1] = 20
+                    x[2] = 30
+                    x[3] = 40
+                    x[4] = 50
+                    // Check size and values
+                    var initial_size := 5
+                    // Test 2: Resize to larger (verify value persistence and default init)
+                    x = new(x, 8)
+                    var larger_size := 8
+                    var preserved_value := x[2]  // Should still be 30
+                    var new_element := x[7]      // Should be 0 (default)
+                    // Test 3: Resize to smaller (verify truncation)
+                    x = new(x, 3)
+                    var smaller_size := 3
+                    var still_preserved := x[1]  // Should still be 20
+                    // Test 4: Array assignment compatibility
+                    var y := new int[3]
+                    y[0] = 100
+                    y[1] = 200
+                    y[2] = 300
+                    // Assign fixed array to dynamic array
+                    x = y
+                    var assigned_value := x[0]   // Should be 100
+                    // Test 5: Dynamic array to dynamic array
+                    var z: int[] = nil
+                    z = new(z, 2)
+                    z[0] = 42
+                    z[1] = 84
+                    x = z
+                    var z_value := x[1]          // Should be 84
+                end
+            """,
+            "expected_env": {
+                "initial_size": 5,
+                "larger_size": 8,
+                "preserved_value": 30,
+                "new_element": 0,
+                "smaller_size": 3,
+                "still_preserved": 20,
+                "assigned_value": 100,
+                "z_value": 84
+            }
+        },
+        {
+            "name": "dynamic array resize from nil",
+            "code": """
+                struct TestStruct do value: int; end
+                def TestStruct.init(v: int) do self.value = v; end
+                def main() do
+                    // Test 1: Resize nil int array
+                    var nil_array: int[] = nil
+                    nil_array = new(nil_array, 3)
+                    nil_array[0] = 111
+                    var nil_result := nil_array[0]
+                    // Test 2: Resize nil struct array
+                    var struct_array: TestStruct[] = nil
+                    struct_array = new(struct_array, 2)
+                    struct_array[0] = new TestStruct(222)
+                    var struct_result := struct_array[0].value
+                    // Test 3: Test that an array after new is not nil
+                    var is_nil := 0
+                    var x: int[] = nil
+                    if x == nil do
+                        is_nil = 1
+                    end
+                    x = new(x, 1)
+                    var not_nil := 0
+                    if x != nil do
+                        not_nil = 1
+                    end
+                end
+            """,
+            "expected_env": {
+                "nil_result": 111,
+                "struct_result": 222,
+                "is_nil": 1,
+                "not_nil": 1
+            }
+        },
+        {
+            "name": "dynamic array complex operations",
+            "code": """
+                struct Wrapper do
+                    nums: int[]
+                end
+                def main() do
+                    // Test 1: Nested dynamic arrays in structs
+                    var wrapper := new Wrapper //{nums:nil}
+                    wrapper.nums = new(wrapper.nums, 3)
+                    wrapper.nums[0] = 11
+                    wrapper.nums[1] = 22
+                    wrapper.nums[2] = 33
+                    var struct_array_val := wrapper.nums[1]
+                    // Test 2: Multi-step resize
+                    var a: int[] = nil
+                    a = new(a, 2)
+                    a[0] = 42
+                    a[1] = 43
+
+                    a = new(a, 4)
+                    a[2] = 44
+                    a[3] = 45
+
+                    a = new(a, 1)
+                    var kept_value := a[0]
+                end
+            """,
+            "expected_env": {
+                "struct_array_val": 22,
+                "kept_value": 42,
+            }
+        },
+        {
+            "name": "dynamic array resize errors",
+            "code": """
+                def main() do
+                    // Try to resize a fixed-size array
+                    var fixed := new int[5]
+                    fixed = new(fixed, 10)
+                end
+            """,
+            "expected_error": "First argument to new() must be a dynamic array"
+        },
+        {
+            "name": "dynamic array resize type error",
+            "code": """
+                def main() do
+                    // Try to resize a non-array type
+                    var x := 42
+                    x = new(x, 10)
+                end
+            """,
+            "expected_error": "First argument to new() must be a dynamic array"
+        },
+        {
+            "name": "dynamic array incompatible assignment",
+            "code": """
+                def main() do
+                    // Try to assign between arrays with different element types
+                    var int_array: int[] = nil
+                    var float_array: float[] = nil
+                    int_array = new(int_array, 3)
+                    float_array = new(float_array, 2)
+                    int_array = float_array
+                end
+            """,
+            "expected_error": "Type mismatch: can't assign a value of type heap_ref"
+        },
+        {
             "name": "heap primitive type",
             "code": """
                 def main() do

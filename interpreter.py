@@ -403,6 +403,17 @@ class Interpreter(object):
             # Check if we're assigning to a variable passed by reference
             var_obj = self.environment.get(var_name)
             if var_obj is not None:
+                # Special case 1: Variable is a nil reference (heap ID 0)
+                # Special case 2: Right-side is a heap allocation operation (new or array resize)
+                is_nil_ref = (var_obj.tag == TAG_HEAP_REF and var_obj.ref_data == 0)
+                is_heap_alloc = (node.right.node_type == AST_NODE_NEW or 
+                                node.right.node_type == AST_NODE_ARRAY_RESIZE)
+
+                if (is_nil_ref or is_heap_alloc) and var_obj.tag == TAG_HEAP_REF:
+                    # Direct assignment - update the reference itself
+                    self.environment.set(var_name, value_var)
+                    return value_var
+
                 # If it's a reference, we need to assign through it
                 if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
                     return self.assign_through_reference(var_obj, value_var)
@@ -499,6 +510,11 @@ class Interpreter(object):
         elif ref_var.tag == TAG_HEAP_REF:
             # Heap reference - update the heap object
             heap_id = ref_var.ref_data
+
+            # Special case for nil reference (heap ID 0)
+            if heap_id == 0:
+                raise CompilerException("Cannot assign through a nil reference", self.last_token)
+
             if heap_id in self.heap_objects:
                 _, is_freed = self.heap_objects[heap_id]
                 if is_freed:
@@ -623,6 +639,15 @@ class Interpreter(object):
         """Evaluate a comparison node"""
         left_var = self.evaluate(node.left)
         right_var = self.evaluate(node.right)
+
+        # Special case: If both operands are heap references, compare their heap IDs
+        if node.operator in ('==', '!=') and left_var.tag == TAG_HEAP_REF and right_var.tag == TAG_HEAP_REF:
+            # Compare heap IDs (pointer equality)
+            are_equal = (left_var.ref_data == right_var.ref_data)
+            if node.operator == '==':
+                return self.make_direct_value(1 if are_equal else 0, TYPE_INT)
+            else:  # !=
+                return self.make_direct_value(0 if are_equal else 1, TYPE_INT)
 
         # Dereference operands if they are references
         left_var = self.dereference(left_var)
