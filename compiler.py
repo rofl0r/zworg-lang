@@ -353,6 +353,17 @@ class ArrayAccessNode(ASTNode):
     def __repr__(self):
         return "ArrayAccess(%s[%s])" % (repr(self.array), repr(self.index))
 
+class ArrayResizeNode(ASTNode):
+    def __init__(self, token, array_expr, size_expr):
+        ASTNode.__init__(self, AST_NODE_ARRAY_RESIZE, token)
+        self.array_expr = array_expr  # The array expression to resize
+        self.size_expr = size_expr    # The new size expression
+        self.expr_type = array_expr.expr_type  # Type remains the same
+        self.ref_kind = REF_KIND_HEAP  # Always heap allocated
+
+    def __repr__(self):
+        return "ArrayResize(%s, %s)" % (repr(self.array_expr), repr(self.size_expr))
+
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
     if node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING]:
@@ -597,6 +608,14 @@ class Parser:
 
         # For references, allow inheritance relationships
         if from_ref_kind != REF_KIND_NONE and to_ref_kind != REF_KIND_NONE:
+            # Allow dynamic array assignment compatibility if element types match
+            if registry.is_array_type(from_type) and registry.is_array_type(to_type):
+                # At least one of them must be dynamic (size=None)
+                if registry.get_array_size(from_type) is None or registry.get_array_size(to_type) is None:
+                    # Both must have the same element type
+                    if registry.get_array_element_type(from_type) == registry.get_array_element_type(to_type):
+                        return True
+
             # If both are struct types, check inheritance relationship
             if registry.is_struct_type(from_type) and registry.is_struct_type(to_type):
                 # Allow child class where parent class is expected (covariance)
@@ -1247,6 +1266,28 @@ class Parser:
             return expr
 
         if t.type == TT_NEW:
+            # Check for resize syntax: new(array, size)
+            if self.token.type == TT_LPAREN:
+                self.advance()  # Skip '('
+
+                # Parse array expression
+                array_expr = self.expression(0)
+
+                # Check that it's a dynamic array
+                if not registry.is_array_type(array_expr.expr_type) or registry.get_array_size(array_expr.expr_type) is not None:
+                    self.error("First argument to new() must be a dynamic array")
+
+                # Ensure dynamic arrays have heap reference kind, but allow nil values
+                if array_expr.ref_kind != REF_KIND_HEAP:
+                    self.error("Can only resize dynamic arrays with heap allocation")
+
+                self.consume(TT_COMMA)
+                size_expr = self.expression(0)  # Parse size expression
+                self.consume(TT_RPAREN)
+
+                # Create resize node
+                return ArrayResizeNode(t, array_expr, size_expr)
+
             # Parse the type name after 'new'
             type_id = self.parse_type_reference()
             # Check if this is an array type (parse_type_reference would have consumed [N] already)
@@ -1616,8 +1657,8 @@ class Parser:
             # Create default initialization based on the type
             expr = self.create_default_value(var_type)
 
-            # Set appropriate reference kind for dynamic arrays
-            ref_kind = REF_KIND_GENERIC if (registry.is_array_type(var_type) and registry.get_array_size(var_type) is None) else REF_KIND_NONE
+            # Dynamic arrays must be heap allocated
+            ref_kind = REF_KIND_HEAP if (registry.is_array_type(var_type) and registry.get_array_size(var_type) is None) else REF_KIND_NONE
 
             if self.env.get(var_name, all_scopes=False):
                 self.already_declared_error(var_name)
@@ -1692,6 +1733,12 @@ class Parser:
 
         # If initializing with a reference (from new), keep the reference kind
         ref_kind = expr.ref_kind
+
+        # preserve the heap ref kind of a dynamic array when we get a less specific
+        # ref_kind from the expression (e.g. from nil). TODO: optimally, we'd
+        # preserve the more specific type for any variable type.
+        if ref_kind == REF_KIND_GENERIC and registry.is_array_type(var_type) and registry.get_array_size(var_type) is None:
+            ref_kind = REF_KIND_HEAP
 
         # Declare the variable in current scope
         self.declare_variable(var_name, var_type, decl_type == TT_CONST, ref_kind=ref_kind)

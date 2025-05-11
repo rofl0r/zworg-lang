@@ -73,6 +73,7 @@ class Interpreter(object):
             AST_NODE_DEL: self.visit_del,
             AST_NODE_NIL: self.visit_nil,
             AST_NODE_GENERIC_INITIALIZER: self.visit_generic_initializer,
+            AST_NODE_ARRAY_RESIZE: self.visit_array_resize,
         }
 
     def reset(self):
@@ -135,6 +136,17 @@ class Interpreter(object):
             
         # This should never happen if code is consistent
         raise CompilerException("Unknown reference tag", self.last_token)
+
+    def create_default_value(self, type_id):
+        """Create a default value Variable for a given type"""
+        if type_id == TYPE_STRING:
+            return self.make_direct_value("", TYPE_STRING)
+        elif is_float_type(type_id):
+            return self.make_direct_value(0.0, type_id)
+        elif registry.is_struct_type(type_id):
+            return self.make_direct_value(None, type_id)  # Structs default to nil
+        else:
+            return self.make_direct_value(0, type_id)  # Default for other types
 
     def visit_nil(self, node):
         """Visit a nil literal node"""
@@ -385,7 +397,7 @@ class Interpreter(object):
         elif node.operator == '=' and node.left.node_type == AST_NODE_VARIABLE:
             # Extract variable name from the left node
             var_name = node.left.name
-            value_var = self.evaluate(node.right)
+            value_var = right_var
             var_obj = None
 
             # Check if we're assigning to a variable passed by reference
@@ -728,16 +740,7 @@ class Interpreter(object):
         # Initialize fields with default values first
         all_fields = registry.get_all_fields(node.struct_name)
         for field_name, field_type in all_fields:
-            # Set default value based on type
-            if registry.is_struct_type(field_type):
-                # For now, we don't auto-initialize nested structs
-                instance.fields[field_name] = self.make_direct_value(None, field_type)
-            elif field_type == TYPE_STRING:
-                instance.fields[field_name] = self.make_direct_value("", TYPE_STRING)
-            elif is_float_type(field_type):
-                instance.fields[field_name] = self.make_direct_value(0.0, field_type)
-            else:
-                instance.fields[field_name] = self.make_direct_value(0, field_type)
+            instance.fields[field_name] = self.create_default_value(field_type)
 
         # Call constructor if it exists and there are args or it's "init"
         init_method = registry.get_method(node.struct_id, "init")
@@ -1069,16 +1072,7 @@ class Interpreter(object):
                 # Initialize remaining elements with default values
                 for i in range(len(node.elements), array_size):
                     field_name = "_%d" % i
-
-                    # Set default value based on element type
-                    if element_type == TYPE_STRING:
-                        instance.fields[field_name] = ""
-                    elif is_float_type(element_type):
-                        instance.fields[field_name] = 0.0
-                    elif is_struct_type(element_type):
-                        instance.fields[field_name] = None  # Struct elements default to nil
-                    else:
-                        instance.fields[field_name] = 0     # Default for other types
+                    instance.fields[field_name] = self.create_default_value(element_type)
 
         elif node.subtype == INITIALIZER_SUBTYPE_LINEAR:
             # For linear initializers, assign values to fields in order
@@ -1092,6 +1086,60 @@ class Interpreter(object):
             raise CompilerException("Named initializers not yet implemented", self.last_token)
 
         return self.make_direct_value(instance, node.expr_type)
+
+    def visit_array_resize(self, node):
+        """Visit an array resize operation: new(array, size)"""
+        # Evaluate the array expression
+        array_var = self.evaluate(node.array_expr)
+
+        # Evaluate the size expression
+        size_var = self.evaluate(node.size_expr)
+        size_var = self.dereference(size_var)
+        new_size = size_var.value
+
+        # Validate size
+        if not isinstance(new_size, int) or new_size < 0:
+            raise CompilerException("Array size must be a non-negative integer", self.last_token)
+
+        # Get element type from the array type
+        element_type = registry.get_array_element_type(node.expr_type)
+
+        # Create a new array instance
+        new_array = StructInstance(node.expr_type, registry.get_struct_name(node.expr_type))
+
+        # Copy existing elements from old array if not nil
+        if array_var.tag == TAG_HEAP_REF and array_var.ref_data != 0:  # Not nil
+            old_heap_id = array_var.ref_data
+            old_array = self.dereference(array_var).value
+
+            # Copy elements up to the minimum of old and new size
+            for i in range(min(len(old_array.fields), new_size)):
+                field_name = "_%d" % i
+                if field_name in old_array.fields:
+                    new_array.fields[field_name] = old_array.fields[field_name]
+
+            # Mark old array as freed after copying (following realloc semantics)
+            if old_heap_id in self.heap_objects:
+                _, was_freed = self.heap_objects[old_heap_id]
+                if not was_freed:
+                    self.heap_objects[old_heap_id] = (self.heap_objects[old_heap_id][0], True)
+
+        # Initialize any new elements to default values
+        for i in range(len(new_array.fields), new_size):
+            field_name = "_%d" % i
+            new_array.fields[field_name] = self.create_default_value(element_type)
+
+        # Allocate on heap
+        heap_id = self.next_heap_id
+        self.next_heap_id += 1
+
+        # Store new array on heap
+        new_array_var = self.make_direct_value(new_array, node.expr_type)
+        self.heap_objects[heap_id] = (new_array_var, False)  # Not freed
+
+        # Return heap reference to new array
+        return self.make_heap_ref(new_array, node.expr_type, heap_id)
+
 
 # Custom exceptions for control flow
 class BreakException(Exception):

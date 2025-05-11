@@ -122,6 +122,7 @@ AST_NODE_DEL = 29           # heap deallocation with 'del'
 AST_NODE_GENERIC_INITIALIZER = 31
 AST_NODE_ARRAY_ACCESS = 32
 AST_NODE_NIL = 33
+AST_NODE_ARRAY_RESIZE = 34
 
 # Variable types - We depend on the order in interpreter.py when taking the max(type1, type2)
 TYPE_UNKNOWN = 0
@@ -457,6 +458,7 @@ def ast_node_type_to_string(node_type):
         AST_NODE_NIL: "NIL",
         AST_NODE_GENERIC_INITIALIZER: "GENERIC_INITIALIZER",
         AST_NODE_ARRAY_ACCESS: "ARRAY_ACCESS",
+        AST_NODE_ARRAY_RESIZE: "ARRAY_RESIZE",
     }
     return type_names.get(node_type, "UNKNOWN")
 
