@@ -477,6 +477,31 @@ def test():
             "expected_env": {"global_x": 100}
         },
         {
+            "name": "assign to byref struct return from heap",
+            "code": """
+                struct Point do x:int; y:int; end
+                def get_ref() :byref Point do
+                    return new Point();
+                end
+                def main() do
+                    get_ref() = {100, 200};
+                end
+            """,
+            "expected_env": {}
+        },
+        {
+            "name": "assign to byref return from heap",
+            "code": """
+                def get_ref() :byref int do
+                    return new int;
+                end
+                def main() do
+                    get_ref() = 100;
+                end
+            """,
+            "expected_env": {}
+        },
+        {
             "name": "byref reference forwarding",
             "code": """
                 def forward(byref x:int) :byref int do
