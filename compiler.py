@@ -2,7 +2,7 @@
 
 from shared import *
 from lexer import Token, Lexer
-from type_registry import get_registry
+from type_registry import get_registry, TYPE_GENERIC_BASE
 from scope import EnvironmentStack
 
 # import registry singleton
@@ -532,6 +532,28 @@ class Parser:
         self.env.set(var_name, var)
         return True
 
+    def parse_generic_parameters(self):
+        """Parse generic parameters enclosed in angle brackets: <T1, T2, ...>"""
+        generic_params = []
+        self.consume(TT_LT)
+
+        # Parse first parameter
+        if self.token.type != TT_IDENT:
+            self.error("Expected type parameter name in generic parameter list")
+        generic_params.append(self.token.value)
+        self.advance()
+
+        # Parse additional parameters
+        while self.token.type == TT_COMMA:
+            self.advance()  # Skip comma
+            if self.token.type != TT_IDENT:
+                self.error("Expected type parameter name after comma")
+            generic_params.append(self.token.value)
+            self.advance()
+
+        self.consume(TT_GT, "Expected '>' after generic parameters")
+        return generic_params
+
     def get_variable_ref_kind(self, var_name):
         """Get a variable's reference kind from the appropriate scope"""
         var = self.env.get(var_name)
@@ -732,6 +754,23 @@ class Parser:
 
             return MemberAccessNode(self.token, obj_node, member_name, field_type, obj_ref_kind)
 
+    def parse_return_type(self, struct_id=-1):
+        """Parse function return type with generic parameter support"""
+        # Default to void
+        return_type = TYPE_VOID
+        is_ref_return = False
+
+        if self.token.type == TT_COLON:
+            self.advance()
+            # Check for byref return type
+            if self.token.type == TT_BYREF:
+                is_ref_return = True
+                self.advance()  # Consume 'byref'
+            # Parse with struct_id context for generics
+            return_type = self.parse_type_reference(struct_id)
+
+        return return_type, is_ref_return
+
     def function_declaration(self):
         """Parse a function declaration or method definition"""
 
@@ -746,15 +785,39 @@ class Parser:
 
         name = self.token.value
         struct_name = None
+        struct_id = -1
 
         self.advance()
+
+        # Check for generic type parameters in method declaration
+        # This is just for syntax validation - we'll retrieve the actual params from registry later
+        if self.token.type == TT_LT:
+            # Parse and discard generic parameters - they must match the struct definition
+            generic_params = self.parse_generic_parameters()
+            struct_id = registry.get_struct_id(name)
+            if struct_id == -1:
+                self.error("Struct '%s' is not defined" % name)
+            if registry.is_generic_struct(struct_id):
+                # Verify that each parameter maps to the expected ID
+                expected_id = TYPE_GENERIC_BASE
+                for param_name in generic_params:
+                    param_id = registry.get_generic_param_id(struct_id, param_name)
+                    if param_id == -1:
+                        self.error("Unknown generic parameter '%s' in struct '%s'" % (param_name, name))
+                    if param_id != expected_id:
+                        self.error("Generic parameter '%s' is in wrong order or duplicated" % param_name)
+                    expected_id += 1
+            else:
+                self.error("Struct '%s' is not generic" % name)
 
         # Check if it's a method (has a dot after struct name)
         if self.token.type == TT_DOT:
             struct_name = name
+            if struct_id == -1:
+                struct_id = registry.get_struct_id(name)
 
             # Verify struct exists
-            if not registry.struct_exists(struct_name):
+            if struct_id == -1:
                 self.error("Struct '%s' is not defined" % struct_name)
 
             # Parse method name after the dot
@@ -765,6 +828,10 @@ class Parser:
             name = self.token.value
             self.advance()
 
+            # Get struct ID for resolving generic parameters
+            if struct_id == -1:
+                struct_id = registry.get_struct_id(struct_name)
+
         elif name == "main":
             self.seen_main_function = True
 
@@ -773,7 +840,7 @@ class Parser:
         params = []
 
         while self.token.type != TT_RPAREN:
-            tmp = self.parameter()
+            tmp = self.parameter(struct_id)
 
             # For methods, check if parameter name is 'self'
             if struct_name and tmp[0] == "self":
@@ -793,21 +860,10 @@ class Parser:
         self.consume(TT_RPAREN)
 
         # Parse return type (if specified)
-        return_type = TYPE_VOID  # Default to void
-        is_ref_return = False    # Default to non-reference return
+        return_type, is_ref_return = self.parse_return_type(struct_id)
 
-        if self.token.type == TT_COLON:
-            self.advance()
-            # Check for byref return type
-            if self.token.type == TT_BYREF:
-                is_ref_return = True
-                self.advance()  # Consume 'byref'
-            return_type = self.parse_type_reference()
-
-        struct_id = -1
         # Special checks for methods
-        if struct_name:
-            struct_id = registry.get_struct_id(struct_name)
+        if struct_id != -1:
             # Check constructor and destructor constraints
             if name == "init" and return_type != TYPE_VOID:
                 self.error("Constructor 'init' must have void return type")
@@ -850,7 +906,7 @@ class Parser:
         node.body = body
         return node
 
-    def parameter(self):
+    def parameter(self, struct_id=-1):
         """Parse a function parameter (name:type)"""
         is_byref = False
 
@@ -869,11 +925,11 @@ class Parser:
         if self.token.type != TT_COLON:
             self.error("Function parameters require explicit type annotation")
         self.advance() # Skip colon
-        param_type = self.parse_type_reference()
+        param_type = self.parse_type_reference(struct_id)
 
         return (name, param_type, is_byref)
 
-    def parse_type_reference(self):
+    def parse_type_reference(self, struct_id=-1):
         """Parse a type reference (tuple, primitive or struct)"""
         # Check for tuple types: {type1, type2, ...}
         if self.token.type == TT_LBRACE:
@@ -889,9 +945,45 @@ class Parser:
             return type_id
         elif self.token.type == TT_IDENT:
             type_name = self.token.value
+
+            # Check if this is a generic type parameter in the current struct context
+            if struct_id != -1 and registry.is_generic_struct(struct_id):
+                param_id = registry.get_generic_param_id(struct_id, type_name)
+                if param_id != -1:
+                    # This is a generic type parameter
+                    self.advance()
+                    # Check for array syntax after generic parameter
+                    if self.token.type == TT_LBRACKET:
+                        return self.parse_array_dimensions(param_id)
+                    return param_id
+
             if registry.struct_exists(type_name):
                 type_id = registry.get_struct_id(type_name)
                 self.advance()
+
+                # Check for generic instantiation syntax: List<int>
+                if self.token.type == TT_LT:
+                    concrete_types = []
+                    self.advance()  # Skip '<'
+
+                    # Parse first concrete type (which could itself be generic)
+                    concrete_types.append(self.parse_type_reference(struct_id))
+
+                    # Parse additional concrete types
+                    while self.token.type == TT_COMMA:
+                        self.advance()  # Skip comma
+                        concrete_types.append(self.parse_type_reference(struct_id))
+
+                    self.consume(TT_GT, "Expected '>' after concrete type parameters")
+
+                    # Create concrete struct from the generic template
+                    concrete_struct_id = registry.instantiate_generic_struct(type_id, concrete_types)
+                    if concrete_struct_id == -1:
+                        self.error("Failed to instantiate generic struct '%s'" % type_name)
+
+                    # Use the concrete struct id
+                    type_id = concrete_struct_id
+
                 # Check for array syntax: Type[N] or Type[]
                 if self.token.type == TT_LBRACKET:
                     return self.parse_array_dimensions(type_id)
@@ -929,6 +1021,11 @@ class Parser:
         struct_name = self.token.value
         self.advance()
 
+        # Check for generic type parameters <K,V>
+        generic_params = []
+        if self.token.type == TT_LT:
+            generic_params = self.parse_generic_parameters()
+
         # Check for parent struct (inheritance)
         parent_name = None
         if self.token.type == TT_COLON:
@@ -946,7 +1043,7 @@ class Parser:
             self.advance()
 
         # Register the struct
-        struct_id = registry.register_struct(struct_name, parent_name, self.token)
+        struct_id = registry.register_struct(struct_name, parent_name, self.token, generic_params=generic_params)
 
         # Parse struct body
         self.skip_separators()
@@ -972,8 +1069,8 @@ class Parser:
 
             self.consume(TT_COLON)
 
-            # Parse field type
-            field_type = self.parse_type_reference()
+            # Parse field type, passing current struct_id for resolving generic params
+            field_type = self.parse_type_reference(struct_id)
 
             # Register field
             registry.add_field(struct_name, field_name, field_type, self.token)
