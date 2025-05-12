@@ -8,6 +8,10 @@ PRIMITIVE_TYPES = [
     TYPE_LONGLONG, TYPE_ULONGLONG, TYPE_FLOAT, TYPE_DOUBLE
 ]
 
+# Generic type ID range
+TYPE_GENERIC_BASE = 50  # Starting ID for generic parameters
+TYPE_GENERIC_MAX = 99   # Maximum ID for generic parameters (49 possible parameters)
+
 # Type descriptor classes
 class TypeDescriptor(object):
     """Base descriptor for all types"""
@@ -27,6 +31,8 @@ class StructDescriptor(TypeDescriptor):
         self.name = name
         self.parent_id = parent_id
         self.fields = []  # List of (name, type_id) tuples
+        self.param_mapping = {}  # Maps generic param names to type IDs
+        self.instantiations = {}  # Maps concrete type tuples to concrete struct IDs
 
 class ArrayDescriptor(TypeDescriptor):
     """Descriptor for array types"""
@@ -79,6 +85,10 @@ class TypeRegistry:
         """Register all primitive types with descriptors"""
         for type_id in PRIMITIVE_TYPES:
             self._type_descriptors[type_id] = PrimitiveDescriptor(type_id)
+        
+        # Pre-register generic parameter IDs
+        for i in range(TYPE_GENERIC_BASE, TYPE_GENERIC_MAX + 1):
+            self._type_descriptors[i] = TypeDescriptor(TypeRegistry.TYPE_KIND_PRIMITIVE)
 
     def is_primitive_type(self, type_id):
         return type_id in PRIMITIVE_TYPES
@@ -131,7 +141,7 @@ class TypeRegistry:
         return -1
 
     # Struct methods
-    def register_struct(self, name, parent_name=None, token=None):
+    def register_struct(self, name, parent_name=None, token=None, generic_params=None):
         """Register a new struct type, return its ID"""
         # Check if already registered
         if name in self._struct_registry:
@@ -155,6 +165,14 @@ class TypeRegistry:
         # Create descriptor for new system
         descriptor = StructDescriptor(name, parent_id)
         self._type_descriptors[type_id] = descriptor
+    
+        # Set up generic parameters if provided
+        if generic_params:
+            param_index = 0
+            for param_name in generic_params:
+                param_id = TYPE_GENERIC_BASE + param_index
+                descriptor.param_mapping[param_name] = param_id
+                param_index += 1
 
         # Maintain compatibility with existing system
         self._struct_registry[name] = (type_id, parent_id, [])
@@ -166,6 +184,213 @@ class TypeRegistry:
         """Check if a type is a struct type using descriptor information"""
         descriptor = self._type_descriptors.get(type_id)
         return descriptor is not None and descriptor.kind == self.TYPE_KIND_STRUCT
+
+    def is_generic_struct(self, struct_id):
+        """Check if a struct is generic (has type parameters)"""
+        descriptor = self._type_descriptors.get(struct_id)
+        if descriptor is None or descriptor.kind != self.TYPE_KIND_STRUCT:
+            return False
+        return len(descriptor.param_mapping) > 0
+ 
+    def is_generic_param(self, type_id):
+        """Check if a type ID represents a generic parameter"""
+        return TYPE_GENERIC_BASE <= type_id <= TYPE_GENERIC_MAX
+
+    def resolve_generic_type(self, type_id, type_mapping):
+        """Resolve a potentially generic type to a concrete type
+        
+        Args:
+            type_id: The type ID to resolve, could be generic or concrete
+            type_mapping: Dict mapping generic param IDs to concrete type IDs
+            
+        Returns:
+            The concrete type ID corresponding to the input type
+        """
+        # Step 1: Direct replacement for generic parameters
+        if type_id in type_mapping:
+            return type_mapping[type_id]
+        
+        # Step 2: Handle array types that might contain generic elements
+        if self.is_array_type(type_id):
+            # Get element type and resolve it
+            element_type = self.get_array_element_type(type_id)
+            resolved_element = self.resolve_generic_type(element_type, type_mapping)
+            
+            # If element type changed, create new array type
+            if resolved_element != element_type:
+                # Get array size (if fixed)
+                array_size = self.get_array_size(type_id)
+                # Create new array with resolved element type
+                return self.register_array_type(resolved_element, array_size)
+        
+        # Step 3: If we get here, it's not a generic type or already concrete
+        return type_id
+
+    def instantiate_generic_struct(self, generic_struct_id, concrete_types):
+        """Create a concrete instance of a generic struct
+        
+        Args:
+            generic_struct_id: The type ID of the generic struct template
+            concrete_types: List of concrete type IDs to use for instantiation
+            
+        Returns:
+            Type ID of the concrete instantiated struct
+        """
+        # Step 1: Validate the generic struct
+        descriptor = self._type_descriptors.get(generic_struct_id)
+        if descriptor is None or descriptor.kind != self.TYPE_KIND_STRUCT:
+            return -1
+        
+        # Step 2: Check if it's actually a generic struct
+        if len(descriptor.param_mapping) == 0:
+            return generic_struct_id  # Not generic, return as is
+        
+        # Step 3: Ensure correct number of concrete types provided
+        if len(concrete_types) != len(descriptor.param_mapping):
+            return -1
+        
+        # Step 4: Create hashable key for caching
+        concrete_tuple = tuple(concrete_types)
+        
+        # Step 5: Check cache for existing instantiation
+        if concrete_tuple in descriptor.instantiations:
+            return descriptor.instantiations[concrete_tuple]
+            
+        # Step 6: Generate concrete struct name
+        generic_name = descriptor.name
+        
+        # Convert each concrete type to a string name
+        type_names = []
+        for type_id in concrete_types:
+            type_names.append(self.var_type_to_string(type_id))
+        
+        concrete_name = "%s_%s" % (generic_name, "_".join(type_names))
+        
+        # Step 7: Create mapping from generic params to concrete types
+        type_mapping = {}
+        param_index = 0
+        for param_name, param_id in descriptor.param_mapping.items():
+            if param_index < len(concrete_types):
+                type_mapping[param_id] = concrete_types[param_index]
+            param_index += 1
+        
+        # Step 8: Create the concrete struct
+        concrete_id = self.register_struct(concrete_name, parent_id=descriptor.parent_id)
+        
+        # Step 9: Copy and transform fields
+        field_index = 0
+        while field_index < len(descriptor.fields):
+            field_name, field_type = descriptor.fields[field_index]
+            
+            # Resolve field type if it's generic
+            concrete_field_type = self.resolve_generic_type(field_type, type_mapping)
+            self.add_field(concrete_name, field_name, concrete_field_type)
+            
+            field_index += 1
+        
+        # Step 10: Cache the instantiation
+        descriptor.instantiations[concrete_tuple] = concrete_id
+        
+        return concrete_id
+
+    def instantiate_generic_method(self, method_name, generic_struct_id, concrete_struct_id):
+        """Create a concrete method implementation from a generic method
+        
+        Args:
+            method_name: Name of the method to instantiate
+            generic_struct_id: Type ID of the generic struct template
+            concrete_struct_id: Type ID of the concrete struct instance
+            
+        Returns:
+            ID of the concrete instantiated method
+        """
+        # Step 1: Find the generic method
+        generic_method_id = self.lookup_function(method_name, generic_struct_id)
+        if generic_method_id == -1:
+            return -1
+        
+        # Step 2: Get the generic struct descriptor and method
+        generic_descriptor = self._type_descriptors.get(generic_struct_id)
+        if generic_descriptor is None or generic_descriptor.kind != self.TYPE_KIND_STRUCT:
+            return -1
+            
+        generic_method = self.get_func_from_id(generic_method_id)
+        if generic_method is None:
+            return -1
+        
+        # Step 3: Get the concrete struct descriptor
+        concrete_descriptor = self._type_descriptors.get(concrete_struct_id)
+        if concrete_descriptor is None:
+            return -1
+            
+        # Step 4: Create type mapping by comparing concrete name to generic template
+        # Format of concrete name should be: OriginalName_Type1_Type2...
+        concrete_name = concrete_descriptor.name
+        name_parts = concrete_name.split('_')
+        
+        # Need at least the base name plus concrete types
+        if len(name_parts) <= 1:
+            return -1
+            
+        # Extract concrete type names and convert to IDs
+        concrete_types = []
+        part_index = 1  # Skip the base name
+        while part_index < len(name_parts):
+            type_name = name_parts[part_index]
+            type_id = self._get_type_id_from_name(type_name)
+            if type_id != -1:
+                concrete_types.append(type_id)
+            part_index += 1
+        
+        # Step 5: Create the mapping from generic param IDs to concrete type IDs
+        type_mapping = {}
+        param_index = 0
+        for param_name, param_id in generic_descriptor.param_mapping.items():
+            if param_index < len(concrete_types):
+                type_mapping[param_id] = concrete_types[param_index]
+            param_index += 1
+        
+        # Step 6: Transform return type
+        concrete_return_type = self.resolve_generic_type(generic_method.return_type, type_mapping)
+        
+        # Step 7: Transform parameter types
+        concrete_params = []
+        param_index = 0
+        while param_index < len(generic_method.params):
+            param_name, param_type, is_byref = generic_method.params[param_index]
+            concrete_param_type = self.resolve_generic_type(param_type, type_mapping)
+            concrete_params.append((param_name, concrete_param_type, is_byref))
+            param_index += 1
+        
+        # Step 8: Register concrete method
+        return self.register_function(
+            method_name, 
+            concrete_return_type, 
+            concrete_params,
+            concrete_struct_id, 
+            generic_method.ast_node,
+            generic_method.is_ref_return
+        )
+
+    def _get_type_id_from_name(self, type_name):
+        """Helper to get type ID from name for both primitive types and structs
+        
+        Args:
+            type_name: String name of a type
+            
+        Returns:
+            Type ID or -1 if not found
+        """
+        # Step 1: Check primitive types first
+        for type_id, name in TYPE_TO_STRING_MAP.items():
+            if name == type_name:
+                return type_id
+                
+        # Step 2: Check struct registry
+        if type_name in self._struct_registry:
+            return self._struct_registry[type_name][0]
+                
+        return -1
 
     def register_typedef(self, alias_name, target_type_id, token=None):
         """Register a type alias"""
@@ -362,6 +587,18 @@ class TypeRegistry:
 
     def var_type_to_string(self, var_type):
         """Convert a type ID to a string representation (without reference info)"""
+        # Step 1: Handle generic parameter types
+        if self.is_generic_param(var_type):
+            # Search for structs that use this parameter ID
+            for struct_id, descriptor in self._type_descriptors.items():
+                if (descriptor.kind == self.TYPE_KIND_STRUCT):
+                    # Check if this struct has the parameter
+                    for param_name, param_id in descriptor.param_mapping.items():
+                        if param_id == var_type:
+                            return param_name
+            # Fallback name if not found
+            return "T%d" % (var_type - TYPE_GENERIC_BASE)
+
         # Basic primitive types
         if var_type in TYPE_TO_STRING_MAP and not self.is_struct_type(var_type):
             return TYPE_TO_STRING_MAP[var_type]
