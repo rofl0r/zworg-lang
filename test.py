@@ -16,6 +16,91 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "generic list implementation",
+            "code": """
+                struct List<T> do
+                    data: T[]      // Array to hold elements
+                    len: int       // Current number of elements
+                    capa: int      // Current capacity
+                end
+
+                def List<T>.init() do
+                    self.data = nil
+                    self.len = 0
+                    self.capa = 0
+                end
+
+                def List<T>.add(value: T) do
+                    // Check if we need to resize
+                    if self.len + 1 > self.capa do
+                        var new_capa: int
+                        if self.capa == 0 do
+                            new_capa = 1
+                        else
+                            new_capa = self.capa * 2  // Double capacity for efficiency
+                        end
+                        self.data = new(self.data, new_capa)
+                        self.capa = new_capa
+                    end
+
+                    // Add the new element
+                    self.data[self.len] = value
+                    self.len = self.len + 1
+                end
+
+                def List<T>.get(index: int): T do
+                    if index < 0 or index >= self.len do
+                        // Basic bounds checking
+                        print("Index out of bounds")
+                    end
+                    return self.data[index]
+                end
+
+                struct Person do
+                    name: string
+                    age: int
+                end
+
+                def Person.init(n: string, a: int) do
+                    self.name = n
+                    self.age = a
+                end
+
+                def main() do
+                    // Test with integers
+                    var int_list := new List<int>()
+                    int_list.add(42)
+                    int_list.add(99)
+                    int_list.add(123)
+
+                    var val1 := int_list.get(0)
+                    var val2 := int_list.get(1)
+                    var val3 := int_list.get(2)
+                    var list_len := int_list.len
+                    var list_capa := int_list.capa
+
+                    // Test with struct elements
+                    var person_list := new List<Person>()
+                    person_list.add(new Person("Alice", 30))
+                    person_list.add(new Person("Bob", 25))
+
+                    var name1 := person_list.get(0).name
+                    var age2 := person_list.get(1).age
+                    var person_len := person_list.len
+                end
+            """,
+            "expected_env": {
+                "val1": 42,
+                "val2": 99,
+                "val3": 123,
+                "list_len": 3,
+                "list_capa": 4,  # After doubling from 2 to 4 when adding the third element
+                "name1": "Alice",
+                "age2": 25,
+                "person_len": 2
+            }
+        },
+        {
             "name": "dynamic array resize basic functionality",
             "code": """
                 def main() do
