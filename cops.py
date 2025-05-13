@@ -151,12 +151,16 @@ def bitwise_not(value, type_):
 # Comparison operators
 def compare_eq(left, right, left_type, right_type):
     """Equality comparison with C semantics"""
+    if left_type == TYPE_STRING and right_type == TYPE_STRING:
+        return 1 if str(left) == str(right) else 0
     if is_float_type(left_type) or is_float_type(right_type):
         return 1 if float(left) == float(right) else 0
     return 1 if int(left) == int(right) else 0
 
 def compare_ne(left, right, left_type, right_type):
     """Not equal comparison with C semantics"""
+    if left_type == TYPE_STRING and right_type == TYPE_STRING:
+        return 1 if str(left) != str(right) else 0
     if is_float_type(left_type) or is_float_type(right_type):
         return 1 if float(left) != float(right) else 0
     return 1 if int(left) != int(right) else 0

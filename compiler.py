@@ -27,10 +27,10 @@ class ASTNode(object):
         return "%s" % ast_node_type_to_string(self.node_type)
 
 class NilNode(ASTNode):
-    def __init__(self, token, target_type=TYPE_UNKNOWN):
+    def __init__(self, token):
         ASTNode.__init__(self, AST_NODE_NIL, token)
         self.ref_kind = REF_KIND_GENERIC
-        self.expr_type = target_type
+        self.expr_type = TYPE_NIL
         self.value = 0
 
     def __repr__(self):
@@ -628,6 +628,10 @@ class Parser:
         if from_ref_kind != REF_KIND_NONE and to_ref_kind == REF_KIND_NONE:
             return False
 
+        # Special case for nil - can be assigned to any reference type
+        if from_type == TYPE_NIL and to_ref_kind != REF_KIND_NONE:
+            return True
+
         # For references, allow inheritance relationships
         if from_ref_kind != REF_KIND_NONE and to_ref_kind != REF_KIND_NONE:
             # Allow dynamic array assignment compatibility if element types match
@@ -692,11 +696,12 @@ class Parser:
                 args.append(self.expression(0))
         return args
 
-    def check_field_compatibility(self, from_type, to_type):
-        """Helper to check field assignment type compatibility"""
-        if not can_promote(from_type, to_type):
-            self.error("Type mismatch: cannot assign %s to field of type %s" % 
-                      (registry.var_type_to_string(from_type), registry.var_type_to_string(to_type)))
+    def check_field_compatibility(self, from_type, from_ref_kind, to_type, to_ref_kind):
+        """Helper to check field assignment type compatibility with reference awareness"""
+        if not self.can_promote_with_ref(from_type, from_ref_kind, to_type, to_ref_kind):
+            self.error("Type mismatch: cannot assign %s to field of type %s" %
+                       (registry.format_type_with_ref_kind(from_type, from_ref_kind),
+                        registry.format_type_with_ref_kind(to_type, to_ref_kind)))
 
     def parse_member_access(self, obj_node):
         """
@@ -752,7 +757,15 @@ class Parser:
             if field_type is None:
                 self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
 
-            return MemberAccessNode(self.token, obj_node, member_name, field_type, obj_ref_kind)
+            # Determine proper reference kind for the field
+            field_ref_kind = obj_ref_kind  # Start with object's reference kind
+
+            # Special case: dynamic arrays always need heap reference kind
+            # We don't allow any other type of reference to be stored in fields
+            if registry.is_array_type(field_type) and registry.get_array_size(field_type) is None:
+                field_ref_kind = REF_KIND_HEAP
+
+            return MemberAccessNode(self.token, obj_node, member_name, field_type, field_ref_kind)
 
     def parse_return_type(self, struct_id=-1):
         """Parse function return type with generic parameter support"""
@@ -1682,7 +1695,7 @@ class Parser:
 
         # Post-checks based on context
         if context_type == ASSIGN_CTX_MEMBER_ACCESS:
-            self.check_field_compatibility(expr.expr_type, target_type)
+            self.check_field_compatibility(expr.expr_type, expr.ref_kind, target_type, lhs.ref_kind)
         elif context_type == ASSIGN_CTX_ARRAY_ELEMENT:
             if not can_promote(expr.expr_type, target_type):
                 self.type_mismatch_error("Array element assignment", expr.expr_type, target_type)
@@ -1821,8 +1834,8 @@ class Parser:
                 elif expr.expr_type == TYPE_DOUBLE and var_type == TYPE_FLOAT:
                     # Allow double literals to initialize float variables
                     pass
-            elif expr.expr_type != TYPE_UNKNOWN and var_type != expr.expr_type and not can_promote(expr.expr_type, var_type):
-                self.type_mismatch_error("Type mismatch in initialization", expr.expr_type, var_type)
+            elif expr.expr_type != TYPE_UNKNOWN and expr.expr_type != TYPE_NIL and var_type != expr.expr_type and not can_promote(expr.expr_type, var_type):
+                self.type_mismatch_error("xType mismatch in initialization", expr.expr_type, var_type)
 
         # Register the variable as defined in the current scope
         if self.env.get(var_name, all_scopes=False):

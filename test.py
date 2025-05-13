@@ -16,6 +16,169 @@ def test():
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "generic map implementation",
+            "code": """
+                struct List<T> do
+                    data: T[]      // Array to hold elements
+                    len: int       // Current number of elements
+                    capa: int      // Current capacity
+                end
+        
+                def List<T>.init() do
+                    self.data = nil
+                    self.len = 0
+                    self.capa = 0
+                end
+        
+                def List<T>.add(value: T) do
+                    // Check if we need to resize
+                    if self.len + 1 > self.capa do
+                        var new_capa: int
+                        if self.capa == 0 do
+                            new_capa = 1
+                        end else do
+                            new_capa = self.capa * 2  // Double capacity for efficiency
+                        end
+                        self.data = new(self.data, new_capa)
+                        self.capa = new_capa
+                    end
+        
+                    // Add the new element
+                    self.data[self.len] = value
+                    self.len = self.len + 1
+                end
+        
+                def List<T>.get(index: int): T do
+                    if index < 0 or index >= self.len do
+                        // Basic bounds checking
+                        print("Index out of bounds")
+                    end
+                    return self.data[index]
+                end
+        
+                struct Map<K,V> do
+                    keys: K[]      // Array to hold keys
+                    values: V[]    // Array to hold values
+                    len: int       // Current number of key-value pairs
+                    capa: int      // Current capacity
+                end
+        
+                def Map<K,V>.init() do
+                    self.keys = nil
+                    self.values = nil
+                    self.len = 0
+                    self.capa = 0
+                end
+        
+                def Map<K,V>.set(key: K, value: V) do
+                    // First check if key already exists
+                    var i := 0
+                    while i < self.len do
+                        if self.keys[i] == key do
+                            // Key found, update value
+                            self.values[i] = value
+                            return
+                        end
+                        i = i + 1
+                    end
+                    
+                    // Key not found, need to add new entry
+                    // Check if we need to resize
+                    if self.len + 1 > self.capa do
+                        var new_capa: int
+                        if self.capa == 0 do
+                            new_capa = 1
+                        end else do
+                            new_capa = self.capa * 2  // Double capacity for efficiency
+                        end
+                        self.keys = new(self.keys, new_capa)
+                        self.values = new(self.values, new_capa)
+                        self.capa = new_capa
+                    end
+        
+                    // Add the new key-value pair
+                    self.keys[self.len] = key
+                    self.values[self.len] = value
+                    self.len = self.len + 1
+                end
+        
+                def Map<K,V>.get(key: K, default_value: V): V do
+                    var i := 0
+                    while i < self.len do
+                        if self.keys[i] == key do
+                            // Key found, return associated value
+                            return self.values[i]
+                        end
+                        i = i + 1
+                    end
+                    
+                    // Key not found, return default value
+                    return default_value
+                end
+        
+                def main() do
+                    // Test basic map functionality with primitive types
+                    var int_map := new Map<string, int>()
+                    int_map.set("one", 1)
+                    int_map.set("two", 2)
+                    int_map.set("three", 3)
+                    
+                    var val1 := int_map.get("one", 0)
+                    var val2 := int_map.get("two", 0)
+                    var val3 := int_map.get("nonexistent", -1)  // Should get default -1
+                    
+                    // Update a value
+                    int_map.set("one", 100)
+                    var updated_val := int_map.get("one", 0)
+                    
+                    // Test map with List<int> as values
+                    var list_map := new Map<string, List<int>>()
+                    
+                    // Create and populate a list
+                    var numbers := new List<int>()
+                    numbers.add(10)
+                    numbers.add(20)
+                    numbers.add(30)
+                    
+                    // Create another list
+                    var more_numbers := new List<int>()
+                    more_numbers.add(100)
+                    more_numbers.add(200)
+                    
+                    // Add lists to map
+                    list_map.set("numbers", numbers)
+                    list_map.set("more_numbers", more_numbers)
+                    
+                    // Retrieve and verify list contents
+                    var retrieved_list := list_map.get("numbers", new List<int>())
+                    var list_val1 := retrieved_list.get(0)  // Should be 10
+                    var list_val2 := retrieved_list.get(1)  // Should be 20
+                    
+                    var other_list := list_map.get("more_numbers", new List<int>())
+                    var other_val := other_list.get(1)      // Should be 200
+                    
+                    // Modify list through map
+                    var updated_list := list_map.get("numbers", new List<int>())
+                    updated_list.add(40)
+                    
+                    // Verify list was updated
+                    var final_len := list_map.get("numbers", new List<int>()).len  // Should be 4
+                    var final_val := list_map.get("numbers", new List<int>()).get(3)  // Should be 40
+                end
+            """,
+            "expected_env": {
+                "val1": 1,
+                "val2": 2,
+                "val3": -1,
+                "updated_val": 100,
+                "list_val1": 10,
+                "list_val2": 20,
+                "other_val": 200,
+                "final_len": 4,
+                "final_val": 40
+            }
+        },
+        {
             "name": "generic list implementation",
             "code": """
                 struct List<T> do
@@ -36,7 +199,7 @@ def test():
                         var new_capa: int
                         if self.capa == 0 do
                             new_capa = 1
-                        else
+                        end else do
                             new_capa = self.capa * 2  // Double capacity for efficiency
                         end
                         self.data = new(self.data, new_capa)

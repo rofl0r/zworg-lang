@@ -148,6 +148,8 @@ TYPE_ULONGLONG = 16
 # Floating point types
 TYPE_FLOAT = 17
 TYPE_DOUBLE = 18
+# special nil type, should actually be among the first 3...
+TYPE_NIL = 19
 
 # Type system constants
 TYPE_STRUCT_BASE = 100      # Base for struct types
@@ -155,6 +157,7 @@ TYPE_STRUCT_BASE = 100      # Base for struct types
 # Mapping from type constants to their string representations
 TYPE_TO_STRING_MAP = {
     TYPE_UNKNOWN: "unknown",
+    TYPE_NIL: "nil",
     TYPE_INT: "int",
     TYPE_FLOAT: "float",
     TYPE_UINT: "uint",

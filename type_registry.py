@@ -1,8 +1,9 @@
 # Type registry for struct types
 from shared import *
+from ast_rewriter import AstTypeRewriter, AST_NODE_ALL
 
 PRIMITIVE_TYPES = [
-    TYPE_UNKNOWN, TYPE_VOID, TYPE_STRING,
+    TYPE_UNKNOWN, TYPE_VOID, TYPE_NIL, TYPE_STRING,
     TYPE_I8, TYPE_U8, TYPE_I16, TYPE_U16, TYPE_I32, TYPE_U32,
     TYPE_I64, TYPE_U64, TYPE_INT, TYPE_UINT, TYPE_LONG, TYPE_ULONG,
     TYPE_LONGLONG, TYPE_ULONGLONG, TYPE_FLOAT, TYPE_DOUBLE
@@ -275,7 +276,7 @@ class TypeRegistry:
             param_index += 1
         
         # Step 8: Create the concrete struct
-        concrete_id = self.register_struct(concrete_name, parent_id=descriptor.parent_id)
+        concrete_id = self.register_struct(concrete_name, parent_name=self.get_struct_name(descriptor.parent_id))
         
         # Step 9: Copy and transform fields
         field_index = 0
@@ -371,14 +372,22 @@ class TypeRegistry:
                 concrete_params.append((param_name, concrete_param_type, is_byref))
             
             param_index += 1
-        
-        # Step 7: Register concrete method
+
+        # Step 7: Rewrite AST with all types exchanged
+        complete_type_mapping = dict(type_mapping)  # Make a copy
+        # Add mapping from generic struct ID to concrete struct ID
+        complete_type_mapping[generic_struct_id] = concrete_struct_id
+
+        rewriter = AstTypeRewriter(complete_type_mapping)
+        concrete_ast_node = rewriter.rewrite(generic_method.ast_node, node_types=[AST_NODE_ALL])
+
+        # Step 8: Register the new concrete function
         return self.register_function(
             method_name, 
             concrete_return_type, 
             concrete_params,
             concrete_struct_id, 
-            generic_method.ast_node,
+            concrete_ast_node,
             generic_method.is_ref_return
         )
 
@@ -638,14 +647,7 @@ class TypeRegistry:
         """Convert a type ID to a string representation (without reference info)"""
         # Step 1: Handle generic parameter types
         if self.is_generic_param(var_type):
-            # Search for structs that use this parameter ID
-            for struct_id, descriptor in self._type_descriptors.items():
-                if (descriptor.kind == self.TYPE_KIND_STRUCT):
-                    # Check if this struct has the parameter
-                    for param_name, param_id in descriptor.param_mapping.items():
-                        if param_id == var_type:
-                            return param_name
-            # Fallback name if not found
+            # print a generic name since we dont have access to the struct its used in
             return "T%d" % (var_type - TYPE_GENERIC_BASE)
 
         # Basic primitive types
