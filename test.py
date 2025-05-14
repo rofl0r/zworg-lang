@@ -1,5 +1,6 @@
 # Test framework for compiler.py
 from interpreter import Interpreter
+from crunner import CRunner
 import os, sys
 
 """
@@ -9,12 +10,265 @@ import os, sys
            "expected_env": {"x": 1}
         },
 """
-
-def test():
-    # Test cases with expected final env state
-    test_cases = [
+# Test cases with expected final env state
+test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
+        {
+            "name": "variable declaration with type inference (:=)",
+            "code": "def main() do var x := 5; end",
+            "expected_env": {"x": 5}
+        },
+        {
+           "name": "empty function",
+           "code": """
+               def main() do
+               end
+           """,
+           "expected_env": {}
+        },
+        {
+            "name": "float literal with type inference",
+            "code": "def main() do var y := 3.14; end",
+            "expected_env": {"y": 3.14}
+        },
+        {
+            "name": "explicit int type annotation",
+            "code": "def main() do var x: int = 10; end",
+            "expected_env": {"x": 10}
+        },
+        {
+            "name": "explicit float type annotation",
+            "code": "def main() do var y: float = 2.718; end",
+            "expected_env": {"y": 2.718}
+        },
+        {
+            "name": "const with type inference",
+            "code": "def main() do const x := 42; end",
+            "expected_env": {"x": 42}
+        },
+        {
+            "name": "assignment of same type variable",
+            "code": "def main() do var x := 5; var y := x; end",
+            "expected_env": {"x": 5, "y": 5}
+        },
+        {
+            "name": "assignment expression in while condition (not a comparison)",
+            "code": "def main() do var x := 0; var y := 0; while x = y do y = y + 1; end; end",
+            "expected_env": {"x": 0, "y": 0}
+        },
+        {
+            "name": "Tests operator precedence in expressions (* has higher precedence than +)",
+            "code": "def main() do var x := 5 + 3 * 2; end",
+            "expected_env": {"x": 11}
+        },
+        {
+            "name": "basic if statement with equality comparison",
+            "code": "def main() do var x := 1; if x == 1 do x = 42; end end",
+            "expected_env": {"x": 42}
+        },
+        {
+            "name": "if-else statement (true condition branch taken)",
+            "code": "def main() do var x := 1; var result := 0; if x == 1 do result = x; end else do result = 0; end end",
+            "expected_env": {"x": 1, "result": 1}
+        },
+        {
+            "name": "bitwise OR operator (|)",
+            "code": "def main() do var x := 5 | 3; end",
+            "expected_env": {"x": 7}
+        },
+        {
+            "name": "bitwise AND operator (&)",
+            "code": "def main() do var x := 5 & 3; end",
+            "expected_env": {"x": 1}
+        },
+        {
+            "name": "combination of bitwise operations with variable references",
+            "code": "def main() do var x := 5 | 3; var y := x & 2; end",
+            "expected_env": {"x": 7, "y": 2}
+        },
+        {
+            "name": "logical AND in if condition (evaluates to false)",
+            "code": "def main() do var x := 1; var y := 0; var result := 0; if x and y do result = x; end end", 
+            "expected_env": {"x": 1, "y": 0, "result": 0}
+        },
+        {
+            "name": "xor operator with keywords",
+            "code": "def main() do var x := 5 xor 3; end",
+            "expected_env": {"x": 6}  # 5 xor 3 = 6
+        },
+        {
+            "name": "xor operator with variable references",
+            "code": "def main() do var x := 7; var y := x xor 2; end",
+            "expected_env": {"x": 7, "y": 5}  # 7 xor 2 = 5
+        },
+        {
+            "name": "bitwise NOT unary operator",
+            "code": "def main() do var x := 15; var y := bitnot 3; end",
+            "expected_env": {"x": 15, "y": -4}
+        },
+        {
+            "name": "else-if construct (first false, second true)",
+            "code": "def main() do var x := 1; var result := 0; if x == 0 do result = 0; end else if x == 1 do result = 1; end end",
+            "expected_env": {"x": 1, "result": 1}
+        },
+        {
+            "name": "multiple else-if branches (first & second false, third true)",
+            "code": "def main() do var result:= 0; var x := 3; if x == 1 do result=1; end else if x == 2 do result=2; end else if x == 3 do result=42; end end",
+            "expected_env": {"x": 3, "result":42}
+        },
+        {
+            "name": "mixed int and float operations",
+            "code": "def main() do var x: int = 5; var y: float = 2.5; var z := y; end", 
+            "expected_env": {"x": 5, "y": 2.5, "z": 2.5}  # Variable declaration with inferred type from another variable
+        },
+        {
+            "name": "int division",
+            "code": "def main() do var x := 10; var y := 3; var z := x / y; end",
+            "expected_env": {"x": 10, "y": 3, "z": 3}  # Integer division
+        },
+        {
+            "name": "float division",
+            "code": "def main() do var x := 10.0; var y := 3.0; var z := x / y; end",
+            "expected_env": {"x": 10.0, "y": 3.0, "z": 3.3333333333333335}  # Float division
+        },
+        {
+            "name": "Tests assignment as expression in while condition",
+            "code": "def main() do var x := 10; var y := 0; while (y = y + 1) < 5 do x -= 1; end end",
+            "expected_env": {"x": 6, "y": 5}
+        },
+        {
+           "name": "long variable declaration and operations",
+           "code": """
+               def main() do
+                   var x : long = 42l;
+                   var y := 10l;
+                   var z : long = x + y;
+                   print z;
+                   z = z / 2;
+                   print z;
+                   z = z * 3;
+                   print z;
+               end
+           """,
+           "expected_env": {"x": 42, "y": 10, "z": 78}
+        },
+        {
+           "name": "ulong variable declaration and operations",
+           "code": """
+               def main() do
+                   var x : ulong = 42ul;
+                   var y := 10ul;
+                   var z : ulong = x + y;
+                   print z;
+                   z = z / 2;
+                   print z;
+                   z = z * 3;
+                   print z;
+               end
+           """,
+           "expected_env": {"x": 42, "y": 10, "z": 78}
+        },
+        {
+           "name": "mixed types variable declaration - type inference",
+           "code": """
+               def main() do
+                   var a := 0b101010;     // int
+                   var b := 42u;    // uint
+                   var c := 42_000_l;    // long
+                   var d := 42ul;   // ulong
+                   var e := 42.0;   // float
+                   var f := 0xcafe_babe_ull // unsigned long long
+
+                   // Test assignments to explicitly typed variables
+                   var x : int = 10;
+                   var y : uint = 20u;
+                   var z : long = 30l;
+                   var w : ulong = 40ul;
+                   var v : float = 50.0;
+                   var u : longlong = 0xcafebabe
+
+                   print a;
+                   print b;
+                   print c;
+                   print d;
+                   print e;
+               end
+           """,
+           "expected_env": {"a": 42, "b": 42, "c": 42000, "d": 42, "e": 42.0, "f": 0xcafebabe,
+                        "x": 10, "y": 20, "z": 30, "w": 40, "v": 50.0, "u": 0xcafebabe}
+        },
+        {
+           "name": "unsigned int division",
+           "code": """
+               def main() do
+                   var x : uint = 10u;
+                   var y : uint = 3u;
+                   var z : uint = x / y;  // Should be 3 (truncated)
+                   print z;
+               end
+           """,
+           "expected_env": {"x": 10, "y": 3, "z": 3}
+        },
+        {
+           "name": "signed division with negative numbers",
+           "code": """
+               def main() do
+                   var x : int = -10;
+                   var y : int = 3;
+                   var z : int = x / y;  // Should be -3 (truncated toward zero)
+                   print z;
+
+                   var a : int = 10;
+                   var b : int = -3;
+                   var c : int = a / b;  // Should be -3
+                   print c;
+
+                   var m : int = -10;
+                   var n : int = -3;
+                   var o : int = m / n;  // Should be 3
+                   print o;
+               end
+           """,
+           "expected_env": {"x": -10, "y": 3, "z": -3,
+                        "a": 10, "b": -3, "c": -3,
+                        "m": -10, "n": -3, "o": 3}
+        },
+        {
+            "name": "Struct with no fields",
+            "code": """
+                struct EmptyStruct do end
+                def main() do end
+            """,
+            "expected_env": {}
+        },
+        {
+           "name": "constructing struct without init",
+           "code": """
+		struct NoInit do x:int; end
+                def main() do var x:= NoInit(); var y:=x.x; end
+           """,
+           "expected_env": {"y": 0}
+        },
+        {
+           "name": "recursion",
+           "code": """
+		def fib(n:int):int do if n <= 1 do return n; end
+			return fib(n-1) + fib(n-2) ; end
+		def main() do var result:= fib(10); end
+           """,
+           "expected_env": {"result": 55}
+        },
+        {
+           "name": "method chaining",
+           "code": """
+		struct Foo do x:int; end;
+                def Foo.init(x:int) do self.x = x; end
+                def Foo.inc(n:int):Foo do return Foo(self.x + n); end
+                def main() do var x:= Foo(1).inc(1).inc(1).inc(1).x; end
+           """,
+           "expected_env": {"x": 4}
+        },
         {
             "name": "generic map implementation",
             "code": """
@@ -1759,41 +2013,6 @@ def test():
             "expected_env": {"y": 3.0, "x": 10, "z": 3.3333333333333335}
         },
         {
-            "name": "Struct with no fields",
-            "code": """
-                struct EmptyStruct do end
-                def main() do end
-            """,
-            "expected_env": {}
-        },
-        {
-           "name": "constructing struct without init",
-           "code": """
-		struct NoInit do x:int; end
-                def main() do var x:= NoInit(); var y:=x.x; end
-           """,
-           "expected_env": {"y": 0}
-        },
-        {
-           "name": "recursion",
-           "code": """
-		def fib(n:int):int do if n <= 1 do return n; end
-			return fib(n-1) + fib(n-2) ; end
-		def main() do var result:= fib(10); end
-           """,
-           "expected_env": {"result": 55}
-        },
-        {
-           "name": "method chaining",
-           "code": """
-		struct Foo do x:int; end;
-                def Foo.init(x:int) do self.x = x; end
-                def Foo.inc(n:int):Foo do return Foo(self.x + n); end
-                def main() do var x:= Foo(1).inc(1).inc(1).inc(1).x; end
-           """,
-           "expected_env": {"x": 4}
-        },
-        {
            "name": "calling methods on temporary struct instance",
            "code": """
         struct Vector do x: int; y: int ; end
@@ -2022,226 +2241,6 @@ def test():
                 def main() do var result := add(1, add(1, 3l)); end
            """,
            "expected_env": {"result": 5}
-        },
-        {
-           "name": "empty function",
-           "code": """
-               def main() do
-               end
-           """,
-           "expected_env": {}
-        },
-        {
-            "name": "variable declaration with type inference (:=)",
-            "code": "def main() do var x := 5; end",
-            "expected_env": {"x": 5}
-        },
-        {
-            "name": "float literal with type inference",
-            "code": "def main() do var y := 3.14; end",
-            "expected_env": {"y": 3.14}
-        },
-        {
-            "name": "explicit int type annotation",
-            "code": "def main() do var x: int = 10; end",
-            "expected_env": {"x": 10}
-        },
-        {
-            "name": "explicit float type annotation",
-            "code": "def main() do var y: float = 2.718; end",
-            "expected_env": {"y": 2.718}
-        },
-        {
-            "name": "const with type inference",
-            "code": "def main() do const x := 42; end",
-            "expected_env": {"x": 42}
-        },
-        {
-            "name": "assignment of same type variable",
-            "code": "def main() do var x := 5; var y := x; end",
-            "expected_env": {"x": 5, "y": 5}
-        },
-        {
-            "name": "assignment expression in while condition (not a comparison)",
-            "code": "def main() do var x := 0; var y := 0; while x = y do y = y + 1; end; end",
-            "expected_env": {"x": 0, "y": 0}
-        },
-        {
-            "name": "Tests operator precedence in expressions (* has higher precedence than +)",
-            "code": "def main() do var x := 5 + 3 * 2; end",
-            "expected_env": {"x": 11}
-        },
-        {
-            "name": "basic if statement with equality comparison",
-            "code": "def main() do var x := 1; if x == 1 do print x; end end",
-            "expected_env": {"x": 1}
-        },
-        {
-            "name": "if-else statement (true condition branch taken)",
-            "code": "def main() do var x := 1; var result := 0; if x == 1 do result = x; end else do result = 0; end end",
-            "expected_env": {"x": 1, "result": 1}
-        },
-        {
-            "name": "bitwise OR operator (|)",
-            "code": "def main() do var x := 5 | 3; end",
-            "expected_env": {"x": 7}
-        },
-        {
-            "name": "bitwise AND operator (&)",
-            "code": "def main() do var x := 5 & 3; end",
-            "expected_env": {"x": 1}
-        },
-        {
-            "name": "combination of bitwise operations with variable references",
-            "code": "def main() do var x := 5 | 3; var y := x & 2; end",
-            "expected_env": {"x": 7, "y": 2}
-        },
-        {
-            "name": "logical AND in if condition (evaluates to false)",
-            "code": "def main() do var x := 1; var y := 0; var result := 0; if x and y do result = x; end end", 
-            "expected_env": {"x": 1, "y": 0, "result": 0}
-        },
-        {
-            "name": "xor operator with keywords",
-            "code": "def main() do var x := 5 xor 3; end",
-            "expected_env": {"x": 6}  # 5 xor 3 = 6
-        },
-        {
-            "name": "xor operator with variable references",
-            "code": "def main() do var x := 7; var y := x xor 2; end",
-            "expected_env": {"x": 7, "y": 5}  # 7 xor 2 = 5
-        },
-        {
-            "name": "bitwise NOT unary operator",
-            "code": "def main() do var x := 15; var y := bitnot 3; end",
-            "expected_env": {"x": 15, "y": -4}
-        },
-        {
-            "name": "else-if construct (first false, second true)",
-            "code": "def main() do var x := 1; var result := 0; if x == 0 do result = 0; end else if x == 1 do result = 1; end end",
-            "expected_env": {"x": 1, "result": 1}
-        },
-        {
-            "name": "multiple else-if branches (first & second false, third true)",
-            "code": "def main() do var x := 3; if x == 1 do print 1; end else if x == 2 do print 2; end else if x == 3 do print 3; end end",
-            "expected_env": {"x": 3}
-        },
-        {
-            "name": "mixed int and float operations",
-            "code": "def main() do var x: int = 5; var y: float = 2.5; var z := y; end", 
-            "expected_env": {"x": 5, "y": 2.5, "z": 2.5}  # Variable declaration with inferred type from another variable
-        },
-        {
-            "name": "int division",
-            "code": "def main() do var x := 10; var y := 3; var z := x / y; end",
-            "expected_env": {"x": 10, "y": 3, "z": 3}  # Integer division
-        },
-        {
-            "name": "float division",
-            "code": "def main() do var x := 10.0; var y := 3.0; var z := x / y; end",
-            "expected_env": {"x": 10.0, "y": 3.0, "z": 3.3333333333333335}  # Float division
-        },
-        {
-            "name": "Tests assignment as expression in while condition",
-            "code": "def main() do var x := 10; var y := 0; while (y = y + 1) < 5 do x -= 1; end end",
-            "expected_env": {"x": 6, "y": 5}
-        },
-        {
-           "name": "long variable declaration and operations",
-           "code": """
-               def main() do
-                   var x : long = 42l;
-                   var y := 10l;
-                   var z : long = x + y;
-                   print z;
-                   z = z / 2;
-                   print z;
-                   z = z * 3;
-                   print z;
-               end
-           """,
-           "expected_env": {"x": 42, "y": 10, "z": 78}
-        },
-        {
-           "name": "ulong variable declaration and operations",
-           "code": """
-               def main() do
-                   var x : ulong = 42ul;
-                   var y := 10ul;
-                   var z : ulong = x + y;
-                   print z;
-                   z = z / 2;
-                   print z;
-                   z = z * 3;
-                   print z;
-               end
-           """,
-           "expected_env": {"x": 42, "y": 10, "z": 78}
-        },
-        {
-           "name": "mixed types variable declaration - type inference",
-           "code": """
-               def main() do
-                   var a := 0b101010;     // int
-                   var b := 42u;    // uint
-                   var c := 42_000_l;    // long
-                   var d := 42ul;   // ulong
-                   var e := 42.0;   // float
-                   var f := 0xcafe_babe_ull // unsigned long long
-
-                   // Test assignments to explicitly typed variables
-                   var x : int = 10;
-                   var y : uint = 20u;
-                   var z : long = 30l;
-                   var w : ulong = 40ul;
-                   var v : float = 50.0;
-                   var u : longlong = 0xcafebabe
-
-                   print a;
-                   print b;
-                   print c;
-                   print d;
-                   print e;
-               end
-           """,
-           "expected_env": {"a": 42, "b": 42, "c": 42000, "d": 42, "e": 42.0, "f": 0xcafebabe,
-                        "x": 10, "y": 20, "z": 30, "w": 40, "v": 50.0, "u": 0xcafebabe}
-        },
-        {
-           "name": "unsigned int division",
-           "code": """
-               def main() do
-                   var x : uint = 10u;
-                   var y : uint = 3u;
-                   var z : uint = x / y;  // Should be 3 (truncated)
-                   print z;
-               end
-           """,
-           "expected_env": {"x": 10, "y": 3, "z": 3}
-        },
-        {
-           "name": "signed division with negative numbers",
-           "code": """
-               def main() do
-                   var x : int = -10;
-                   var y : int = 3;
-                   var z : int = x / y;  // Should be -3 (truncated toward zero)
-                   print z;
-
-                   var a : int = 10;
-                   var b : int = -3;
-                   var c : int = a / b;  // Should be -3
-                   print c;
-
-                   var m : int = -10;
-                   var n : int = -3;
-                   var o : int = m / n;  // Should be 3
-                   print o;
-               end
-           """,
-           "expected_env": {"x": -10, "y": 3, "z": -3,
-                        "a": 10, "b": -3, "c": -3,
-                        "m": -10, "n": -3, "o": 3}
         },
         {
            "name": "assignment in expression-condition",
@@ -2812,10 +2811,31 @@ def test():
             """,
             "expected_error": "Cannot use initializer for struct 'Point' because it has a constructor"
         },
-    ]
+]
 
-    # List to track failing tests
-    interpreter = Interpreter()
+def values_equal(expected, actual):
+    """
+    Compare two values with special handling for floating-point numbers.
+    Rounds floating-point numbers to 4 decimal places before comparison.
+
+    Args:
+        expected: The expected value
+        actual: The actual value
+
+    Returns:
+        bool: True if values are equal (with rounding for floats), False otherwise
+    """
+    # Check if both values are floating-point types
+    if isinstance(expected, float) and isinstance(actual, float):
+        # Round to 4 decimal places before comparing
+        return round(expected, 4) == round(actual, 4)
+    # For other types, use standard equality comparison
+    return expected == actual
+
+def test(use_interpreter=True):
+    # Use either Interpreter or CRunner based on parameter
+    interpreter = Interpreter() if use_interpreter else CRunner()
+
     failed_tests = []
 
     # Run all test cases
@@ -2843,6 +2863,8 @@ def test():
                 # Add AST dump for unexpected failures
                 if result.get('ast'):
                     print("AST dump: %s" % result['ast'])
+                if result.get('c_code'):
+                    print("C code: %s" % result['c_code'])
 
         else:
             # This is a test that should succeed
@@ -2862,11 +2884,13 @@ def test():
                     v = test_case["expected_env"][k]
                     if k not in env:
                         mismatches.append("{}: want {} got: None".format(k, v))
-                    elif env[k] != v:
+                    elif not values_equal(v, env[k]):
                         mismatches.append("{}: want {} got: {}".format(k, v, env[k]))
 
                 if len(mismatches) == 0:
                     print("Success! Environment matches expectations.")
+                    if result.get('c_code'):
+                        print("C code: %s" % result['c_code'])
                 else:
                     printc("red", "Input: %s" % add_line_numbers(test_case["code"]))
                     print("Test passed but with incorrect environment values:")
@@ -2877,6 +2901,8 @@ def test():
                     failed_tests.append(test_num)
                     if result.get('ast'):
                         print("AST dump: %s" % result['ast'])
+                    if result.get('c_code'):
+                        print("C code: %s" % result['c_code'])
 
             else:
                 printc("red", "Failed! Error: %s" % result['error'])
@@ -2887,6 +2913,8 @@ def test():
                 failed_tests.append(test_num)
                 if result.get('ast'):
                     print("AST dump: %s" % result['ast'])
+                if result.get('c_code'):
+                    print("C code: %s" % result['c_code'])
 
     # Print statistics at the end
     print("\n========== Test Results ==========")
@@ -2918,5 +2946,9 @@ def printc(color, text, file=sys.stdout):
 	colstr = "\033[%dm"
 	file.write( "%s%s%s" % (colstr%cols[color], text, colstr%cols['end']) )
 
-if __name__ == '__main__':
-    test()
+if __name__ == "__main__":
+    import sys
+    use_interp = len(sys.argv) <= 1 or sys.argv[1] != 'c'
+    test(use_interp)
+    if not use_interp:
+        print("\nUsing C backend for tests")
