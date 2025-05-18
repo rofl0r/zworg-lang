@@ -165,7 +165,7 @@ class CCodeGenerator:
 
     def generate_function_prototype(self, node):
         """Generate C function prototype"""
-        func_name = self.get_method_name(node)
+        func_name = self.get_method_name_from_node(node)
 
         # Generate return type
         ret_type = self.type_to_c(node.return_type) #if hasattr(node, 'return_type') else 'void'
@@ -229,7 +229,7 @@ class CCodeGenerator:
     def generate_function(self, node):
         """Generate C code for a function definition"""
         # make C-compatible method name
-        func_name = self.get_method_name(node)
+        func_name = self.get_method_name_from_node(node)
         self.current_function = func_name
 
         # Clear test printfs for this function
@@ -355,7 +355,12 @@ class CCodeGenerator:
         self.indent_level -= 1
         self.output.write(self.indent() + '}\n')
 
-    def get_method_name(self, node):
+    def get_method_name(self, struct_name, func_name):
+        if struct_name:
+            func_name = "%s_%s" % (struct_name, func_name)
+        return func_name
+
+    def get_method_name_from_node(self, node):
         func_name = node.name
         struct_name = None
 
@@ -368,10 +373,8 @@ class CCodeGenerator:
                     struct_name = self.registry.get_struct_name(node.parent_struct_id)
         else:
             assert(0)
+        return self.get_method_name(struct_name, func_name)
 
-        if struct_name:
-            func_name = "%s_%s" % (struct_name, func_name)
-        return func_name
 
     def generate_expression(self, node):
         """Generate C code for an expression"""
@@ -404,7 +407,7 @@ class CCodeGenerator:
             return '%s(%s)' % (op, operand)
 
         elif node.node_type == AST_NODE_CALL:
-            func_name = self.get_method_name(node)
+            func_name = self.get_method_name_from_node(node)
             args = []
             for arg in node.args:
                 args.append(self.generate_expression(arg))
