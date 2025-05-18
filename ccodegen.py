@@ -28,6 +28,20 @@ typedef long long longlong;
 typedef unsigned long long ulonglong;
 typedef char* string;
 
+#include "handle_alloc.c"
+
+/* Global handle allocator */
+static struct handle_allocator ha;
+
+"""
+
+main_header = """
+int main(int argc, char **argv) {
+	int stack_base;
+	ha_init(&ha, &stack_base);
+	zw_main();
+	return 0;
+}
 """
 
 # Map operators to C operators
@@ -55,7 +69,11 @@ class CCodeGenerator:
         self.test_printfs = []
 
     def indent(self):
-        return '  ' * self.indent_level
+        return '\t' * self.indent_level
+
+    def make_reserved_identifier(self, name):
+        """Transform an identifier into a reserved one by adding zw_ prefix"""
+        return "zw_" + name
 
     def generate_header(self):
         """Generate C typedefs and standard includes"""
@@ -94,7 +112,14 @@ class CCodeGenerator:
         for func in functions:
             self.generate_function(func)
 
+        # Generate the real C main function at the end
+        self.generate_c_main()
+
         return self.output.getvalue()
+
+    def generate_c_main(self):
+        """Generate the C main function that initializes the runtime and calls zw_main"""
+        self.output.write(main_header)
 
     def generate_struct_def(self, node):
         """Generate C code for a struct definition"""
@@ -142,8 +167,6 @@ class CCodeGenerator:
         """Generate C function prototype"""
         func_name = self.get_method_name(node)
 
-        if func_name == 'main': return # we dont need a forward decl for main
-
         # Generate return type
         ret_type = self.type_to_c(node.return_type) #if hasattr(node, 'return_type') else 'void'
 
@@ -162,6 +185,7 @@ class CCodeGenerator:
         param_str = ', '.join(params) if params else 'void'
 
         # Function prototype
+        if func_name == "main": func_name = self.make_reserved_identifier("main")
         self.output.write('%s %s(%s);\n' % (ret_type, func_name, param_str))
 
     def generate_global_var(self, node):
@@ -217,14 +241,10 @@ class CCodeGenerator:
             return
 
         func_obj = self.registry.get_func_from_id(func_id)
-        body = func_obj.ast_node.body #if hasattr(func_obj.ast_node, 'body') else []
+        body = func_obj.ast_node.body
 
         # Generate return type
-        # Special case for main - always use int return type
-        if func_name == 'main':
-            ret_type = 'int'
-        else:
-            ret_type = self.type_to_c(func_obj.return_type) #if hasattr(func_obj, 'return_type') else 'void'
+        ret_type = self.type_to_c(func_obj.return_type)
 
         # Generate parameter list
         params = []
@@ -239,7 +259,11 @@ class CCodeGenerator:
         param_str = ', '.join(params) if params else 'void'
 
         # Function signature
-        self.output.write('\n%s %s(%s) {\n' % (ret_type, func_name, param_str))
+        # Special case for main - use internal identifier
+        out_func_name = func_name
+        if func_name == 'main':
+            out_func_name = self.make_reserved_identifier('main')
+        self.output.write('\n%s %s(%s) {\n' % (ret_type, out_func_name, param_str))
 
         # Function body
         self.indent_level += 1
