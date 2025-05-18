@@ -178,7 +178,10 @@ class CCodeGenerator:
             c_type = self.type_to_c(param_type)
 
             # Handle byref params
-            if is_byref:
+            # Only add * for primitive types, not for handles
+            # Since handles are already reference types
+            is_struct = self.registry.is_struct_type(param_type)
+            if is_byref and not is_struct:
                 c_type += '*'
             params.append('%s %s' % (c_type, param_name))
 
@@ -219,9 +222,7 @@ class CCodeGenerator:
             return "%s*" % elem_type
 
         elif self.registry.is_struct_type(type_id):
-            # For structs, use struct name
-            struct_name = self.registry.get_struct_name(type_id)
-            return "struct %s" % struct_name
+            return "handle"
 
         return "void"  # Default fallback
 
@@ -249,10 +250,11 @@ class CCodeGenerator:
         # Generate parameter list
         params = []
         for param in func_obj.params:
-            param_name, param_type, byref = param
+            param_name, param_type, is_byref = param
             param_type_str = self.type_to_c(param_type)
             # Handle byref params
-            if byref:
+            is_struct = self.registry.is_struct_type(param_type)
+            if is_byref and not is_struct:
                 param_type_str += '*'
             params.append('%s %s' % (param_type_str, param_name))
 
@@ -428,16 +430,13 @@ class CCodeGenerator:
 
         elif node.node_type == AST_NODE_STRUCT_INIT:
             # Generate struct initialization
-            struct_type = node.struct_name
-
-            # For now, initialize with default values (all zeros)
-            # If this is a constructor call with args, we'd handle it differently
-            return '(struct %s) { 0 }' % struct_type
+            return 'ha_obj_alloc(&ha, sizeof(struct %s))' % node.struct_name
 
         elif node.node_type == AST_NODE_MEMBER_ACCESS:
             # Generate member access expression
             expr = self.generate_expression(node.obj)
-            return '(%s).%s' % (expr, node.member_name)
+            struct_name = self.registry.get_struct_name(node.obj.expr_type)
+            return '((struct %s*)(ha_obj_get_ptr(&ha, %s)))->%s' % (struct_name, expr, node.member_name)
 
         return "/* Unknown expression */"
 
