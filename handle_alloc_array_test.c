@@ -20,7 +20,7 @@ void test_array_basic() {
     printf("Testing basic array allocation...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Test 1: Allocate array of ints
     int array_size = 10;
@@ -55,7 +55,7 @@ void test_static_array() {
     printf("Testing static array allocation...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Test 1: Create a handle for static array
     handle h_static = ha_array_alloc(&ha, sizeof(test_const_data), (void*)test_const_data);
@@ -92,7 +92,7 @@ void test_array_realloc() {
     printf("Testing array reallocation...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Test 1: Allocate and then reallocate
     int initial_size = 5;
@@ -153,7 +153,7 @@ void test_mixed_allocations() {
     printf("Testing mixed object and array allocations...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Allocate arrays
     handle h_array1 = ha_array_alloc(&ha, sizeof(int) * 10, NULL);
@@ -205,7 +205,7 @@ void test_edge_cases() {
     printf("Testing edge cases...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Test 1: Zero-sized array (should still allocate something)
     handle h_zero = ha_array_alloc(&ha, 0, NULL);
@@ -245,7 +245,7 @@ void test_many_arrays() {
     printf("Testing many array allocations...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     #define NUM_ARRAYS 1000
     handle handles[NUM_ARRAYS];

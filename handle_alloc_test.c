@@ -22,7 +22,7 @@ void test_simple_allocation() {
     printf("Testing simple allocation...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Allocate a single object
     handle h = ha_obj_alloc(&ha, sizeof(Point));
@@ -53,7 +53,7 @@ void test_multiple_sizes() {
     printf("Testing multiple size classes...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Allocate objects of different sizes
     handle h1 = ha_obj_alloc(&ha, sizeof(Point));
@@ -94,7 +94,7 @@ void test_reuse_after_free() {
     printf("Testing handle reuse after free...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Allocate and free to set up the free list
     handle h1 = ha_obj_alloc(&ha, sizeof(Point));
@@ -119,7 +119,7 @@ void test_multiple_allocations() {
     printf("Testing multiple allocations and capacity growth...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Allocate many objects to force capacity growth
     #define NUM_OBJECTS 1000
@@ -186,7 +186,7 @@ void test_nil_handle() {
     printf("Testing nil handle behavior...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Test that handle_nil is properly defined
     assert(handle_nil.idx == 0);
@@ -204,7 +204,7 @@ void test_different_sized_allocators() {
     printf("Testing different sized allocators...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     // Create a range of differently-sized objects
     //handle h_1byte = ha_obj_alloc(&ha, 1);
@@ -243,7 +243,7 @@ void test_allocation_pattern() {
     printf("Testing complex allocation pattern...\n");
 
     struct handle_allocator ha;
-    ha_init(&ha);
+    ha_init(&ha, &ha);
 
     #define PATTERN_SIZE 100
     handle handles[PATTERN_SIZE];

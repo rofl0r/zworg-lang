@@ -9,7 +9,7 @@ typedef struct handle
 {
 	uint32_t idx;
 	uint16_t allocator_id;
-	uint16_t generation; /* currently unused */
+	uint16_t generation; /* currently only used with DEBUG_ALLOCATOR */
 } handle;
 
 static const handle handle_nil = {0};
@@ -84,6 +84,7 @@ void *allocator_get_ptr(struct allocator *self, uint32_t index) {
 
 struct handle_allocator {
 	struct allocator *allocators;
+	void *stackbase; // TODO: once we support threads, this needs to be a separate _Thread_local variable
 	size_t count;
 };
 
@@ -102,7 +103,7 @@ find_allocator_for_size(struct handle_allocator *self, uint32_t size) {
 
 handle ha_obj_alloc(struct handle_allocator *self, uint32_t size) {
 	if(find_allocator_for_size(self, size) == (size_t)-1) {
-		assert(self->count <= 0xffff); /* currently only 64k possible sizeclasses */
+		assert(self->count <= 0xfffe); /* currently only 64k possible sizeclasses, last is reserved for stack */
 		void *new = realloc(self->allocators, (self->count+1)*sizeof(struct allocator));
 		if(!new) return handle_nil;
 		self->allocators = new;
@@ -237,13 +238,25 @@ void *ha_array_get_ptr(struct handle_allocator *self, handle h) {
 	return meta->ptr;
 }
 
-void ha_init(struct handle_allocator *self) {
+handle ha_stack_alloc(struct handle_allocator *self, size_t size, void*existing) {
+	intptr_t offset = (intptr_t)self->stackbase - (intptr_t)existing;
+	handle h = {.idx = offset, .allocator_id = 0xffff, .generation = 1};
+	return h;
+}
+
+void *ha_stack_get_ptr(struct handle_allocator *self, handle h) {
+	assert(h.allocator_id == 0xffff);
+	return (void*)((intptr_t)self->stackbase - h.idx);
+}
+
+void ha_init(struct handle_allocator *self, void *stack) {
 	/* allocate the special array allocator as ID 0 */
 	self->allocators = realloc(0, sizeof(struct allocator));
 	/* if we can't even allocate the base allocator, we can't do anything at all  */
 	assert(self->allocators);
 	allocator_init(self->allocators, sizeof(struct array_meta));
 	self->count = 1;
+	self->stackbase = stack;
 }
 
 void ha_destroy(struct handle_allocator *self) {
