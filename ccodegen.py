@@ -33,6 +33,9 @@ typedef char* string;
 /* Global handle allocator */
 static struct handle_allocator ha;
 
+/* Variable declaration and cleanup code */
+/* ZW__HEADER_INJECT_MACROS */
+
 """
 
 main_header = """
@@ -59,21 +62,161 @@ C_OP_MAP = {
     'and': '&&', 'or': '||',
 }
 
+def make_reserved_identifier(name):
+    """Transform an identifier into a reserved one by adding zw_ prefix"""
+    return "zw_" + name
+
+class VarLifecycle:
+    """Track lifecycle information for a variable"""
+    def __init__(self, type_id, is_struct=False):
+        self.type_id = type_id
+        self.is_struct = is_struct  # Whether this is a struct type
+        self.escapes = False  # True if assigned to struct member or passed as steal
+
+    def __repr__(self):
+        return "Var(%s)" % ("escapes" if self.escapes else "local")
+
+class ScopeLevel:
+    """Represents a single scope level with its variables and metadata"""
+    def __init__(self, function_name, scope_id):
+        self.function_name = function_name
+        self.scope_id = scope_id
+        self.var_dict = {}  # name -> VarLifecycle for fast lookup
+        self.var_order = []  # List of names in declaration order
+
+    def add_variable(self, name, var_lifecycle):
+        """Add a variable to this scope level"""
+        self.var_dict[name] = var_lifecycle
+        self.var_order.append(name)
+
+    def get_macro_name(self, prefix):
+        """Get the macro name for this scope"""
+        return "%s_%s_%d" % (prefix, self.function_name, self.scope_id)
+
+    def get_vars_in_order(self):
+        """Get variables in declaration order as (name, lifecycle) tuples"""
+        return [(name, self.var_dict[name]) for name in self.var_order]
+
+class ScopeManager:
+    """Manage scopes and variable lifecycles during code generation"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        """Reset all scope tracking"""
+        self.scope_stack = []  # Stack of ScopeLevel objects
+        self.function_counters = {}  # {function_name: next_scope_id}
+
+    def current_scope(self):
+        """Get current scope or None if at global level"""
+        if not self.scope_stack:
+            return None
+        return self.scope_stack[-1]
+
+    def current_function(self):
+        """Get current function name or None if not in a function"""
+        current = self.current_scope()
+        return current.function_name if current else None
+
+    def enter_scope(self, function_name):
+        """Enter a new scope in the given function"""
+        # Get next scope ID for this function
+        if function_name not in self.function_counters:
+            self.function_counters[function_name] = 0
+
+        scope_id = self.function_counters[function_name]
+        self.function_counters[function_name] += 1
+
+        # Create new scope and push it to the stack
+        new_scope = ScopeLevel(function_name, scope_id)
+        self.scope_stack.append(new_scope)
+
+        return new_scope
+
+    def leave_scope(self, helper_header_output, registry):
+        """Leave current scope and generate both START and END macros"""
+        if not self.scope_stack:
+            return None
+
+        scope = self.scope_stack.pop()
+
+        # Generate START macro with all variable declarations
+        start_macro_name = scope.get_macro_name("ZW_SCOPE_START")
+        helper_header_output.write("#define %s \\\n" % start_macro_name)
+
+        # Add variable declarations
+        for name, var in scope.get_vars_in_order():
+            if var.is_struct:
+                struct_name = registry.get_struct_name(var.type_id)
+                if var.escapes:
+                    # Heap allocation for escaping variables
+                    helper_header_output.write("\thandle %s = ha_obj_alloc(&ha, sizeof(struct %s)); \\\n" % 
+                                            (name, struct_name))
+                else:
+                    # Stack allocation for non-escaping variables
+                    storage_name = make_reserved_identifier("%s_storage" % name)
+                    helper_header_output.write("\tstruct %s %s = {0}; \\\n" % (struct_name, storage_name))
+                    helper_header_output.write("\thandle %s = ha_stack_alloc(&ha, sizeof(struct %s), &%s); \\\n" %
+                                            (name, struct_name, storage_name))
+
+        helper_header_output.write("\n")
+
+        # Generate END macro with cleanup code
+        end_macro_name = scope.get_macro_name("ZW_SCOPE_END")
+        helper_header_output.write("#define %s \\\n" % end_macro_name)
+
+        # Add cleanup code for struct variables in reverse declaration order
+        cleanup_needed = False
+        for name, var in reversed(scope.get_vars_in_order()):
+            if var.is_struct and var.escapes:
+                helper_header_output.write("\tha_obj_free(&ha, %s); \\\n" % name)
+                cleanup_needed = True
+
+        helper_header_output.write("\n")
+
+        return scope
+
+    def add_variable(self, name, type_id, is_struct=False):
+        """Add a variable to the current scope"""
+        current = self.current_scope()
+        if not current:
+            return None  # At global scope, not tracking
+
+        var = VarLifecycle(type_id, is_struct)
+        current.add_variable(name, var)
+        return var
+
+    def find_variable(self, name):
+        """Find variable in current or parent scopes - O(1) lookup"""
+        # Search from innermost scope outward
+        for scope in reversed(self.scope_stack):
+            if name in scope.var_dict:
+                return scope.var_dict[name]
+        return None
+
+    def mark_variable_escaping(self, name):
+        """Mark a variable as escaping"""
+        var = self.find_variable(name)
+        if var:
+            var.escapes = True
+
+    def indent_level(self):
+        """Get indent level based on scope depth"""
+        return len(self.scope_stack)
+
 class CCodeGenerator:
     def __init__(self, registry):
         self.registry = registry
         self.output = StringIO()
+        self.helper_header = StringIO()
         self.indent_level = 0
         self.current_function = None
         # Stack to track variables for testing
         self.test_printfs = []
+        self.scope_manager = ScopeManager()
 
     def indent(self):
         return '\t' * self.indent_level
-
-    def make_reserved_identifier(self, name):
-        """Transform an identifier into a reserved one by adding zw_ prefix"""
-        return "zw_" + name
 
     def generate_header(self):
         """Generate C typedefs and standard includes"""
@@ -115,7 +258,13 @@ class CCodeGenerator:
         # Generate the real C main function at the end
         self.generate_c_main()
 
-        return self.output.getvalue()
+        # Inject macro definitions into the output
+        result = self.output.getvalue()
+        marker = "/* ZW__HEADER_INJECT_MACROS */"
+        if marker in result:
+            result = result.replace(marker, self.helper_header.getvalue())
+
+        return result
 
     def generate_c_main(self):
         """Generate the C main function that initializes the runtime and calls zw_main"""
@@ -135,6 +284,7 @@ class CCodeGenerator:
     def generate_var_decl(self, node, is_global=False):
         """Generate C code for a variable declaration (both local and global)"""
         var_type = self.type_to_c(node.var_type)
+        is_struct = self.registry.is_struct_type(node.var_type)
 
         # Check if the variable is const (not TT_VAR)
         if node.decl_type != TT_VAR:
@@ -152,6 +302,10 @@ class CCodeGenerator:
             else:
                 init_expr = expr_code
 
+        # Register variable in scope manager
+        if not is_global:
+            self.scope_manager.add_variable(node.var_name, node.var_type, is_struct=is_struct)
+
         if init_expr:
             self.output.write('%s %s = %s;\n' % (var_type, node.var_name, init_expr))
         else:
@@ -159,7 +313,6 @@ class CCodeGenerator:
 
         # Add test printf for main function or global variables
         # But only for primitive types and strings, not structs
-        is_struct = self.registry.is_struct_type(node.var_type)
         if not is_struct and (self.current_function == 'main' or is_global):
             self.add_test_printf(node.var_name, node.var_type)
 
@@ -188,7 +341,7 @@ class CCodeGenerator:
         param_str = ', '.join(params) if params else 'void'
 
         # Function prototype
-        if func_name == "main": func_name = self.make_reserved_identifier("main")
+        if func_name == "main": func_name = make_reserved_identifier("main")
         self.output.write('%s %s(%s);\n' % (ret_type, func_name, param_str))
 
     def generate_global_var(self, node):
@@ -232,6 +385,9 @@ class CCodeGenerator:
         func_name = self.get_method_name_from_node(node)
         self.current_function = func_name
 
+        # Reset scope manager for this function
+        self.scope_manager.reset()
+
         # Clear test printfs for this function
         self.test_printfs = []
 
@@ -264,11 +420,14 @@ class CCodeGenerator:
         # Special case for main - use internal identifier
         out_func_name = func_name
         if func_name == 'main':
-            out_func_name = self.make_reserved_identifier('main')
+            out_func_name = make_reserved_identifier('main')
         self.output.write('\n%s %s(%s) {\n' % (ret_type, out_func_name, param_str))
 
         # Function body
         self.indent_level += 1
+        self.scope_manager.enter_scope(func_name)
+        self.output.write(self.indent() + '%s;\n' % self.scope_manager.current_scope().get_macro_name("ZW_SCOPE_START"))
+
         for stmt in body:
             self.generate_statement(stmt)
 
@@ -279,6 +438,9 @@ class CCodeGenerator:
             # Add return 0 at the end of main
             self.output.write(self.indent() + 'return 0;\n')
 
+        # Generate scope end macro and leave scope
+        scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+        self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
         self.indent_level -= 1
 
         # Close function
@@ -321,21 +483,30 @@ class CCodeGenerator:
         # Write if condition
         self.output.write(self.indent() + 'if (%s) {\n' % condition)
         self.indent_level += 1
+        scope = self.scope_manager.enter_scope(self.current_function)
+        self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_START"))
 
         # Generate then body
         for stmt in node.then_body:
             self.generate_statement(stmt)
 
+        scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+        self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
         self.indent_level -= 1
 
         # Generate else part if it exists
         if node.else_body:
             self.output.write(self.indent() + '} else {\n')
             self.indent_level += 1
+            scope = self.scope_manager.enter_scope(self.current_function)
+            self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_START"))
 
             for stmt in node.else_body:
                 self.generate_statement(stmt)
 
+            # Generate scope end macro and leave scope
+            scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+            self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
             self.indent_level -= 1
 
         self.output.write(self.indent() + '}\n')
@@ -347,11 +518,16 @@ class CCodeGenerator:
         # Write while header
         self.output.write(self.indent() + 'while (%s) {\n' % condition)
         self.indent_level += 1
+        scope = self.scope_manager.enter_scope(self.current_function)
+        self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_START"))
 
         # Generate loop body
         for stmt in node.body:
             self.generate_statement(stmt)
 
+        # Generate scope end macro and leave scope
+        scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+        self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
         self.indent_level -= 1
         self.output.write(self.indent() + '}\n')
 
@@ -399,6 +575,11 @@ class CCodeGenerator:
             left = self.generate_expression(node.left)
             right = self.generate_expression(node.right)
             op = C_OP_MAP.get(node.operator, node.operator)
+            if op == '=':
+                if node.right.node_type == AST_NODE_VARIABLE and node.left.node_type == AST_NODE_MEMBER_ACCESS:
+                    var_name = node.right.name
+                    self.scope_manager.mark_variable_escaping(var_name)
+
             return '(%s %s %s)' % (left, op, right)
 
         elif node.node_type == AST_NODE_UNARY_OP:
