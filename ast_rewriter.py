@@ -46,7 +46,6 @@ class AstTypeRewriter:
             AST_NODE_LOGICAL: self.rewrite_logical,
             AST_NODE_BITOP: self.rewrite_bitop,
             AST_NODE_STRUCT_DEF: self.rewrite_struct_def,
-            AST_NODE_STRUCT_INIT: self.rewrite_struct_init,
             AST_NODE_MEMBER_ACCESS: self.rewrite_member_access,
             AST_NODE_ARRAY_ACCESS: self.rewrite_array_access,
             AST_NODE_NEW: self.rewrite_new,
@@ -257,22 +256,6 @@ class AstTypeRewriter:
                 new_type_id = self.replace_type_if_needed(type_id, should_rewrite)
                 new_fields.append((name, new_type_id))
             new_node.fields = new_fields
-        
-        return new_node
-    
-    def rewrite_struct_init(self, node, should_rewrite):
-        """Rewrite a struct initialization node"""
-        new_node = copy.copy(node)
-        new_node.expr_type = self.replace_type_if_needed(new_node.expr_type, should_rewrite)
-        
-        if hasattr(new_node, 'struct_id'):
-            new_node.struct_id = self.replace_type_if_needed(new_node.struct_id, should_rewrite)
-        
-        # Rewrite arguments if any
-        if hasattr(new_node, 'args'):
-            new_node.args = []
-            for arg in node.args:
-                new_node.args.append(self.rewrite(arg, node_types=[AST_NODE_ALL]))
         
         return new_node
     

@@ -66,7 +66,6 @@ class Interpreter(object):
             AST_NODE_BITOP: self.visit_bitop,
             # Struct-related nodes
             AST_NODE_STRUCT_DEF: self.visit_struct_def,
-            AST_NODE_STRUCT_INIT: self.visit_struct_init,
             AST_NODE_MEMBER_ACCESS: self.visit_member_access,
             AST_NODE_ARRAY_ACCESS: self.visit_array_access,
             AST_NODE_NEW: self.visit_new,
@@ -757,54 +756,11 @@ class Interpreter(object):
         # Struct definitions are handled at parse time
         return self.make_direct_value(None, TYPE_VOID)
 
-    def visit_struct_init(self, node):
-        """Visit a struct initialization node"""
-        # Create a new struct instance
-        instance = StructInstance(node.struct_id, node.struct_name)
-
-        # Initialize fields with default values first
-        all_fields = registry.get_all_fields(node.struct_name)
-        for field_name, field_type in all_fields:
-            instance.fields[field_name] = self.create_default_value(field_type)
-
-        # Call constructor if it exists and there are args or it's "init"
-        init_method = registry.get_method(node.struct_id, "init")
-        if init_method:
-            # Process arguments with proper byref handling
-            # THIS NEEDS TO BE DONE BEFORE ENTER_SCOPE ELSE WE MAY SHADOW VARIABLES
-            args = []
-
-            for i in range(len(init_method.params)):
-                if i == 0:  # First parameter is always 'self'
-                    arg_value = self.make_direct_value(instance, node.struct_id)
-                else:
-                    _, _, is_byref = init_method.params[i]
-                    arg_value = self.process_argument(node.args[i], is_byref)
-                args.append(arg_value)
-
-            # Create a temporary scope for the constructor
-            self.environment.enter_scope()
-
-            self.check_and_set_params("Constructor for '%s'" % node.struct_name, init_method.params, args, node.args)
-
-            # Execute constructor body
-            try:
-                for stmt in init_method.body:
-                    self.evaluate(stmt)
-            except ReturnException:
-                # Ignore return value from constructor
-                pass
-
-            self.environment.leave_scope()
-
-        # Return instance wrapped in a Variable
-        return self.make_direct_value(instance, node.struct_id)
-
     def visit_member_access(self, node):
         """Visit a member access node (obj.field)"""
         # Evaluate the object expression
         obj_var = self.evaluate(node.obj)
-        
+
         # Dereference if it's a reference
         obj_var = self.dereference(obj_var)
         obj = obj_var.value  # Get the actual struct instance
@@ -899,7 +855,34 @@ class Interpreter(object):
         is_method_call = node.obj is not None
         context_name = "Method '%s'" % node.name if is_method_call else "Function '%s'" % node.name
 
-        if is_method_call:
+        # Special case for constructor calls
+        is_constructor_call = (is_method_call and node.name == "init" and
+                              node.obj.node_type == AST_NODE_VARIABLE and
+                              node.obj.name == "__dunno__")
+
+        if is_constructor_call:
+            # This is a constructor call with our special marker
+            struct_id = node.obj.expr_type
+            struct_name = registry.get_struct_name(struct_id)
+
+            # Create a new instance (similar to visit_struct_init)
+            instance = StructInstance(struct_id, struct_name)
+
+            # Initialize fields with default values
+            all_fields = registry.get_all_fields(struct_name)
+            for field_name, field_type in all_fields:
+                instance.fields[field_name] = self.create_default_value(field_type)
+
+            # Create a direct value for the new instance
+            obj = self.make_direct_value(instance, struct_id)
+            obj_value = obj
+
+            # Get the method ID from registry
+            method_id = registry.lookup_function(node.name, struct_id)
+            if method_id == -1:
+                raise CompilerException("Method '%s' not found in struct '%s'" % ("init", struct_name), self.last_token)
+
+        elif is_method_call:
             # Evaluate object and perform validation for method calls
             obj = self.evaluate(node.obj)
             obj_deref = self.dereference(obj)
@@ -988,6 +971,11 @@ class Interpreter(object):
 
         # Clean up scope
         self.environment.leave_scope()
+
+        # For constructor calls, always return the newly created instance
+        if is_constructor_call:
+            return obj
+
         return result
 
     def visit_new(self, node):

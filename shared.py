@@ -115,7 +115,6 @@ AST_NODE_RETURN = 21
 AST_NODE_PARAM = 22
 # Struct system additions
 AST_NODE_STRUCT_DEF = 23    # struct definition
-AST_NODE_STRUCT_INIT = 24   # struct initialization
 AST_NODE_MEMBER_ACCESS = 26 # field/method access
 AST_NODE_NEW = 28           # heap allocation with 'new'
 AST_NODE_DEL = 29           # heap deallocation with 'del'
@@ -454,7 +453,6 @@ def ast_node_type_to_string(node_type):
         AST_NODE_RETURN: "RETURN",
         AST_NODE_PARAM: "PARAM",
         AST_NODE_STRUCT_DEF: "STRUCT_DEF",
-        AST_NODE_STRUCT_INIT: "STRUCT_INIT",
         AST_NODE_MEMBER_ACCESS: "MEMBER_ACCESS",
         AST_NODE_NEW: "NEW",
         AST_NODE_DEL: "DEL",

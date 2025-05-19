@@ -266,18 +266,6 @@ class StructDefNode(ASTNode):
         fields_str = ", ".join(["%s:%s" % (name, registry.var_type_to_string(type_)) for name, type_ in self.fields])
         return "StructDef(%s%s, [%s])" % (self.name, parent_str, fields_str)
 
-class StructInitNode(ASTNode):
-    def __init__(self, token, struct_name, struct_id, args=None):
-        ASTNode.__init__(self, AST_NODE_STRUCT_INIT, token)
-        self.struct_name = struct_name
-        self.struct_id = struct_id
-        self.args = args or []  # Args for constructor
-        self.expr_type = struct_id
-
-    def __repr__(self):
-        args_str = ", ".join(repr(arg) for arg in self.args)
-        return "StructInit(%s(%s))" % (self.struct_name, args_str)
-
 class MemberAccessNode(ASTNode):
     def __init__(self, token, obj, member_name, member_type, ref_kind=REF_KIND_NONE):
         ASTNode.__init__(self, AST_NODE_MEMBER_ACCESS, token)
@@ -878,8 +866,12 @@ class Parser:
         # Special checks for methods
         if struct_id != -1:
             # Check constructor and destructor constraints
-            if name == "init" and return_type != TYPE_VOID:
-                self.error("Constructor 'init' must have void return type")
+            if name == "init":
+                if return_type != TYPE_VOID:
+                    self.error("Constructor 'init' must have void return type")
+                # inject byref structtype return type
+                return_type = struct_id  # Constructor implicitly returns the struct type
+                is_ref_return = True     # And it does so by reference
             elif name == "fini":
                 if return_type != TYPE_VOID:
                     self.error("Destructor 'fini' must have void return type")
@@ -910,6 +902,11 @@ class Parser:
 
         # Parse function/method body
         body = self.doblock()
+
+        # inject "return self" at end of constructor
+        if struct_id != -1 and name == "init":
+            self_var = VariableNode(self.token, "self", struct_id, REF_KIND_GENERIC)
+            body.append(ReturnNode(self.token, self_var, REF_KIND_GENERIC))
 
         # Restore previous context
         self.env.leave_scope()
@@ -1280,7 +1277,7 @@ class Parser:
         return init_node
 
     def parse_constructor_call(self, struct_name, struct_id):
-        """Parse a constructor call and return a StructInitNode with properly handled arguments."""
+        """Parse a constructor call and return CallNode with properly handled arguments or GenericInitializer."""
         # Verify struct parentheses
         if self.token.type != TT_LPAREN:
             self.error("Constructor invocation requires parentheses")
@@ -1291,24 +1288,27 @@ class Parser:
         self.parse_args(args)
         self.consume(TT_RPAREN)
 
-        # Check if init method exists for the struct - this MUST exist
+        # Check if init method exists for the struct
         init_method = registry.get_method(struct_id, "init")
-        # we allow StructName() without arguments as a convenient shortcut to get a zero-initialized struct.
+        # we allow StructName() without arguments as a convenient shortcut to get a zero-initialized struct when no constructor exists.
         if not init_method and len(args) > 0:
             self.error("Cannot use constructor syntax for struct '%s' - no init method defined. Use initializer syntax {...} instead." % struct_name)
 
         if init_method:
             # Add self placeholder to arguments list
-            args_with_self = [VariableNode(self.token, "", struct_id)]  # Placeholder for self
+            args_with_self = [VariableNode(self.token, "self", struct_id)]  # Placeholder for self
             args_with_self.extend(args)
             args = args_with_self
 
             # Perform type checking
             self.check_arg_count("Constructor for '%s'" % struct_name, init_method.params, args, is_method=True)
             self.check_argument_types(args, init_method.params, "Constructor for '%s'" % struct_name)
+            # create a special "dunno" object which signifies that we don't yet know the object to act upon
+            constructor_obj = VariableNode(self.token, "__dunno__", struct_id)
+            return CallNode(self.token, "init", args, struct_id, constructor_obj, ref_kind=REF_KIND_GENERIC)
 
-        # Create and return struct initialization node with self included in args
-        return StructInitNode(self.token, struct_name, struct_id, args)
+        # Create and return default initialization node
+        return self.create_default_value(struct_id)
 
     def nud(self, t):
         # Handle number literals using the type mapping
@@ -1802,9 +1802,6 @@ class Parser:
                 var_type = self.get_variable_type(ref_var)
                 if var_type == TYPE_UNKNOWN:
                     self.error("Cannot infer type from variable '%s' with unknown type" % ref_var)
-            elif expr.node_type == AST_NODE_STRUCT_INIT:
-                # Set var_type to struct type
-                var_type = expr.struct_id
             else: # for everything else, infer the type from the expression
                 var_type = expr.expr_type
         else:
@@ -1989,6 +1986,12 @@ class Parser:
 
             # Return with no value
             if self.token.type in [TT_SEMI, TT_NEWLINE, TT_EOF] or (self.prev_token and self.token.line > self.prev_token.line):
+                # Check if this is a constructor - inject "return self"
+                if current_func_obj.parent_struct_id != -1 and current_func_obj.name == "init":
+                    self_var = VariableNode(self.token, "self", current_func_obj.parent_struct_id, REF_KIND_GENERIC)
+                    self.check_statement_end()
+                    return ReturnNode(self.token, self_var, REF_KIND_GENERIC)
+
                 # Check if empty return is allowed
                 if func_return_type != TYPE_VOID:
                     self.error("Non-void function '%s' must return a value" % current_func_obj.name)
@@ -1997,6 +2000,9 @@ class Parser:
                 return ReturnNode(self.token, None)
 
             # Return with value
+            if current_func_obj.parent_struct_id != -1 and current_func_obj.name == "init":
+                self.error("return with expression disallowed for constructor")
+
             # Set context for expression parsing
             old_initializer_type = self.current_initializer_type
             self.current_initializer_type = func_return_type
