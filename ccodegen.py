@@ -72,6 +72,7 @@ class VarLifecycle:
         self.type_id = type_id
         self.is_struct = is_struct  # Whether this is a struct type
         self.escapes = False  # True if assigned to struct member or passed as steal
+        self.needs_storage = True # we don't need to emit an initializer expression if this is e.g. a direct result from func return
 
     def __repr__(self):
         return "Var(%s)" % ("escapes" if self.escapes else "local")
@@ -144,9 +145,9 @@ class ScopeManager:
         start_macro_name = scope.get_macro_name("ZW_SCOPE_START")
         helper_header_output.write("#define %s \\\n" % start_macro_name)
 
-        # Add variable declarations
+        # Add variable declarations - only allocate storage for variables that need it
         for name, var in scope.get_vars_in_order():
-            if var.is_struct:
+            if var.is_struct and var.needs_storage:
                 struct_name = registry.get_struct_name(var.type_id)
                 if var.escapes:
                     # Heap allocation for escaping variables
@@ -158,6 +159,9 @@ class ScopeManager:
                     helper_header_output.write("\tstruct %s %s = {0}; \\\n" % (struct_name, storage_name))
                     helper_header_output.write("\thandle %s = ha_stack_alloc(&ha, sizeof(struct %s), &%s); \\\n" %
                                             (name, struct_name, storage_name))
+            elif var.is_struct:
+                # Just declare handle for variables getting value from elsewhere
+                helper_header_output.write("\thandle %s; \\\n" % name)
 
         helper_header_output.write("\n")
 
@@ -168,7 +172,7 @@ class ScopeManager:
         # Add cleanup code for struct variables in reverse declaration order
         cleanup_needed = False
         for name, var in reversed(scope.get_vars_in_order()):
-            if var.is_struct and var.escapes:
+            if var.is_struct and var.escapes and var.needs_storage:
                 helper_header_output.write("\tha_obj_free(&ha, %s); \\\n" % name)
                 cleanup_needed = True
 
@@ -199,6 +203,12 @@ class ScopeManager:
         var = self.find_variable(name)
         if var:
             var.escapes = True
+
+    def mark_variable_no_storage(self, name):
+        """Mark a variable not needing storage"""
+        var = self.find_variable(name)
+        if var:
+            var.needs_storage = False
 
     def indent_level(self):
         """Get indent level based on scope depth"""
@@ -305,10 +315,22 @@ class CCodeGenerator:
         # Register variable in scope manager
         if not is_global:
             self.scope_manager.add_variable(node.var_name, node.var_type, is_struct=is_struct)
+            if is_struct and node.expr:
+                # variable gets assigned result of another expression, so we
+                # dont need to allocate storage for it.
+                if not node.expr.node_type in [AST_NODE_GENERIC_INITIALIZER]:
+                    self.scope_manager.mark_variable_no_storage(node.var_name)
 
         if init_expr:
-            self.output.write('%s %s = %s;\n' % (var_type, node.var_name, init_expr))
-        else:
+            if is_struct:
+                struct_name = self.registry.get_struct_name(node.var_type)
+                if node.expr.node_type == AST_NODE_GENERIC_INITIALIZER:
+                    self.output.write('*((struct %s*)ha_obj_get_ptr(&ha, %s)) = %s;\n' % (struct_name, node.var_name, init_expr))
+                else:
+                    self.output.write('%s = %s;\n' % (node.var_name, init_expr))
+            else:
+                self.output.write('%s %s = %s;\n' % (var_type, node.var_name, init_expr))
+        elif not is_struct: # struct already declared via macro
             self.output.write('%s %s;\n' % (var_type, node.var_name))
 
         # Add test printf for main function or global variables
@@ -435,8 +457,6 @@ class CCodeGenerator:
         if func_name == 'main':
             for printf_stmt in self.test_printfs:
                 self.output.write(self.indent() + printf_stmt + '\n')
-            # Add return 0 at the end of main
-            self.output.write(self.indent() + 'return 0;\n')
 
         # Generate scope end macro and leave scope
         scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
@@ -461,6 +481,8 @@ class CCodeGenerator:
             self.output.write(self.indent())
             if hasattr(node, 'expr') and node.expr:
                 self.output.write('return %s;\n' % self.generate_expression(node.expr))
+                if node.expr.node_type == AST_NODE_VARIABLE:
+                    self.scope_manager.mark_variable_escaping(node.expr.name)
             else:
                 self.output.write('return;\n')
 
@@ -592,6 +614,8 @@ class CCodeGenerator:
             args = []
             for arg in node.args:
                 args.append(self.generate_expression(arg))
+                if arg.node_type == AST_NODE_VARIABLE:
+                    self.scope_manager.mark_variable_escaping(arg.name)
             return '%s(%s)' % (func_name, ', '.join(args))
 
         elif node.node_type == AST_NODE_COMPARE:
@@ -611,10 +635,6 @@ class CCodeGenerator:
             right = self.generate_expression(node.right)
             op = C_OP_MAP.get(node.operator, node.operator)
             return '(%s %s %s)' % (left, op, right)
-
-        elif node.node_type == AST_NODE_STRUCT_INIT:
-            # Generate struct initialization
-            return 'ha_obj_alloc(&ha, sizeof(struct %s))' % node.struct_name
 
         elif node.node_type == AST_NODE_MEMBER_ACCESS:
             # Generate member access expression
