@@ -224,113 +224,6 @@ class CCodeGenerator:
         # Stack to track variables for testing
         self.test_printfs = []
         self.scope_manager = ScopeManager()
-        self.temp_counter = 0  # Counter for generating unique temp vars
-        self.temp_statements = []  # Temp statements for current expression
-
-    def reset_temp_statements(self):
-        """Reset temporary statements for a new expression transformation"""
-        self.temp_statements = []
-
-    def get_temp_name(self, type_id):
-        """Generate unique temporary variable name"""
-        temp_name = "__temp_%d" % self.temp_counter
-        self.temp_counter += 1
-        return temp_name
-
-    def is_constructor_node(self, node):
-        return (node.node_type == AST_NODE_CALL and
-            node.obj and node.obj.node_type == AST_NODE_VARIABLE and
-            node.obj.name == "__dunno__" and node.name == "init")
-
-    def transform_expression(self, node):
-        """Transform complex expressions into simple ones with temporaries"""
-        if node is None:
-            return ""
-
-        # Case 1: Constructor call
-        if self.is_constructor_node(node):
-
-            struct_id = node.obj.expr_type
-            struct_name = self.registry.get_struct_name(struct_id)
-
-            # Create temp variable for constructor result
-            temp_name = self.get_temp_name(struct_id)
-
-            # Register with scope manager
-            self.scope_manager.add_variable(temp_name, struct_id, is_struct=True)
-            self.scope_manager.mark_variable_no_storage(temp_name)
-
-            # Generate allocation and constructor call
-            self.output.write(self.indent() + 'handle %s = ha_obj_alloc(&ha, sizeof(struct %s));\n' % 
-                            (temp_name, struct_name))
-
-            # Process constructor arguments
-            args = []
-            args.append(temp_name)  # First arg is always self
-
-            # Add any additional arguments
-            for arg in node.args:
-                arg_expr = self.transform_expression(arg)
-                args.append(arg_expr)
-
-            self.output.write(self.indent() + '%s_init(%s);\n' %
-                            (struct_name, ', '.join(args)))
-
-            return temp_name
-
-        # Case 2: Method call on a complex expression
-        elif node.node_type == AST_NODE_CALL and node.obj:
-            # First determine if object needs transformation
-            obj_needs_transform = False
-            if self.is_constructor_node(node):
-                obj_needs_transform = True
-
-            # Transform the object expression if needed
-            if obj_needs_transform:
-                obj_expr = self.transform_expression(node.obj)
-            else:
-                obj_expr = self.generate_expression(node.obj)
-
-            # Mark the object as escaping if it's a variable
-            if node.obj.node_type == AST_NODE_VARIABLE:
-                self.scope_manager.mark_variable_escaping(node.obj.name)
-
-            # Process arguments
-            args = [obj_expr]  # First arg is always the object
-            for arg in node.args:
-                arg_expr = self.generate_expression(arg)
-                args.append(arg_expr)
-                # Mark variable args as escaping
-                if arg.node_type == AST_NODE_VARIABLE:
-                    self.scope_manager.mark_variable_escaping(arg.name)
-
-            # Get method name
-            struct_name = self.registry.get_struct_name(node.obj.expr_type)
-            method_name = "%s_%s" % (struct_name, node.name)
-
-            # For non-void returns, store in temp
-            if node.expr_type != TYPE_VOID:
-                temp_name = self.get_temp_name(node.expr_type)
-                is_struct = self.registry.is_struct_type(node.expr_type)
-
-                # Register temp with scope manager for structs
-                if is_struct:
-                    self.scope_manager.add_variable(temp_name, node.expr_type, is_struct=True)
-                    self.scope_manager.mark_variable_no_storage(temp_name)
-                    self.output.write(self.indent() + 'handle %s = %s(%s);\n' %
-                                   (temp_name, method_name, ', '.join(args)))
-                else:
-                    c_type = self.type_to_c(node.expr_type)
-                    self.output.write(self.indent() + '%s %s = %s(%s);\n' %
-                                   (c_type, temp_name, method_name, ', '.join(args)))
-                return temp_name
-            else:
-                # Void function call
-                self.output.write(self.indent() + '%s(%s);\n' % (method_name, ', '.join(args)))
-                return ""
-
-        # Default: regular expression generation
-        return self.generate_expression(node)
 
     def indent(self):
         return '\t' * self.indent_level
@@ -425,7 +318,7 @@ class CCodeGenerator:
             if is_struct and node.expr:
                 # variable gets assigned result of another expression, so we
                 # dont need to allocate storage for it.
-                if self.is_constructor_node(node.expr) or (not node.expr.node_type in [AST_NODE_GENERIC_INITIALIZER]):
+                if not node.expr.node_type in [AST_NODE_GENERIC_INITIALIZER]:
                     self.scope_manager.mark_variable_no_storage(node.var_name)
 
         if init_expr:
