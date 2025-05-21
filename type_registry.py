@@ -55,7 +55,8 @@ class TypeRegistry:
     # Type kind constants
     TYPE_KIND_PRIMITIVE = 0
     TYPE_KIND_STRUCT = 1
-    TYPE_KIND_ARRAY = 2
+    TYPE_KIND_TUPLE = 2
+    TYPE_KIND_ARRAY = 3
 
     def __init__(self):
         """Initialize the registry"""
@@ -97,7 +98,8 @@ class TypeRegistry:
 	return "__zw_tuple_"
 
     def is_tuple_type(self, type_id):
-        return self.is_struct_type(type_id) and self.get_struct_name(type_id).startswith(self.get_tuple_prefix())
+        descriptor = self._type_descriptors.get(type_id)
+        return descriptor is not None and descriptor.kind == self.TYPE_KIND_TUPLE
 
     # Array type methods
     def register_array_type(self, element_type_id, size=None):
@@ -169,6 +171,12 @@ class TypeRegistry:
 
         # Create descriptor for new system
         descriptor = StructDescriptor(name, parent_id)
+
+        # if it's a tuple, mark it with a special descriptor kind
+        # so we don't need to do lame string comparison over and over
+        if name.startswith(self.get_tuple_prefix()):
+            descriptor.kind = self.TYPE_KIND_TUPLE
+
         self._type_descriptors[type_id] = descriptor
 
         # Set up generic parameters if provided
@@ -186,12 +194,12 @@ class TypeRegistry:
     def is_struct_type(self, type_id):
         """Check if a type is a struct type using descriptor information"""
         descriptor = self._type_descriptors.get(type_id)
-        return descriptor is not None and descriptor.kind == self.TYPE_KIND_STRUCT
+        return descriptor is not None and descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]
 
     def is_generic_struct(self, struct_id):
         """Check if a struct is generic (has type parameters)"""
         descriptor = self._type_descriptors.get(struct_id)
-        if descriptor is None or descriptor.kind != self.TYPE_KIND_STRUCT:
+        if descriptor is None or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
             return False
         return len(descriptor.param_mapping) > 0
 
@@ -241,7 +249,7 @@ class TypeRegistry:
         """
         # Step 1: Validate the generic struct
         descriptor = self._type_descriptors.get(generic_struct_id)
-        if descriptor is None or descriptor.kind != self.TYPE_KIND_STRUCT:
+        if descriptor is None or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
             return -1
         
         # Step 2: Check if it's actually a generic struct
@@ -318,7 +326,7 @@ class TypeRegistry:
         
         # Step 2: Get the generic struct descriptor and method
         generic_descriptor = self._type_descriptors.get(generic_struct_id)
-        if generic_descriptor is None or generic_descriptor.kind != self.TYPE_KIND_STRUCT:
+        if generic_descriptor is None or not generic_descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
             return -1
             
         generic_method = self.get_func_from_id(generic_method_id)
@@ -428,7 +436,7 @@ class TypeRegistry:
             The type ID corresponding to the parameter, or -1 if not found
         """
         descriptor = self._type_descriptors.get(struct_id)
-        if descriptor and descriptor.kind == self.TYPE_KIND_STRUCT:
+        if descriptor and descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
             return descriptor.param_mapping.get(param_name, -1)
         return -1
 
@@ -472,7 +480,7 @@ class TypeRegistry:
 
         # Get the struct descriptor
         descriptor = self._type_descriptors.get(type_id)
-        if not descriptor or descriptor.kind != self.TYPE_KIND_STRUCT:
+        if not descriptor or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
             if token:
                 raise CompilerException("Type '%s' is not a struct" % struct_name, token)
             return False
@@ -541,7 +549,7 @@ class TypeRegistry:
         """
         # Get descriptor for this struct
         descriptor = self._type_descriptors.get(type_id)
-        if not descriptor or descriptor.kind != self.TYPE_KIND_STRUCT:
+        if not descriptor or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
             return []  # Not a struct type
 
         # Initialize result list
