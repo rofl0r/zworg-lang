@@ -869,7 +869,7 @@ class Interpreter(object):
             instance = StructInstance(struct_id, struct_name)
 
             # Initialize fields with default values
-            all_fields = registry.get_all_fields(struct_name)
+            all_fields = registry.get_struct_fields(struct_id)
             for field_name, field_type in all_fields:
                 instance.fields[field_name] = self.create_default_value(field_type)
 
@@ -1061,7 +1061,7 @@ class Interpreter(object):
                 pass
             else:
                 # For structs, get field definitions
-                all_fields = registry.get_all_fields(struct_name)
+                all_fields = registry.get_struct_fields(node.expr_type)
 
         # Initialize fields based on initializer subtype
         if node.subtype == INITIALIZER_SUBTYPE_TUPLE:

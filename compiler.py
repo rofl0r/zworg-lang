@@ -418,8 +418,7 @@ class Parser:
 
         elif registry.is_struct_type(type_id):
             # Get all fields including inherited ones
-            struct_name = registry.get_struct_name(type_id)
-            fields = registry.get_all_fields(struct_name)
+            fields = registry.get_struct_fields(type_id)
 
             # Create default initializer for each field
             elements = []
@@ -1195,8 +1194,7 @@ class Parser:
                     elif registry.is_struct_type(target_type):
                         # Get field type for the current index
                         field_index = len(elements)
-                        struct_name = registry.get_struct_name(target_type)
-                        fields = registry.get_all_fields(struct_name)
+                        fields = registry.get_struct_fields(target_type)
                         if field_index < len(fields):
                             _, element_type = fields[field_index]
 
@@ -1242,12 +1240,12 @@ class Parser:
 
         # Type validation for LINEAR initializers
         if subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_struct_type(target_type):
-            struct_name = registry.get_struct_name(target_type)
-            fields = registry.get_all_fields(struct_name)
+            fields = registry.get_struct_fields(target_type)
 
             # Validate field count - too many elements is an error
             if len(elements) > len(fields):
-                self.error("Initializer for %s has %d elements, but struct has only %d fields" % 
+                struct_name = registry.get_struct_name(target_type)
+                self.error("Initializer for %s has %d elements, but struct has only %d fields" %
                           (struct_name, len(elements), len(fields)))
 
             # Fill in missing fields with zero values
@@ -1260,6 +1258,7 @@ class Parser:
             for i, elem in enumerate(elements):
                 _, field_type = fields[i]
                 if not can_promote(elem.expr_type, field_type):
+                    struct_name = registry.get_struct_name(target_type)
                     self.type_mismatch_error("Field %d in %s initializer" % (i+1, struct_name), 
                                             elem.expr_type, field_type)
 

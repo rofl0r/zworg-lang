@@ -536,24 +536,6 @@ class TypeRegistry:
                 return True
             current = current_parent
 
-    def get_all_fields(self, struct_name):
-        """Get all fields including those from parent structs"""
-        if struct_name not in self._struct_registry:
-            return []
-
-        fields = []
-
-        # First get parent fields if any
-        parent_name = self.get_struct_parent(struct_name)
-        if parent_name:
-            fields.extend(self.get_all_fields(parent_name))
-
-        # Add fields from the current struct
-        _, _, struct_fields = self._struct_registry[struct_name]
-        fields.extend(struct_fields)
-
-        return fields
-
     def get_struct_fields(self, type_id, include_parents=True):
         """
         Get fields for a struct type, optionally including parent fields
@@ -584,7 +566,11 @@ class TypeRegistry:
 
     def get_field_type(self, struct_name, field_name):
         """Get the type of a field in a struct (including parent fields)"""
-        for name, type_ in self.get_all_fields(struct_name):
+        # Use legacy system to get the struct ID
+        if struct_name not in self._struct_registry:
+            return None
+        type_id = self._struct_registry[struct_name][0]
+        for name, type_ in self.get_struct_fields(type_id, include_parents=True):
             if name == field_name:
                 return type_
         return None
