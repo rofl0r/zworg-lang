@@ -37,8 +37,8 @@ class StructDescriptor(TypeDescriptor):
 
 class ArrayDescriptor(TypeDescriptor):
     """Descriptor for array types"""
-    def __init__(self, element_type_id, size=None):
-        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_ARRAY, "[]")
+    def __init__(self, element_type_id, size=None, name=None):
+        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_ARRAY, name)
         self.element_type_id = element_type_id
         self.size = size  # None = dynamic size, int = fixed size
 
@@ -67,9 +67,6 @@ class TypeRegistry:
         self._type_descriptors = {}  # type_id -> TypeDescriptor
         self._type_name_to_id = {}    # name -> type_id
         self._next_struct_id = TYPE_STRUCT_BASE
-
-        # Legacy struct storage (maintained for compatibility)
-        self._struct_id_to_name = {}  # type_id -> name
 
         # Array type cache
         self._array_cache = {}  # (element_type_id, size) -> type_id
@@ -114,18 +111,17 @@ class TypeRegistry:
         type_id = self._next_struct_id
         self._next_struct_id += 1
 
+        # Create debug name
+        element_type_name = self.var_type_to_string(element_type_id)
+        size_str = str(size) if size is not None else ""
+        array_name = "_array_%s_%s" % (element_type_name, size_str)
+
         # Create descriptor
-        descriptor = ArrayDescriptor(element_type_id, size)
+        descriptor = ArrayDescriptor(element_type_id, size, array_name)
         self._type_descriptors[type_id] = descriptor
 
         # Add to array cache
         self._array_cache[cache_key] = type_id
-
-        # Create debug name
-        element_type_name = self.type_to_string(element_type_id)
-        size_str = str(size) if size is not None else ""
-        array_name = "_array_%s_%s" % (element_type_name, size_str)
-        self._struct_id_to_name[type_id] = array_name
 
         return type_id
 
@@ -174,7 +170,7 @@ class TypeRegistry:
         # Create descriptor for new system
         descriptor = StructDescriptor(name, parent_id)
         self._type_descriptors[type_id] = descriptor
-    
+
         # Set up generic parameters if provided
         if generic_params:
             param_index = 0
@@ -183,9 +179,7 @@ class TypeRegistry:
                 descriptor.param_mapping[param_name] = param_id
                 param_index += 1
 
-        # Maintain compatibility with existing system
         self._type_name_to_id[name] = type_id
-        self._struct_id_to_name[type_id] = name
 
         return type_id
 
@@ -576,17 +570,8 @@ class TypeRegistry:
 
     def get_struct_name(self, type_id):
         """Get struct name from type ID"""
-        # Try descriptor system first
         descriptor = self._type_descriptors.get(type_id)
-        if descriptor:
-            if descriptor.kind == self.TYPE_KIND_STRUCT:
-                return descriptor.name
-            elif descriptor.kind == self.TYPE_KIND_ARRAY:
-                # For arrays, return the name from the ID-to-name map
-                return self._struct_id_to_name.get(type_id, None)
-
-        # Fall back to legacy system
-        return self._struct_id_to_name.get(type_id, None)
+        return descriptor.name if descriptor else None
 
     def struct_exists(self, struct_name):
         """Check if a struct exists"""
@@ -657,44 +642,12 @@ class TypeRegistry:
         self._next_funcid = 1
         self._func_map = {}
 
-    # This method can be an alias for var_type_to_string for internal usage
-    def type_to_string(self, type_id):
-        """Alias for var_type_to_string for backward compatibility"""
-        return self.var_type_to_string(type_id)
-
     def var_type_to_string(self, var_type):
         """Convert a type ID to a string representation (without reference info)"""
-        # Step 1: Handle generic parameter types
-        if self.is_generic_param(var_type):
-            # print a generic name since we dont have access to the struct its used in
-            return "T%d" % (var_type - TYPE_GENERIC_BASE)
-
-        # Basic primitive types
-        if var_type in TYPE_TO_STRING_MAP and not self.is_struct_type(var_type):
-            return TYPE_TO_STRING_MAP[var_type]
-
-        # Check descriptor system for struct and array types
         descriptor = self._type_descriptors.get(var_type)
-        if descriptor:
-            if descriptor.kind == self.TYPE_KIND_STRUCT:
-                return self.get_struct_name(var_type) or "unknown_struct"
-
-            elif descriptor.kind == self.TYPE_KIND_ARRAY:
-                elem_type = descriptor.element_type_id
-                size = descriptor.size
-                elem_type_str = self.var_type_to_string(elem_type)  # Safe recursive call
-
-                if size is not None:
-                    return "%s[%s]" % (elem_type_str, size)
-                else:
-                    return "%s[]" % elem_type_str
-
-        # Fall back to struct name lookup
-        struct_name = self._struct_id_to_name.get(var_type)
-        if struct_name:
-            return struct_name
-
-        raise CompilerException("unknown_type_%d" % var_type)
+        if not descriptor:
+            raise CompilerException("unknown_type_%d" % var_type)
+        return descriptor.name
 
     def format_type_with_ref_kind(self, type_id, ref_kind=REF_KIND_NONE):
         """Format a type with its reference kind wrapper"""
