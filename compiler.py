@@ -1316,11 +1316,11 @@ class Parser:
 
     def nud(self, t):
         # Handle number literals using the type mapping
-        if t.type in TOKEN_TO_TYPE_MAP:
-            return NumberNode(t, t.value, TOKEN_TO_TYPE_MAP[t.type])
-
         if t.type == TT_STRING_LITERAL:
             return StringNode(t, t.value)
+
+        if t.type in TOKEN_TO_TYPE_MAP:
+            return NumberNode(t, t.value, TOKEN_TO_TYPE_MAP[t.type])
 
         if t.type == TT_NIL:
             return NilNode(t)
