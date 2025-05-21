@@ -86,13 +86,19 @@ class TypeRegistry:
         """Register all primitive types with descriptors"""
         for type_id in PRIMITIVE_TYPES:
             self._type_descriptors[type_id] = PrimitiveDescriptor(type_id)
-        
+
         # Pre-register generic parameter IDs
         for i in range(TYPE_GENERIC_BASE, TYPE_GENERIC_MAX + 1):
             self._type_descriptors[i] = TypeDescriptor(TypeRegistry.TYPE_KIND_PRIMITIVE)
 
     def is_primitive_type(self, type_id):
         return type_id in PRIMITIVE_TYPES
+
+    def get_tuple_prefix(self):
+	return "__zw_tuple_"
+
+    def is_tuple_type(self, type_id):
+        return self.is_struct_type(type_id) and self.get_struct_name(type_id).startswith(self.get_tuple_prefix())
 
     # Array type methods
     def register_array_type(self, element_type_id, size=None):
@@ -192,7 +198,7 @@ class TypeRegistry:
         if descriptor is None or descriptor.kind != self.TYPE_KIND_STRUCT:
             return False
         return len(descriptor.param_mapping) > 0
- 
+
     def is_generic_param(self, type_id):
         """Check if a type ID represents a generic parameter"""
         return TYPE_GENERIC_BASE <= type_id <= TYPE_GENERIC_MAX

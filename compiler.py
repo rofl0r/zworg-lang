@@ -1127,7 +1127,7 @@ class Parser:
 
         # Generate a unique struct type name for this tuple
         elements_str = "_".join(registry.var_type_to_string(t) for t in type_list)
-        struct_name = "_tuple_%d_%s" % (len(type_list), elements_str)
+        struct_name = registry.get_tuple_prefix() + "%d_%s" % (len(type_list), elements_str)
 
         # Register the tuple as an anonymous struct if not already registered
         if not registry.struct_exists(struct_name):
