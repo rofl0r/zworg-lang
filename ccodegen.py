@@ -114,11 +114,6 @@ class ScopeManager:
             return None
         return self.scope_stack[-1]
 
-    def current_function(self):
-        """Get current function name or None if not in a function"""
-        current = self.current_scope()
-        return current.function_name if current else None
-
     def enter_scope(self, function_name):
         """Enter a new scope in the given function"""
         # Get next scope ID for this function
