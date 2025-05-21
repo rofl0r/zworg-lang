@@ -554,6 +554,34 @@ class TypeRegistry:
 
         return fields
 
+    def get_struct_fields(self, type_id, include_parents=True):
+        """
+        Get fields for a struct type, optionally including parent fields
+
+        Args:
+            type_id: The struct type ID
+            include_parents: Whether to include fields from parent structs
+        Returns:
+            List of (field_name, field_type) tuples in inheritance order
+        """
+        # Get descriptor for this struct
+        descriptor = self._type_descriptors.get(type_id)
+        if not descriptor or descriptor.kind != self.TYPE_KIND_STRUCT:
+            return []  # Not a struct type
+
+        # Initialize result list
+        result = []
+
+        # If we should include parent fields and this struct has a parent
+        if include_parents and descriptor.parent_id != -1:
+            # First get all parent fields recursively
+            parent_fields = self.get_struct_fields(descriptor.parent_id, True)
+            result.extend(parent_fields)
+
+        # Now add this struct's own fields
+        result.extend(descriptor.fields)
+        return result
+
     def get_field_type(self, struct_name, field_name):
         """Get the type of a field in a struct (including parent fields)"""
         for name, type_ in self.get_all_fields(struct_name):
