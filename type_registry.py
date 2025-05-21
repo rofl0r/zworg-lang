@@ -86,6 +86,8 @@ class TypeRegistry:
         """Register all primitive types with descriptors"""
         for type_id in PRIMITIVE_TYPES:
             self._type_descriptors[type_id] = PrimitiveDescriptor(type_id)
+            # add the name -> type mapping also to _struct_registry
+            self._struct_registry[TYPE_TO_STRING_MAP[type_id]] = (type_id, -1, [])
 
         # Pre-register generic parameter IDs
         for i in range(TYPE_GENERIC_BASE, TYPE_GENERIC_MAX + 1):
@@ -438,22 +440,14 @@ class TypeRegistry:
 
     def _get_type_id_from_name(self, type_name):
         """Helper to get type ID from name for both primitive types and structs
-        
         Args:
             type_name: String name of a type
-            
         Returns:
             Type ID or -1 if not found
         """
-        # Step 1: Check primitive types first
-        for type_id, name in TYPE_TO_STRING_MAP.items():
-            if name == type_name:
-                return type_id
-                
-        # Step 2: Check struct registry
         if type_name in self._struct_registry:
             return self._struct_registry[type_name][0]
-                
+
         return -1
 
     def register_typedef(self, alias_name, target_type_id, token=None):
@@ -497,9 +491,7 @@ class TypeRegistry:
 
     def get_struct_id(self, struct_name):
         """Get the type ID for a struct"""
-        if struct_name not in self._struct_registry:
-            return -1
-        return self._struct_registry[struct_name][0]
+        return self._get_type_id_from_name(struct_name)
 
     def get_struct_parent(self, struct_name):
         """Get the parent struct name"""
