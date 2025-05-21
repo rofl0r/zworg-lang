@@ -450,6 +450,11 @@ class TypeRegistry:
 
         return -1
 
+    def _get_name_from_type_id(self, type_id):
+        """Get the name of a type from its ID using the descriptor system"""
+        desc = self._type_descriptors.get(type_id, None)
+        return desc.name if desc else None
+
     def register_typedef(self, alias_name, target_type_id, token=None):
         """Register a type alias"""
         # Check if alias already exists
@@ -493,15 +498,20 @@ class TypeRegistry:
         """Get the type ID for a struct"""
         return self._get_type_id_from_name(struct_name)
 
+    def get_struct_parent_id(self, struct_id):
+        """Get the parent struct id from a struct id"""
+        descriptor = self._type_descriptors.get(struct_id)
+        if descriptor is None or descriptor.kind != self.TYPE_KIND_STRUCT:
+            return -1
+        return descriptor.parent_id
+
     def get_struct_parent(self, struct_name):
         """Get the parent struct name"""
-        if struct_name not in self._struct_registry:
-            return None
-        parent_id = self._struct_registry[struct_name][1]
-        if parent_id == -1:
-            return None
-
-        return self._struct_id_to_name.get(parent_id, None)
+        type_id = self._get_type_id_from_name(struct_name)
+        if type_id == -1: return None
+        parent_id = self.get_struct_parent_id(type_id)
+        if parent_id == -1: return None
+        return self._get_name_from_type_id(parent_id)
 
     def is_subtype_of(self, child_type, parent_type):
         """Check if child_type is a subtype of parent_type (same or inherits)"""
