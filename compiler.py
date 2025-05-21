@@ -748,6 +748,11 @@ class Parser:
             # Determine proper reference kind for the field
             field_ref_kind = obj_ref_kind  # Start with object's reference kind
 
+            # If this is accessing a field of another struct field, it must be by-value
+            # since we only allow by-value in structs, except for dynarrays.
+            if obj_node.node_type == AST_NODE_MEMBER_ACCESS:
+                field_ref_kind = REF_KIND_NONE
+
             # Special case: dynamic arrays always need heap reference kind
             # We don't allow any other type of reference to be stored in fields
             if registry.is_array_type(field_type) and registry.get_array_size(field_type) is None:
