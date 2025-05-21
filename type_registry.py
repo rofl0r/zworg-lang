@@ -524,18 +524,14 @@ class TypeRegistry:
         if not self.is_struct_type(child_type) or not self.is_struct_type(parent_type):
             return False
 
-        # Get the struct names
-        child_name = self.get_struct_name(child_type)
-        parent_name = self.get_struct_name(parent_type)
-
         # Follow the inheritance chain for the child
-        current = child_name
+        current = child_type
         while True:
-            current_parent = self.get_struct_parent(current)
-            if current_parent is None:
+            current_parent = self.get_struct_parent_id(current)
+            if current_parent == -1:
                 # Reached top of hierarchy without finding parent
                 return False
-            if current_parent == parent_name:
+            if current_parent == parent_type:
                 return True
             current = current_parent
 
