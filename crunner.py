@@ -89,7 +89,7 @@ class CRunner:
                 return {'success': False, 'error': "Parse error or empty program", 'ast': None}
 
             # Generate C code
-            c_code = generate_c_code(program, self.registry)
+            c_code = generate_c_code(program)
 
             # Write C code to temporary file
             with open("tmp.c", "w") as f:

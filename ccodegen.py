@@ -9,6 +9,9 @@ try:
 except ImportError:
     from io import StringIO  # Python 3
 
+# import registry singleton
+registry = get_registry()
+
 # C runtime with typedefs and standard includes
 c_runtime = """#include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +69,37 @@ C_OP_MAP = {
 def make_reserved_identifier(name):
     """Transform an identifier into a reserved one by adding zw_ prefix"""
     return "zw_" + name
+
+def type_to_c(type_id, use_handles=True):
+    """Convert type_id to a C type string"""
+    if registry.is_primitive_type(type_id):
+        # For primitive types, use the type name directly
+        type_name = registry.var_type_to_string(type_id)
+        return type_name
+
+    elif registry.is_array_type(type_id):
+        # For arrays, get element type and make it a pointer
+        elem_type_id = registry.get_array_element_type(type_id)
+        elem_type = type_to_c(elem_type_id)
+        return "%s*" % elem_type
+
+    elif registry.is_struct_type(type_id):
+        if registry.is_tuple_type(type_id):
+            # Generate anonymous struct for tuple
+            fields = registry.get_struct_fields(type_id)
+            result = "struct {"
+            for field_name, field_type in fields:
+                field_c_type = type_to_c(field_type, use_handles=True)
+                result += "%s %s;" % (field_c_type, field_name)
+            result += "}"
+            return result
+
+        if use_handles:
+            return "handle"
+        return "struct " + registry.get_struct_name(type_id)
+
+    return "void"  # Default fallback
+
 
 class VarLifecycle:
     """Track lifecycle information for a variable"""
@@ -130,7 +164,7 @@ class ScopeManager:
 
         return new_scope
 
-    def leave_scope(self, helper_header_output, registry):
+    def leave_scope(self, helper_header_output):
         """Leave current scope and generate both START and END macros"""
         if not self.scope_stack:
             return None
@@ -152,9 +186,9 @@ class ScopeManager:
                 else:
                     # Stack allocation for non-escaping variables
                     storage_name = make_reserved_identifier("%s_storage" % name)
-                    helper_header_output.write("\tstruct %s %s = {0}; \\\n" % (struct_name, storage_name))
-                    helper_header_output.write("\thandle %s = ha_stack_alloc(&ha, sizeof(struct %s), &%s); \\\n" %
-                                            (name, struct_name, storage_name))
+                    helper_header_output.write("\t%s %s = {0}; \\\n" % (type_to_c(var.type_id, use_handles=False), storage_name))
+                    helper_header_output.write("\thandle %s = ha_stack_alloc(&ha, sizeof(%s), &%s); \\\n" %
+                                            (name, storage_name, storage_name))
             elif var.is_struct:
                 # Just declare handle for variables getting value from elsewhere
                 helper_header_output.write("\thandle %s; \\\n" % name)
@@ -211,8 +245,7 @@ class ScopeManager:
         return len(self.scope_stack)
 
 class CCodeGenerator:
-    def __init__(self, registry):
-        self.registry = registry
+    def __init__(self):
         self.output = StringIO()
         self.helper_header = StringIO()
         self.indent_level = 0
@@ -257,8 +290,8 @@ class CCodeGenerator:
 
     def dereference(self, type_id, expr):
         """Generate code to dereference a type"""
-        if self.registry.is_struct_type(type_id):
-            struct_name = self.registry.get_struct_name(type_id)
+        if registry.is_struct_type(type_id):
+            struct_name = registry.get_struct_name(type_id)
             return '*((struct %s*)ha_obj_get_ptr(&ha, %s))' % (struct_name, expr)
         return "*(%s)"%expr
 
@@ -320,15 +353,15 @@ class CCodeGenerator:
 
         # Generate struct members
         for field_name, field_type in node.fields:
-            c_type = self.type_to_c(field_type, use_handles=False)
+            c_type = type_to_c(field_type, use_handles=False)
             self.output.write('    %s %s;\n' % (c_type, field_name))
 
         self.output.write('};\n\n')
 
     def generate_var_decl(self, node, is_global=False):
         """Generate C code for a variable declaration (both local and global)"""
-        var_type = self.type_to_c(node.var_type)
-        is_struct = self.registry.is_struct_type(node.var_type)
+        var_type = type_to_c(node.var_type)
+        is_struct = registry.is_struct_type(node.var_type)
 
         # Check if the variable is const (not TT_VAR)
         if node.decl_type != TT_VAR:
@@ -390,23 +423,23 @@ class CCodeGenerator:
     def generate_function_prototype_string(self, node):
         """Generate C function prototype string without ending ;"""
         func_name = self.get_method_name_from_node(node)
-        func_id = self.registry.lookup_function(node.name, node.parent_struct_id)
-        func_obj = self.registry.get_func_from_id(func_id)
+        func_id = registry.lookup_function(node.name, node.parent_struct_id)
+        func_obj = registry.get_func_from_id(func_id)
 
         # Generate return type
-        ret_type = self.type_to_c(node.return_type, use_handles=self.registry.is_struct_type(node.return_type) and func_obj.is_ref_return)
+        ret_type = type_to_c(node.return_type, use_handles=registry.is_struct_type(node.return_type) and func_obj.is_ref_return)
 
         # Generate parameter list
         params = []
         for param in node.params:
             # Unpack the tuple (name, type, is_byref)
             param_name, param_type, is_byref = param
-            c_type = self.type_to_c(param_type)
+            c_type = type_to_c(param_type)
 
             # Handle byref params
             # Only add * for primitive types, not for handles
             # Since handles are already reference types
-            is_struct = self.registry.is_struct_type(param_type)
+            is_struct = registry.is_struct_type(param_type)
             if is_byref and not is_struct:
                 c_type += '*'
             params.append('%s %s' % (c_type, param_name))
@@ -437,26 +470,6 @@ class CCodeGenerator:
             cast = '(intmax_t)'
         self.test_printfs.append('dprintf(99, "%s:%s\\n", %s%s);' % (var_name, fmt, cast, var_name))
 
-    def type_to_c(self, type_id, use_handles=True):
-        """Convert type_id to a C type string"""
-        if self.registry.is_primitive_type(type_id):
-            # For primitive types, use the type name directly
-            type_name = self.registry.var_type_to_string(type_id)
-            return type_name
-
-        elif self.registry.is_array_type(type_id):
-            # For arrays, get element type and make it a pointer
-            elem_type_id = self.registry.get_array_element_type(type_id)
-            elem_type = self.type_to_c(elem_type_id)
-            return "%s*" % elem_type
-
-        elif self.registry.is_struct_type(type_id):
-            if use_handles:
-                return "handle"
-            return "struct " + self.registry.get_struct_name(type_id)
-
-        return "void"  # Default fallback
-
     def generate_function(self, node):
         """Generate C code for a function definition"""
         # Function signature
@@ -473,12 +486,12 @@ class CCodeGenerator:
         self.test_printfs = []
 
         # Get function body from registry
-        func_id = self.registry.lookup_function(node.name, node.parent_struct_id)
+        func_id = registry.lookup_function(node.name, node.parent_struct_id)
         if func_id == -1:
             # Should not happen, but handle it gracefully
             return
 
-        func_obj = self.registry.get_func_from_id(func_id)
+        func_obj = registry.get_func_from_id(func_id)
         # hack, hack: turn the func_obj into a pseudo-node with ref_kind attribute
         # so it can be used "as-if" a node in needs_dereference checks
         func_obj.ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
@@ -501,7 +514,7 @@ class CCodeGenerator:
                 self.output.write(self.indent() + printf_stmt + '\n')
 
         # Generate scope end macro and leave scope
-        scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+        scope = self.scope_manager.leave_scope(self.helper_header)
         self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
         self.indent_level -= 1
 
@@ -519,7 +532,7 @@ class CCodeGenerator:
         elif node.node_type == AST_NODE_VAR_DECL:
             # since we use handles for all struct instances, we need to
             # set ref_kind to not NONE, so we can insert the proper derefs.
-            if (self.registry.is_struct_type(node.var_type) and
+            if (registry.is_struct_type(node.var_type) and
                 node.ref_kind == REF_KIND_NONE):
                 node.ref_kind = REF_KIND_GENERIC
             self.generate_var_decl(node, is_global=False)
@@ -530,7 +543,7 @@ class CCodeGenerator:
                 # Use current_func_obj as pseudo-node to check if return needs dereferencing
                 deref_needed = self.needs_dereference(self.current_func_obj, node.expr)
                 expr_code = self.generate_expression(node.expr)
-                if self.registry.is_struct_type(node.expr.expr_type) and deref_needed != 0:
+                if registry.is_struct_type(node.expr.expr_type) and deref_needed != 0:
                     self.output.write('return %s;\n' % self.dereference(node.expr.expr_type, expr_code))
                 else:
                     self.output.write('return %s;\n' % expr_code)
@@ -565,7 +578,7 @@ class CCodeGenerator:
         for stmt in node.then_body:
             self.generate_statement(stmt)
 
-        scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+        scope = self.scope_manager.leave_scope(self.helper_header)
         self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
         self.indent_level -= 1
 
@@ -580,7 +593,7 @@ class CCodeGenerator:
                 self.generate_statement(stmt)
 
             # Generate scope end macro and leave scope
-            scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+            scope = self.scope_manager.leave_scope(self.helper_header)
             self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
             self.indent_level -= 1
 
@@ -601,7 +614,7 @@ class CCodeGenerator:
             self.generate_statement(stmt)
 
         # Generate scope end macro and leave scope
-        scope = self.scope_manager.leave_scope(self.helper_header, self.registry)
+        scope = self.scope_manager.leave_scope(self.helper_header)
         self.output.write(self.indent() + '%s;\n' % scope.get_macro_name("ZW_SCOPE_END"))
         self.indent_level -= 1
         self.output.write(self.indent() + '}\n')
@@ -610,8 +623,8 @@ class CCodeGenerator:
         """Generate code for a generic initializer node (structs, arrays, tuples)"""
         # Get type information for casting
         type_cast = ""
-        if self.registry.is_struct_type(node.expr_type):
-            struct_name = self.registry.get_struct_name(node.expr_type)
+        if registry.is_struct_type(node.expr_type):
+            struct_name = registry.get_struct_name(node.expr_type)
             type_cast = "(struct %s) " % struct_name
 
         # Start the initializer
@@ -624,7 +637,7 @@ class CCodeGenerator:
                     result += ", "
                 result += self.generate_expression(elem)
 
-        elif node.subtype == INITIALIZER_SUBTYPE_LINEAR and self.registry.is_array_type(node.expr_type):
+        elif node.subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_array_type(node.expr_type):
             # For arrays, output elements in order
             for i, elem in enumerate(node.elements):
                 if i > 0:
@@ -632,13 +645,13 @@ class CCodeGenerator:
                 result += self.generate_expression(elem)
 
             # If this is a fixed-size array, output zeros for missing elements
-            array_size = self.registry.get_array_size(node.expr_type)
+            array_size = registry.get_array_size(node.expr_type)
             if array_size is not None and array_size > len(node.elements):
                 if len(node.elements) > 0:
                     result += ", "
 
                 # Add zeros for remaining elements
-                element_type = self.registry.get_array_element_type(node.expr_type)
+                element_type = registry.get_array_element_type(node.expr_type)
                 for i in range(len(node.elements), array_size):
                     if i > len(node.elements):
                         result += ", "
@@ -647,7 +660,7 @@ class CCodeGenerator:
                         result += "0"
                     elif element_type == TYPE_FLOAT:
                         result += "0.0"
-                    elif self.registry.is_struct_type(element_type):
+                    elif registry.is_struct_type(element_type):
                         # For struct elements, output nested initializer with all zeros
                         result += "{0}"
                     else:
@@ -680,10 +693,10 @@ class CCodeGenerator:
         # Check if this is a method call
         if node.node_type == AST_NODE_CALL:
             if node.obj:
-                struct_name = self.registry.get_struct_name(node.obj.expr_type)
+                struct_name = registry.get_struct_name(node.obj.expr_type)
         elif node.node_type == AST_NODE_FUNCTION_DECL:
                 if node.parent_struct_id != -1:
-                    struct_name = self.registry.get_struct_name(node.parent_struct_id)
+                    struct_name = registry.get_struct_name(node.parent_struct_id)
         else:
             assert(0)
         return self.get_method_name(struct_name, func_name)
@@ -714,7 +727,7 @@ class CCodeGenerator:
         elif node.node_type == AST_NODE_VARIABLE:
             # since we use handles for all struct instances, we need to
             # set ref_kind to not NONE, so we can insert the proper derefs.
-            if (self.registry.is_struct_type(node.expr_type) and
+            if (registry.is_struct_type(node.expr_type) and
                 node.ref_kind == REF_KIND_NONE):
                 node.ref_kind = REF_KIND_GENERIC
             return node.name
@@ -771,7 +784,7 @@ class CCodeGenerator:
         elif node.node_type == AST_NODE_MEMBER_ACCESS:
             # Generate member access expression
             expr = self.generate_expression(node.obj)
-            struct_name = self.registry.get_struct_name(node.obj.expr_type)
+            struct_name = registry.get_struct_name(node.obj.expr_type)
             # we can't rely on the compiler setting the field ref_kind
             # for nested struct access to REF_KIND_NONE, because we patch in
             # the ref_kind for struct variables after the fact. we need to treat all struct
@@ -788,7 +801,7 @@ class CCodeGenerator:
 
         return "/* Unknown expression */"
 
-def generate_c_code(ast, registry):
+def generate_c_code(ast):
     """Entry point function to generate C code from an AST"""
-    generator = CCodeGenerator(registry)
+    generator = CCodeGenerator()
     return generator.generate(ast)
