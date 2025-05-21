@@ -65,11 +65,11 @@ class TypeRegistry:
         """Reset registry to initial state (for testing)"""
         # Type descriptor system
         self._type_descriptors = {}  # type_id -> TypeDescriptor
+        self._type_name_to_id = {}    # name -> type_id
+        self._next_struct_id = TYPE_STRUCT_BASE
 
         # Legacy struct storage (maintained for compatibility)
-        self._struct_registry = {}    # name -> (type_id, parent_id, fields)
         self._struct_id_to_name = {}  # type_id -> name
-        self._next_struct_id = TYPE_STRUCT_BASE
 
         # Array type cache
         self._array_cache = {}  # (element_type_id, size) -> type_id
@@ -87,8 +87,7 @@ class TypeRegistry:
         for type_id in PRIMITIVE_TYPES:
             name = TYPE_TO_STRING_MAP[type_id]
             self._type_descriptors[type_id] = PrimitiveDescriptor(type_id, name)
-            # add the name -> type mapping also to _struct_registry
-            self._struct_registry[name] = (type_id, -1, [])
+            self._type_name_to_id[name] = type_id
 
         # Pre-register generic parameter IDs
         for i in range(TYPE_GENERIC_BASE, TYPE_GENERIC_MAX + 1):
@@ -154,19 +153,19 @@ class TypeRegistry:
     def register_struct(self, name, parent_name=None, token=None, generic_params=None):
         """Register a new struct type, return its ID"""
         # Check if already registered
-        if name in self._struct_registry:
+        if name in self._type_name_to_id:
             if token:
                 raise CompilerException("Struct '%s' is already defined" % name, token)
-            return self._struct_registry[name][0]
+            return self._type_name_to_id[name]
 
         # Get parent ID if specified
         parent_id = -1
         if parent_name:
-            if parent_name not in self._struct_registry:
+            if parent_name not in self._type_name_to_id:
                 if token:
                     raise CompilerException("Parent struct '%s' is not defined" % parent_name, token)
                 return -1
-            parent_id = self._struct_registry[parent_name][0]
+            parent_id = self._type_name_to_id[parent_name]
 
         # Create new type ID
         type_id = self._next_struct_id
@@ -185,7 +184,7 @@ class TypeRegistry:
                 param_index += 1
 
         # Maintain compatibility with existing system
-        self._struct_registry[name] = (type_id, parent_id, [])
+        self._type_name_to_id[name] = type_id
         self._struct_id_to_name[type_id] = name
 
         return type_id
@@ -446,8 +445,8 @@ class TypeRegistry:
         Returns:
             Type ID or -1 if not found
         """
-        if type_name in self._struct_registry:
-            return self._struct_registry[type_name][0]
+        if type_name in self._type_name_to_id:
+            return self._type_name_to_id[type_name]
 
         return -1
 
@@ -459,40 +458,41 @@ class TypeRegistry:
     def register_typedef(self, alias_name, target_type_id, token=None):
         """Register a type alias"""
         # Check if alias already exists
-        if alias_name in self._struct_registry:
+        if alias_name in self._type_name_to_id:
             if token:
                 raise CompilerException("Type alias '%s' is already defined" % alias_name, token)
             return False
 
         # Add the alias to struct_registry, pointing to the same ID as the target
-        self._struct_registry[alias_name] = (target_type_id, -1, [])
+        self._type_name_to_id[alias_name] = target_type_id
         return True
 
     def add_field(self, struct_name, field_name, field_type, token=None):
         """Add a field to a struct definition"""
-        if struct_name not in self._struct_registry:
+        type_id = self._type_name_to_id.get(struct_name, -1)
+
+        if type_id == -1:
             if token:
                 raise CompilerException("Struct '%s' is not defined" % struct_name, token)
             return False
 
-        type_id, _, fields = self._struct_registry[struct_name]
+        # Get the struct descriptor
+        descriptor = self._type_descriptors.get(type_id)
+        if not descriptor or descriptor.kind != self.TYPE_KIND_STRUCT:
+            if token:
+                raise CompilerException("Type '%s' is not a struct" % struct_name, token)
+            return False
 
-        # Check for duplicate field
-        for name, _ in fields:
+        # Check for duplicate fields
+        for name, _ in descriptor.fields:
             if name == field_name:
                 if token:
                     raise CompilerException("Field '%s' is already defined in struct '%s'" % 
-                                          (field_name, struct_name), token)
+                                           (field_name, struct_name), token)
                 return False
 
-        # Add field to both systems
-        fields.append((field_name, field_type))
-
-        # Also update descriptor
-        descriptor = self._type_descriptors.get(type_id)
-        if descriptor and descriptor.kind == self.TYPE_KIND_STRUCT:
-            descriptor.fields.append((field_name, field_type))
-
+        # Add the field to the descriptor
+        descriptor.fields.append((field_name, field_type))
         return True
 
     def get_struct_id(self, struct_name):
@@ -566,9 +566,9 @@ class TypeRegistry:
     def get_field_type(self, struct_name, field_name):
         """Get the type of a field in a struct (including parent fields)"""
         # Use legacy system to get the struct ID
-        if struct_name not in self._struct_registry:
+        if struct_name not in self._type_name_to_id:
             return None
-        type_id = self._struct_registry[struct_name][0]
+        type_id = self._type_name_to_id[struct_name]
         for name, type_ in self.get_struct_fields(type_id, include_parents=True):
             if name == field_name:
                 return type_
@@ -590,7 +590,7 @@ class TypeRegistry:
 
     def struct_exists(self, struct_name):
         """Check if a struct exists"""
-        return struct_name in self._struct_registry
+        return struct_name in self._type_name_to_id
 
     # Function methods
     def register_function(self, name, return_type, params, parent_struct_id=-1, ast_node=None, is_ref_return=False):
