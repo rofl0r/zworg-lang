@@ -16,20 +16,20 @@ TYPE_GENERIC_MAX = 99   # Maximum ID for generic parameters (49 possible paramet
 # Type descriptor classes
 class TypeDescriptor(object):
     """Base descriptor for all types"""
-    def __init__(self, kind):
+    def __init__(self, kind, name=None):
         self.kind = kind
+        self.name = name
 
 class PrimitiveDescriptor(TypeDescriptor):
     """Descriptor for primitive types"""
-    def __init__(self, primitive_type):
-        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_PRIMITIVE)
+    def __init__(self, primitive_type, name=None):
+        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_PRIMITIVE, name)
         self.primitive_type = primitive_type
 
 class StructDescriptor(TypeDescriptor):
     """Descriptor for struct types"""
     def __init__(self, name, parent_id=-1):
-        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_STRUCT)
-        self.name = name
+        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_STRUCT, name)
         self.parent_id = parent_id
         self.fields = []  # List of (name, type_id) tuples
         self.param_mapping = {}  # Maps generic param names to type IDs
@@ -38,7 +38,7 @@ class StructDescriptor(TypeDescriptor):
 class ArrayDescriptor(TypeDescriptor):
     """Descriptor for array types"""
     def __init__(self, element_type_id, size=None):
-        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_ARRAY)
+        TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_ARRAY, "[]")
         self.element_type_id = element_type_id
         self.size = size  # None = dynamic size, int = fixed size
 
@@ -85,13 +85,14 @@ class TypeRegistry:
     def _initialize_primitive_types(self):
         """Register all primitive types with descriptors"""
         for type_id in PRIMITIVE_TYPES:
-            self._type_descriptors[type_id] = PrimitiveDescriptor(type_id)
+            name = TYPE_TO_STRING_MAP[type_id]
+            self._type_descriptors[type_id] = PrimitiveDescriptor(type_id, name)
             # add the name -> type mapping also to _struct_registry
-            self._struct_registry[TYPE_TO_STRING_MAP[type_id]] = (type_id, -1, [])
+            self._struct_registry[name] = (type_id, -1, [])
 
         # Pre-register generic parameter IDs
         for i in range(TYPE_GENERIC_BASE, TYPE_GENERIC_MAX + 1):
-            self._type_descriptors[i] = TypeDescriptor(TypeRegistry.TYPE_KIND_PRIMITIVE)
+            self._type_descriptors[i] = TypeDescriptor(TypeRegistry.TYPE_KIND_PRIMITIVE, "T%d"%(i-TYPE_GENERIC_BASE))
 
     def is_primitive_type(self, type_id):
         return type_id in PRIMITIVE_TYPES
