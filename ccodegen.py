@@ -89,8 +89,8 @@ def type_to_c(type_id, use_handles=True):
             fields = registry.get_struct_fields(type_id)
             result = "struct {"
             for field_name, field_type in fields:
-                field_c_type = type_to_c(field_type, use_handles=True)
-                result += "%s %s;" % (field_c_type, field_name)
+                field_c_type = type_to_c(field_type, use_handles=False)
+                result += "%s %s; " % (field_c_type, field_name)
             result += "}"
             return result
 
@@ -178,11 +178,11 @@ class ScopeManager:
         # Add variable declarations - only allocate storage for variables that need it
         for name, var in scope.get_vars_in_order():
             if var.is_struct and var.needs_storage:
-                struct_name = registry.get_struct_name(var.type_id)
                 if var.escapes:
                     # Heap allocation for escaping variables
-                    helper_header_output.write("\thandle %s = ha_obj_alloc(&ha, sizeof(struct %s)); \\\n" % 
-                                            (name, struct_name))
+                    struct_string = type_to_c(var.type_id, use_handles=False)
+                    helper_header_output.write("\thandle %s = ha_obj_alloc(&ha, sizeof(%s)); \\\n" %
+                                            (name, struct_string))
                 else:
                     # Stack allocation for non-escaping variables
                     storage_name = make_reserved_identifier("%s_storage" % name)
@@ -290,9 +290,11 @@ class CCodeGenerator:
 
     def dereference(self, type_id, expr):
         """Generate code to dereference a type"""
+        # we should never get a tuple type byref
+        assert(not registry.is_tuple_type(type_id))
         if registry.is_struct_type(type_id):
-            struct_name = registry.get_struct_name(type_id)
-            return '*((struct %s*)ha_obj_get_ptr(&ha, %s))' % (struct_name, expr)
+            struct_string = type_to_c(type_id, use_handles=False)
+            return '*((%s*)ha_obj_get_ptr(&ha, %s))' % (struct_string, expr)
         return "*(%s)"%expr
 
     def generate_header(self):
@@ -361,7 +363,8 @@ class CCodeGenerator:
     def generate_var_decl(self, node, is_global=False):
         """Generate C code for a variable declaration (both local and global)"""
         var_type = type_to_c(node.var_type)
-        is_struct = registry.is_struct_type(node.var_type)
+        # in this context we want is_struct to exclude tuples
+        is_struct = registry.is_struct_type(node.var_type) and not registry.is_tuple_type(node.var_type)
 
         # Check if the variable is const (not TT_VAR)
         if node.decl_type != TT_VAR:
@@ -418,7 +421,8 @@ class CCodeGenerator:
         # Add test printf for main function or global variables
         # But only for primitive types and strings, not structs
         if not is_struct and (self.current_function == 'main' or is_global):
-            self.add_test_printf(node.var_name, node.var_type)
+            if not registry.is_tuple_type(node.var_type):
+                self.add_test_printf(node.var_name, node.var_type)
 
     def generate_function_prototype_string(self, node):
         """Generate C function prototype string without ending ;"""
@@ -623,9 +627,11 @@ class CCodeGenerator:
         """Generate code for a generic initializer node (structs, arrays, tuples)"""
         # Get type information for casting
         type_cast = ""
-        if registry.is_struct_type(node.expr_type):
-            struct_name = registry.get_struct_name(node.expr_type)
-            type_cast = "(struct %s) " % struct_name
+        if registry.is_tuple_type(node.expr_type): # don't emit cast for tuples
+            pass
+        elif registry.is_struct_type(node.expr_type):
+            struct_string = type_to_c(node.expr_type, use_handles=False)
+            type_cast = "(%s) " % struct_string
 
         # Start the initializer
         result = "%s{"%type_cast
@@ -784,14 +790,14 @@ class CCodeGenerator:
         elif node.node_type == AST_NODE_MEMBER_ACCESS:
             # Generate member access expression
             expr = self.generate_expression(node.obj)
-            struct_name = registry.get_struct_name(node.obj.expr_type)
             # we can't rely on the compiler setting the field ref_kind
             # for nested struct access to REF_KIND_NONE, because we patch in
             # the ref_kind for struct variables after the fact. we need to treat all struct
             # accesses with dereferencing, except for the case of inner structs.
-            if node.obj.node_type == AST_NODE_MEMBER_ACCESS:
+            if node.obj.node_type == AST_NODE_MEMBER_ACCESS or registry.is_tuple_type(node.obj.expr_type):
                 return "%s.%s"%(expr, node.member_name)
-            return '((struct %s*)(ha_obj_get_ptr(&ha, %s)))->%s' % (struct_name, expr, node.member_name)
+            struct_string = type_to_c(node.obj.expr_type, use_handles=False)
+            return '((%s*)(ha_obj_get_ptr(&ha, %s)))->%s' % (struct_string, expr, node.member_name)
 
         elif node.node_type == AST_NODE_GENERIC_INITIALIZER:
             return self.generate_generic_initializer(node)
