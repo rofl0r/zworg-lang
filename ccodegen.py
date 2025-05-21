@@ -226,6 +226,42 @@ class CCodeGenerator:
     def indent(self):
         return '\t' * self.indent_level
 
+    def needs_dereference(self, lhs_node, rhs_node):
+        """
+        Check dereferencing needs when combining LHS and RHS
+        Returns:
+          -1: Left side needs dereferencing
+           0: No dereferencing needed
+           1: Right side needs dereferencing
+           2: Both sides need dereferencing
+        """
+        # Get the reference kinds
+        lhs_ref_kind = lhs_node.ref_kind
+        rhs_ref_kind = rhs_node.ref_kind
+
+        # Special case for NEW node - look at struct_init
+        if rhs_node.node_type == AST_NODE_NEW:
+            rhs_ref_kind = rhs_node.struct_init.ref_kind
+
+        left_needs = lhs_ref_kind != REF_KIND_NONE and rhs_ref_kind == REF_KIND_NONE
+        right_needs = lhs_ref_kind == REF_KIND_NONE and rhs_ref_kind != REF_KIND_NONE
+
+        if left_needs and right_needs:
+            return 2  # Both sides need dereferencing
+        elif left_needs:
+            return -1  # Left side needs dereferencing
+        elif right_needs:
+            return 1  # Right side needs dereferencing
+        else:
+            return 0  # No dereferencing needed
+
+    def dereference(self, type_id, expr):
+        """Generate code to dereference a type"""
+        if self.registry.is_struct_type(type_id):
+            struct_name = self.registry.get_struct_name(type_id)
+            return '*((struct %s*)ha_obj_get_ptr(&ha, %s))' % (struct_name, expr)
+        return "*(%s)"%expr
+
     def generate_header(self):
         """Generate C typedefs and standard includes"""
         self.output.write(c_runtime)
@@ -310,6 +346,10 @@ class CCodeGenerator:
             else:
                 init_expr = expr_code
 
+        deref_needed = 0
+        if node.expr:
+            deref_needed = self.needs_dereference(node, node.expr)
+
         # Register variable in scope manager
         if not is_global:
             self.scope_manager.add_variable(node.var_name, node.var_type, is_struct=is_struct)
@@ -318,8 +358,7 @@ class CCodeGenerator:
                 # dont need to allocate storage for it.
                 # Only mark as not needing storage if BOTH sides have ref_kind != REF_KIND_NONE
                 # In other words, we're just assigning handles
-                if (node.ref_kind != REF_KIND_HEAP and
-                    (node.ref_kind != REF_KIND_NONE and node.expr.ref_kind != REF_KIND_NONE)):
+                if deref_needed == 0 and node.ref_kind != REF_KIND_HEAP:
                     self.scope_manager.mark_variable_no_storage(node.var_name)
                 # small hack - to get heap alloc for REF_KIND_HEAP, mark as
                 # escaping. else we'd need to keep track of the ref_kind in
@@ -331,16 +370,10 @@ class CCodeGenerator:
 
         if init_expr:
             if is_struct:
-                struct_name = self.registry.get_struct_name(node.var_type)
-
-                rhs_ref_kind = node.expr.ref_kind
-                if node.expr.node_type == AST_NODE_NEW:
-                    rhs_ref_kind = node.expr.struct_init.ref_kind
-
                 # If left is a reference, and initializer's isn't, we need to dereference LHS
-                if node.ref_kind != REF_KIND_NONE and rhs_ref_kind == REF_KIND_NONE:
-                    self.output.write(self.indent() + '*((struct %s*)ha_obj_get_ptr(&ha, %s)) = %s;\n' % 
-                                     (struct_name, node.var_name, expr_code))
+                if deref_needed == -1 or deref_needed == 2:
+                    self.output.write(self.indent() + '%s = %s;\n' %
+                                     (self.dereference(node.var_type, node.var_name), expr_code))
                 else:
                     # Direct handle assignment for expressions that return handles
                     self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, expr_code))
@@ -446,6 +479,10 @@ class CCodeGenerator:
             return
 
         func_obj = self.registry.get_func_from_id(func_id)
+        # hack, hack: turn the func_obj into a pseudo-node with ref_kind attribute
+        # so it can be used "as-if" a node in needs_dereference checks
+        func_obj.ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
+
         self.current_func_obj = func_obj
         flat_func = self.flattener.flatten_function(func_obj.ast_node)
         body = flat_func.body
@@ -489,14 +526,12 @@ class CCodeGenerator:
 
         elif node.node_type == AST_NODE_RETURN:
             self.output.write(self.indent())
-            if node.expr: # hasattr(node, 'expr') and node.expr:
+            if node.expr:
+                # Use current_func_obj as pseudo-node to check if return needs dereferencing
+                deref_needed = self.needs_dereference(self.current_func_obj, node.expr)
                 expr_code = self.generate_expression(node.expr)
-                if (self.registry.is_struct_type(node.expr.expr_type) and
-                    not self.current_func_obj.is_ref_return):
-                    # Return by value - dereference the handle to get struct value
-                    struct_name = self.registry.get_struct_name(node.expr.expr_type)
-                    self.output.write('return *((struct %s*)ha_obj_get_ptr(&ha, %s));\n' % 
-                                     (struct_name, expr_code))
+                if self.registry.is_struct_type(node.expr.expr_type) and deref_needed != 0:
+                    self.output.write('return %s;\n' % self.dereference(node.expr.expr_type, expr_code))
                 else:
                     self.output.write('return %s;\n' % expr_code)
                     if node.expr.node_type == AST_NODE_VARIABLE and self.current_func_obj.is_ref_return:
@@ -688,15 +723,16 @@ class CCodeGenerator:
             left = self.generate_expression(node.left)
             right = self.generate_expression(node.right)
             op = C_OP_MAP.get(node.operator, node.operator)
+            deref_needed = self.needs_dereference(node.left, node.right)
             if op == '=':
-                if (node.left.ref_kind != REF_KIND_NONE and
-                    self.registry.is_struct_type(node.left.expr_type)):
-                    struct_name = self.registry.get_struct_name(node.left.expr_type)
-                    return '*((struct %s*)ha_obj_get_ptr(&ha, %s)) = %s' % (struct_name, left, right)
-
                 if node.right.node_type == AST_NODE_VARIABLE and node.left.node_type == AST_NODE_MEMBER_ACCESS:
                     var_name = node.right.name
                     self.scope_manager.mark_variable_escaping(var_name)
+
+            if deref_needed == -1 or deref_needed == 2:
+                left = self.dereference(node.left.expr_type, left)
+            if deref_needed > 0:
+                right = self.dereference(node.right.expr_type, right)
 
             return '(%s %s %s)' % (left, op, right)
 
