@@ -85,21 +85,21 @@ def type_to_c(type_id, use_handles=True):
 
     elif registry.is_struct_type(type_id):
         if registry.is_tuple_type(type_id):
-            # Generate anonymous struct for tuple
-            fields = registry.get_struct_fields(type_id)
-            result = "struct {"
-            for field_name, field_type in fields:
-                field_c_type = type_to_c(field_type, use_handles=False)
-                result += "%s %s; " % (field_c_type, field_name)
-            result += "}"
-            return result
-
+            use_handles = False
         if use_handles:
             return "handle"
         return "struct " + registry.get_struct_name(type_id)
 
     return "void"  # Default fallback
 
+def tuple_decl(type_id):
+    fields = registry.get_struct_fields(type_id)
+    result = "struct %s {"%registry.get_struct_name(type_id)
+    for field_name, field_type in fields:
+        field_c_type = type_to_c(field_type, use_handles=False)
+        result += "%s %s; " % (field_c_type, field_name)
+    result += "};\n"
+    return result
 
 class VarLifecycle:
     """Track lifecycle information for a variable"""
@@ -137,11 +137,33 @@ class ScopeManager:
     """Manage scopes and variable lifecycles during code generation"""
     def __init__(self):
         self.reset()
+        self.tuple_decls = {} # tuple_type_id: struct decl
+        self.tuple_order = [] # tuple_id
 
     def reset(self):
         """Reset all scope tracking"""
         self.scope_stack = []  # Stack of ScopeLevel objects
         self.function_counters = {}  # {function_name: next_scope_id}
+
+    def declare_tuple_type(self, tup_id, decl):
+        if not self.is_tuple_processed(tup_id):
+            if not tup_id in self.tuple_decls:
+                self.tuple_order.append(tup_id)
+            self.tuple_decls[tup_id] = decl
+
+    def get_tuple_decls(self):
+        result = ''
+        for tid in self.tuple_order:
+            if not self.is_tuple_processed(tid):
+                result += self.tuple_decls[tid]
+        return result
+
+    def mark_tuple_processed(self, tup_id):
+        self.declare_tuple_type(tup_id, "")
+
+    # when we emitted tuple decls previous to a struct def using it,
+    def is_tuple_processed(self, tup_id):
+        return tup_id in self.tuple_decls and self.tuple_decls[tup_id] == ""
 
     def current_scope(self):
         """Get current scope or None if at global level"""
@@ -322,6 +344,9 @@ class CCodeGenerator:
         for struct in structs:
             self.generate_struct_def(struct)
 
+        # marker to insert tuples that need to come after struct defs
+        self.output.write("\n/* ZW__HEADER_INJECT_TUPLES */\n")
+
         # Generate function prototypes
         for func in functions:
             self.generate_function_prototype(func)
@@ -343,6 +368,12 @@ class CCodeGenerator:
         if marker in result:
             result = result.replace(marker, self.helper_header.getvalue())
 
+        marker = "/* ZW__HEADER_INJECT_TUPLES */"
+        if marker in result:
+            # need to patch in tuple struct types on the fly since they're not declared in the AST
+            tup_str = self.scope_manager.get_tuple_decls()
+            result = result.replace(marker, tup_str)
+
         return result
 
     def generate_c_main(self):
@@ -351,20 +382,40 @@ class CCodeGenerator:
 
     def generate_struct_def(self, node):
         """Generate C code for a struct definition"""
-        self.output.write('struct %s {\n' % node.name)
+        # we first track all tuples we need, then emit those before the
+        # the actual struct def, and mark them as processed so they dont
+        # get declared again.
+        tuples_needed = []
+        result = 'struct %s {\n' % node.name
 
         # Generate struct members
         for field_name, field_type in node.fields:
-            c_type = type_to_c(field_type, use_handles=False)
-            self.output.write('    %s %s;\n' % (c_type, field_name))
+            # deal with tuple structs we may find inside another struct
+            if registry.is_tuple_type(field_type):
+                if not self.scope_manager.is_tuple_processed(field_type):
+                    tuples_needed.append(field_type)
+                    # mark as processed
+                    self.scope_manager.mark_tuple_processed(field_type)
 
-        self.output.write('};\n\n')
+            c_type = type_to_c(field_type, use_handles=False)
+            result += '    %s %s;\n' % (c_type, field_name)
+
+        result += '};\n\n'
+        tup_str = ''
+        for tid in tuples_needed:
+            tup_str += tuple_decl(tid)
+
+        self.output.write(tup_str + result);
 
     def generate_var_decl(self, node, is_global=False):
         """Generate C code for a variable declaration (both local and global)"""
         var_type = type_to_c(node.var_type)
         # in this context we want is_struct to exclude tuples
-        is_struct = registry.is_struct_type(node.var_type) and not registry.is_tuple_type(node.var_type)
+        is_tuple = registry.is_tuple_type(node.var_type)
+        if is_tuple:
+            self.scope_manager.declare_tuple_type(node.var_type, tuple_decl(node.var_type))
+
+        is_struct = registry.is_struct_type(node.var_type) and not is_tuple
 
         # Check if the variable is const (not TT_VAR)
         if node.decl_type != TT_VAR:
@@ -389,7 +440,7 @@ class CCodeGenerator:
         # Register variable in scope manager
         if not is_global:
             self.scope_manager.add_variable(node.var_name, node.var_type, is_struct=is_struct)
-            if is_struct and node.expr:
+            if is_struct and not is_tuple and node.expr:
                 # if variable gets assigned result of another expression, we
                 # dont need to allocate storage for it.
                 # Only mark as not needing storage if BOTH sides have ref_kind != REF_KIND_NONE
@@ -430,6 +481,10 @@ class CCodeGenerator:
         func_id = registry.lookup_function(node.name, node.parent_struct_id)
         func_obj = registry.get_func_from_id(func_id)
 
+        # tell scope manager about tuple types we encounter in the wild
+        if registry.is_tuple_type(node.return_type):
+            self.scope_manager.declare_tuple_type(node.return_type, tuple_decl(node.return_type))
+
         # Generate return type
         ret_type = type_to_c(node.return_type, use_handles=registry.is_struct_type(node.return_type) and func_obj.is_ref_return)
 
@@ -438,6 +493,10 @@ class CCodeGenerator:
         for param in node.params:
             # Unpack the tuple (name, type, is_byref)
             param_name, param_type, is_byref = param
+
+            if registry.is_tuple_type(param_type):
+                self.scope_manager.declare_tuple_type(param_type, tuple_decl(param_type))
+
             c_type = type_to_c(param_type)
 
             # Handle byref params
@@ -537,6 +596,7 @@ class CCodeGenerator:
             # since we use handles for all struct instances, we need to
             # set ref_kind to not NONE, so we can insert the proper derefs.
             if (registry.is_struct_type(node.var_type) and
+                not registry.is_tuple_type(node.var_type) and
                 node.ref_kind == REF_KIND_NONE):
                 node.ref_kind = REF_KIND_GENERIC
             self.generate_var_decl(node, is_global=False)
@@ -627,9 +687,7 @@ class CCodeGenerator:
         """Generate code for a generic initializer node (structs, arrays, tuples)"""
         # Get type information for casting
         type_cast = ""
-        if registry.is_tuple_type(node.expr_type): # don't emit cast for tuples
-            pass
-        elif registry.is_struct_type(node.expr_type):
+        if registry.is_struct_type(node.expr_type):
             struct_string = type_to_c(node.expr_type, use_handles=False)
             type_cast = "(%s) " % struct_string
 
@@ -734,6 +792,7 @@ class CCodeGenerator:
             # since we use handles for all struct instances, we need to
             # set ref_kind to not NONE, so we can insert the proper derefs.
             if (registry.is_struct_type(node.expr_type) and
+                not registry.is_tuple_type(node.expr_type) and
                 node.ref_kind == REF_KIND_NONE):
                 node.ref_kind = REF_KIND_GENERIC
             return node.name
