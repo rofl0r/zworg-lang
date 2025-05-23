@@ -593,12 +593,6 @@ class CCodeGenerator:
             self.output.write('%s;\n' % self.generate_expression(node.expr))
 
         elif node.node_type == AST_NODE_VAR_DECL:
-            # since we use handles for all struct instances, we need to
-            # set ref_kind to not NONE, so we can insert the proper derefs.
-            if (registry.is_struct_type(node.var_type) and
-                not registry.is_tuple_type(node.var_type) and
-                node.ref_kind == REF_KIND_NONE):
-                node.ref_kind = REF_KIND_GENERIC
             self.generate_var_decl(node, is_global=False)
 
         elif node.node_type == AST_NODE_RETURN:
@@ -786,12 +780,6 @@ class CCodeGenerator:
             return self.generate_expression(node.struct_init)
 
         elif node.node_type == AST_NODE_VARIABLE:
-            # since we use handles for all struct instances, we need to
-            # set ref_kind to not NONE, so we can insert the proper derefs.
-            if (registry.is_struct_type(node.expr_type) and
-                not registry.is_tuple_type(node.expr_type) and
-                node.ref_kind == REF_KIND_NONE):
-                node.ref_kind = REF_KIND_GENERIC
             return node.name
 
         elif node.node_type == AST_NODE_BINARY_OP:
