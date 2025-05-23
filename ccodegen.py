@@ -685,6 +685,10 @@ class CCodeGenerator:
 
     def generate_generic_initializer(self, node):
         """Generate code for a generic initializer node (structs, arrays, tuples)"""
+        # tell scope manager about tuple types we encounter in the wild
+        if registry.is_tuple_type(node.expr_type):
+            self.scope_manager.declare_tuple_type(node.expr_type, tuple_decl(node.expr_type))
+
         # Get type information for casting
         type_cast = ""
         if registry.is_struct_type(node.expr_type):
