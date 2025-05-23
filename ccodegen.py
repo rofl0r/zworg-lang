@@ -694,14 +694,7 @@ class CCodeGenerator:
         # Start the initializer
         result = "%s{"%type_cast
 
-        if node.subtype == INITIALIZER_SUBTYPE_TUPLE:
-            # For tuples, just output elements in order
-            for i, elem in enumerate(node.elements):
-                if i > 0:
-                    result += ", "
-                result += self.generate_expression(elem)
-
-        elif node.subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_array_type(node.expr_type):
+        if node.subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_array_type(node.expr_type):
             # For arrays, output elements in order
             for i, elem in enumerate(node.elements):
                 if i > 0:

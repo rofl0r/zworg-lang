@@ -324,7 +324,7 @@ class GenericInitializerNode(ASTNode):
         self.expr_type = target_type    # Result type of this initializer
 
     def __repr__(self):
-        subtype_str = ["TUPLE", "LINEAR", "NAMED"][self.subtype]
+        subtype_str = ["LINEAR", "NAMED"][self.subtype]
         elements_str = ", ".join(repr(e) for e in self.elements)
         return "Initializer(%s, %s, [%s])" % (
             subtype_str, registry.var_type_to_string(self.target_type), elements_str)
@@ -1161,19 +1161,24 @@ class Parser:
         """Parse an initializer expression: {expr1, expr2, ...} or {{...}, {...}}"""
         if consume_token: self.consume(TT_LBRACE)  # Skip '{'
         self.skip_newlines()
-        if target_type == TYPE_UNKNOWN: target_type = self.current_initializer_type
+
+        if target_type == TYPE_UNKNOWN and \
+            registry.is_struct_type(self.current_initializer_type) or \
+            registry.is_array_type(self.current_initializer_type):
+            target_type = self.current_initializer_type
 
         elements = []
-        subtype = INITIALIZER_SUBTYPE_TUPLE  # Default
+        subtype = INITIALIZER_SUBTYPE_LINEAR  # Default
+
+        # Track if we need to create a tuple type on the fly
+        create_type = target_type == TYPE_UNKNOWN
 
         # Determine subtype based on target_type
         if target_type != TYPE_UNKNOWN:
             if registry.is_array_type(target_type):
-                subtype = INITIALIZER_SUBTYPE_LINEAR
                 # Get element type for array elements
                 element_type = registry.get_array_element_type(target_type)
             elif registry.is_struct_type(target_type):
-                subtype = INITIALIZER_SUBTYPE_LINEAR
                 # Check if struct has a constructor - if so, initializer is not allowed
                 if registry.get_method(target_type, "init"):
                     struct_name = registry.get_struct_name(target_type)
@@ -1218,6 +1223,14 @@ class Parser:
         # Create initializer node
         init_node = GenericInitializerNode(self.token, elements, subtype, target_type)
 
+
+        # Handle type inference for tuple initializers
+        if create_type:
+            # Register anonymous struct type
+            struct_id = self.register_tuple_type(elements, is_type_annotation=False)
+            init_node.expr_type = struct_id
+            init_node.target_type = struct_id
+
         # Handle array dimension inference for arrays with inferred size
         if (subtype == INITIALIZER_SUBTYPE_LINEAR and
                 registry.is_array_type(target_type) and
@@ -1232,14 +1245,8 @@ class Parser:
             init_node.target_type = sized_array_type
             init_node.expr_type = sized_array_type
 
-        # Handle type inference for tuple initializers
-        if subtype == INITIALIZER_SUBTYPE_TUPLE:
-            # Register anonymous struct type
-            struct_id = self.register_tuple_type(elements, is_type_annotation=False)
-            init_node.expr_type = struct_id
-
         # Type validation for LINEAR initializers
-        if subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_struct_type(target_type):
+        if not create_type and subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_struct_type(target_type):
             fields = registry.get_struct_fields(target_type)
 
             # Validate field count - too many elements is an error

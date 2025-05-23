@@ -1056,38 +1056,25 @@ class Interpreter(object):
         if node.subtype == INITIALIZER_SUBTYPE_LINEAR:
             # Handle different LINEAR initializers based on type
             if registry.is_array_type(node.expr_type):
-                # For arrays, we'll use numeric fields (_0, _1, etc.)
-                # No need to get fields, will generate field names from indices
-                pass
+                # For arrays, use numerical field names (_0, _1, etc.) - similar to tuples
+                for i, elem in enumerate(node.elements):
+                    field_name = "_%d" % i
+                    value = self.evaluate(elem)
+                    instance.fields[field_name] = value
+
+                # If this is a fixed-size array, pre-initialize missing elements
+                array_size = registry.get_array_size(node.expr_type)
+                if array_size is not None and array_size > len(node.elements):
+                    element_type = registry.get_array_element_type(node.expr_type)
+                    # Initialize remaining elements with default values
+                    for i in range(len(node.elements), array_size):
+                        field_name = "_%d" % i
+                        instance.fields[field_name] = self.create_default_value(element_type)
             else:
                 # For structs, get field definitions
                 all_fields = registry.get_struct_fields(node.expr_type)
 
-        # Initialize fields based on initializer subtype
-        if node.subtype == INITIALIZER_SUBTYPE_TUPLE:
-            # For tuples, use numerical field names (_0, _1, etc.)
-            for i, elem in enumerate(node.elements):
-                field_name = "_%d" % i
-                value_var = self.evaluate(elem)
-                instance.fields[field_name] = value_var
-
-        elif node.subtype == INITIALIZER_SUBTYPE_LINEAR and registry.is_array_type(node.expr_type):
-            # For arrays, use numerical field names (_0, _1, etc.) - similar to tuples
-            for i, elem in enumerate(node.elements):
-                field_name = "_%d" % i
-                value = self.evaluate(elem)
-                instance.fields[field_name] = value
-
-            # If this is a fixed-size array, pre-initialize missing elements
-            array_size = registry.get_array_size(node.expr_type)
-            if array_size is not None and array_size > len(node.elements):
-                element_type = registry.get_array_element_type(node.expr_type)
-                # Initialize remaining elements with default values
-                for i in range(len(node.elements), array_size):
-                    field_name = "_%d" % i
-                    instance.fields[field_name] = self.create_default_value(element_type)
-
-        elif node.subtype == INITIALIZER_SUBTYPE_LINEAR:
+        if node.subtype == INITIALIZER_SUBTYPE_LINEAR:
             # For linear initializers, assign values to fields in order
             for i, (field_name, field_type) in enumerate(all_fields):
                 if i < len(node.elements):
