@@ -143,6 +143,9 @@ class Interpreter(object):
         elif is_float_type(type_id):
             return self.make_direct_value(0.0, type_id)
         elif registry.is_struct_type(type_id):
+            # Special case: dynamic arrays should default to nil
+            if registry.is_array_type(type_id) and registry.get_array_size(type_id) is None:
+                return self.make_direct_value(None, type_id)  # Dynamic arrays default to nil
             # Create a properly initialized struct instance instead of nil
             struct_name = registry.get_struct_name(type_id)
             instance = StructInstance(type_id, struct_name)
