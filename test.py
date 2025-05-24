@@ -1247,7 +1247,7 @@ test_cases = [
                     print(p.y);
                 end
             """,
-            "expected_error": "Returning references to struct fields is not supported"
+            "expected_error": "return type must return a reference"
         },
         {
             "name": "reference modification through assignment",

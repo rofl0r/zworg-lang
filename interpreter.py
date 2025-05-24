@@ -971,7 +971,8 @@ class Interpreter(object):
             # Check if this is a reference-returning function
             if node.ref_kind & REF_KIND_GENERIC:
                 # Ensure reference is valid - should already be checked in visit_return
-                if result.tag == TAG_DIRECT_VALUE:
+                # constructor is special in that it returns byref or byval depending on whether wrapped in a NewNode
+                if result.tag == TAG_DIRECT_VALUE and not is_constructor_call:
                     raise CompilerException("Function '%s' with byref return type must return a reference" % 
                                            (func_obj.name), self.last_token)
 
@@ -985,7 +986,14 @@ class Interpreter(object):
 
         # For constructor calls, always return the newly created instance
         if is_constructor_call:
-            return obj
+            # Check if this constructor call should return a reference (REF_KIND_HEAP)
+            # or a value (REF_KIND_NONE) based on the node's ref_kind
+            if node.ref_kind == REF_KIND_HEAP:
+                # Constructor is within a NewNode, return as heap reference
+                return obj
+            else:
+                # Constructor is standalone, return by value
+                return self.dereference(obj)
 
         return result
 

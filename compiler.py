@@ -299,6 +299,10 @@ class CallNode(ASTNode):
 class NewNode(ASTNode):
     def __init__(self, token, struct_init):
         ASTNode.__init__(self, AST_NODE_NEW, token)
+        # If the struct_init is a constructor call (CallNode to init),
+        # update its ref_kind to REF_KIND_HEAP since it's a heap allocation
+        if struct_init.node_type == AST_NODE_CALL and struct_init.name == "init":
+            struct_init.ref_kind = REF_KIND_HEAP
         self.struct_init = struct_init
         self.expr_type = struct_init.expr_type
         self.ref_kind = REF_KIND_HEAP
@@ -698,7 +702,6 @@ class Parser:
         """
         # Get object type
         obj_type = obj_node.expr_type
-        obj_ref_kind = obj_node.ref_kind  # Get object's reference kind
         # No need to unwrap reference since we track ref_kind separately
         base_type = obj_type
 
@@ -744,13 +747,8 @@ class Parser:
             if field_type is None:
                 self.error("Field '%s' not found in struct '%s'" % (member_name, struct_name))
 
-            # Determine proper reference kind for the field
-            field_ref_kind = obj_ref_kind  # Start with object's reference kind
-
-            # If this is accessing a field of another struct field, it must be by-value
-            # since we only allow by-value in structs, except for dynarrays.
-            if obj_node.node_type == AST_NODE_MEMBER_ACCESS:
-                field_ref_kind = REF_KIND_NONE
+            # Struct fields are always by-value (REF_KIND_NONE) unless they are dynamic arrays
+            field_ref_kind = REF_KIND_NONE
 
             # Special case: dynamic arrays always need heap reference kind
             # We don't allow any other type of reference to be stored in fields
@@ -873,9 +871,9 @@ class Parser:
             if name == "init":
                 if return_type != TYPE_VOID:
                     self.error("Constructor 'init' must have void return type")
-                # inject byref structtype return type
+                # Constructor returns the struct type by value by default
                 return_type = struct_id  # Constructor implicitly returns the struct type
-                is_ref_return = True     # And it does so by reference
+                is_ref_return = False
             elif name == "fini":
                 if return_type != TYPE_VOID:
                     self.error("Destructor 'fini' must have void return type")
@@ -909,8 +907,8 @@ class Parser:
 
         # inject "return self" at end of constructor
         if struct_id != -1 and name == "init":
-            self_var = VariableNode(self.token, "self", struct_id, REF_KIND_GENERIC)
-            body.append(ReturnNode(self.token, self_var, REF_KIND_GENERIC))
+            self_var = VariableNode(self.token, "self", struct_id, REF_KIND_NONE)
+            body.append(ReturnNode(self.token, self_var, REF_KIND_NONE))
 
         # Restore previous context
         self.env.leave_scope()
@@ -1316,7 +1314,9 @@ class Parser:
             self.check_argument_types(args, init_method.params, "Constructor for '%s'" % struct_name)
             # create a special "dunno" object which signifies that we don't yet know the object to act upon
             constructor_obj = VariableNode(self.token, "__dunno__", struct_id)
-            return CallNode(self.token, "init", args, struct_id, constructor_obj, ref_kind=REF_KIND_GENERIC)
+            # Constructor calls by default have no reference (they're by value)
+            # This will be updated to REF_KIND_HEAP if embedded in a NewNode
+            return CallNode(self.token, "init", args, struct_id, constructor_obj, ref_kind=REF_KIND_NONE)
 
         # Create and return default initialization node
         return self.create_default_value(struct_id)
@@ -1991,9 +1991,9 @@ class Parser:
             if self.token.type in [TT_SEMI, TT_NEWLINE, TT_EOF] or (self.prev_token and self.token.line > self.prev_token.line):
                 # Check if this is a constructor - inject "return self"
                 if current_func_obj.parent_struct_id != -1 and current_func_obj.name == "init":
-                    self_var = VariableNode(self.token, "self", current_func_obj.parent_struct_id, REF_KIND_GENERIC)
+                    self_var = VariableNode(self.token, "self", current_func_obj.parent_struct_id, REF_KIND_NONE)
                     self.check_statement_end()
-                    return ReturnNode(self.token, self_var, REF_KIND_GENERIC)
+                    return ReturnNode(self.token, self_var, REF_KIND_NONE)
 
                 # Check if empty return is allowed
                 if func_return_type != TYPE_VOID:
@@ -2017,10 +2017,6 @@ class Parser:
                 self.error("Void function '%s' cannot return a value" % fn)
 
             # Special handling for return statement type checking
-            # Check if function returns by reference
-            if current_func_obj.is_ref_return and expr.ref_kind == REF_KIND_NONE:
-                self.error("Function with 'byref' return type must return a reference")
-
             # Prevent returning references to local variables
             if current_func_obj.is_ref_return and expr.node_type == AST_NODE_VARIABLE:
                 var_name = expr.name
@@ -2029,6 +2025,9 @@ class Parser:
                 is_param = any(p[0] == var_name for p in current_func_obj.ast_node.params)
                 if not (is_param or self.env.is_global(var_name)):
                     self.error("Cannot return a reference to a local variable")
+            # Check if function returns by reference
+            elif current_func_obj.is_ref_return and expr.ref_kind == REF_KIND_NONE:
+                self.error("Function with 'byref' return type must return a reference")
 
             # Disallow returning references to struct fields
             if current_func_obj.is_ref_return and expr.node_type == AST_NODE_MEMBER_ACCESS:
