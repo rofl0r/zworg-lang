@@ -143,7 +143,15 @@ class Interpreter(object):
         elif is_float_type(type_id):
             return self.make_direct_value(0.0, type_id)
         elif registry.is_struct_type(type_id):
-            return self.make_direct_value(None, type_id)  # Structs default to nil
+            # Create a properly initialized struct instance instead of nil
+            struct_name = registry.get_struct_name(type_id)
+            instance = StructInstance(type_id, struct_name)
+            # Initialize its fields recursively
+            all_fields = registry.get_struct_fields(type_id)
+            for field_name, field_type in all_fields:
+                instance.fields[field_name] = self.create_default_value(field_type)
+            # Return the initialized struct
+            return self.make_direct_value(instance, type_id)
         else:
             return self.make_direct_value(0, type_id)  # Default for other types
 
