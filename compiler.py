@@ -1364,14 +1364,6 @@ class Parser:
             # All variables can be referenced, even if not declared with byref
             # This allows functions to return references to variables
             variable_node = VariableNode(t, var_name, var_type, ref_kind)
-
-            # Mark variables as referenceable for byref return functions
-            if self.current_function != -1:
-                func_obj = registry.get_func_from_id(self.current_function)
-                if func_obj.is_ref_return:
-                    # Variables can be returned as references
-                    variable_node.ref_kind = REF_KIND_GENERIC
-
             return variable_node
 
         if t.type in [TT_MINUS, TT_NOT, TT_BITNOT]:  # Unary operators
