@@ -15,6 +15,7 @@ class AstExpressionFlattener:
     def __init__(self, registry):
         """Initialize with registry for type information"""
         self.registry = registry
+        self.current_function = None
         self._reset_temps()
 
     def _reset_temps(self):
@@ -60,9 +61,31 @@ class AstExpressionFlattener:
         """Entry point: Transform a function by flattening expressions in its body"""
         self._reset_temps()
 
+        # Track the current function context
+        old_function = self.current_function
+        self.current_function = func_node
+
+        func_id = self.registry.lookup_function(func_node.name, func_node.parent_struct_id)
+        assert(func_id != -1)
+        func_obj = self.registry.get_func_from_id(func_id)
+
+        # If this is a constructor, make sure it's marked as returning by reference for C codegen
+        # regardless of the semantics in the language
+        if func_node.parent_struct_id != -1 and func_node.name == "init":
+            # Update function object in registry
+            func_obj.is_ref_return = True
+            # Update AST node
+            func_node.return_ref_kind = REF_KIND_GENERIC
+
         # Create a copy of the function with a transformed body
         new_func = copy.copy(func_node)
         new_func.body = self.flatten_statements(func_node.body)
+
+        # update registry with new AST
+        func_obj.ast_node = new_func
+
+        # Restore previous function context
+        self.current_function = old_function
 
         return new_func
 
@@ -211,16 +234,22 @@ class AstExpressionFlattener:
 
         expr, hoisted_stmts = self.flatten_expr(stmt.expr)
 
+        new_stmt = copy.copy(stmt)
+        new_stmt.expr = expr
+
+        # Special handling for constructor returns - set reference kind
+        if (self.current_function and
+            self.current_function.parent_struct_id != -1 and
+            self.current_function.name == "init" and
+            new_stmt.ref_kind == REF_KIND_NONE):
+            new_stmt.ref_kind = REF_KIND_GENERIC
+
         if not hoisted_stmts:
             # No hoisted statements, just update the expression
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
             return new_stmt
         else:
             # Hoist statements before the return
             result = list(hoisted_stmts)  # Copy the list
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
             result.append(new_stmt)
             return result
 
@@ -299,6 +328,9 @@ class AstExpressionFlattener:
 
     def flatten_constructor(self, node):
         """Handle constructor calls like __dunno__.init()"""
+        # Preserve the reference kind if already set (e.g., REF_KIND_HEAP for new expressions)
+        preserved_ref_kind = node.ref_kind
+
         # Create a temporary variable for the object
         struct_type = node.expr_type
         temp_name = self.get_temp_name()
@@ -320,19 +352,26 @@ class AstExpressionFlattener:
 
         # Create a variable declaration for the temp (initialized to default)
         var_decl = self.create_var_decl_node(node.token, TT_VAR, temp_name, struct_type, None)
-        
+
         # Create a constructor call
         struct_name = self.registry.get_struct_name(struct_type)
         init_call = CallNode(node.token, "%s_init" % struct_name, arg_exprs, TYPE_VOID)
         init_stmt = ExprStmtNode(node.token, init_call)
-        
+
+        # For C code generation, set reference kind appropriately
+        # If it was REF_KIND_HEAP (inside new), preserve it, otherwise set to REF_KIND_GENERIC
+        if preserved_ref_kind == REF_KIND_HEAP:
+            temp_var.ref_kind = REF_KIND_HEAP
+        else:
+            temp_var.ref_kind = REF_KIND_GENERIC
+
         # Order is important: declare temp, hoist setup, call constructor
         hoisted_stmts.insert(0, var_decl)
         hoisted_stmts.append(init_stmt)
-        
+
         # Return the temp var as the expression
         return temp_var, hoisted_stmts
-    
+
     def flatten_call(self, node):
         """Handle function calls and method calls"""
         # Function call

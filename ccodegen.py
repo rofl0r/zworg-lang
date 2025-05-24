@@ -347,6 +347,10 @@ class CCodeGenerator:
         # marker to insert tuples that need to come after struct defs
         self.output.write("\n/* ZW__HEADER_INJECT_TUPLES */\n")
 
+        # flatten functions and modify constructor return values
+        for i, func in enumerate(functions):
+            functions[i] = self.rewrite_function(func)
+
         # Generate function prototypes
         for func in functions:
             self.generate_function_prototype(func)
@@ -375,6 +379,18 @@ class CCodeGenerator:
             result = result.replace(marker, tup_str)
 
         return result
+
+    def rewrite_function(self, node):
+        """ decompose complex expressions in func body, apply other AST patches"""
+        func_id = registry.lookup_function(node.name, node.parent_struct_id)
+        func_obj = registry.get_func_from_id(func_id)
+        # this call may modify is_ref_return, so it must come before hack, hack
+        flat_func = self.flattener.flatten_function(func_obj.ast_node)
+        # hack, hack: turn the func_obj into a pseudo-node with ref_kind attribute
+        # so it can be used "as-if" a node in needs_dereference checks
+        func_obj.ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
+        # return rewritten FuncDecl
+        return flat_func
 
     def generate_c_main(self):
         """Generate the C main function that initializes the runtime and calls zw_main"""
@@ -445,7 +461,7 @@ class CCodeGenerator:
                 # dont need to allocate storage for it.
                 # Only mark as not needing storage if BOTH sides have ref_kind != REF_KIND_NONE
                 # In other words, we're just assigning handles
-                if deref_needed == 0 and node.ref_kind != REF_KIND_HEAP:
+                if deref_needed == 0:
                     self.scope_manager.mark_variable_no_storage(node.var_name)
                 # small hack - to get heap alloc for REF_KIND_HEAP, mark as
                 # escaping. else we'd need to keep track of the ref_kind in
@@ -550,18 +566,9 @@ class CCodeGenerator:
 
         # Get function body from registry
         func_id = registry.lookup_function(node.name, node.parent_struct_id)
-        if func_id == -1:
-            # Should not happen, but handle it gracefully
-            return
-
         func_obj = registry.get_func_from_id(func_id)
-        # hack, hack: turn the func_obj into a pseudo-node with ref_kind attribute
-        # so it can be used "as-if" a node in needs_dereference checks
-        func_obj.ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
-
         self.current_func_obj = func_obj
-        flat_func = self.flattener.flatten_function(func_obj.ast_node)
-        body = flat_func.body
+        body = func_obj.ast_node.body
 
         # Function body
         self.indent_level += 1
