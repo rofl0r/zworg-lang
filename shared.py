@@ -485,8 +485,8 @@ REF_KIND_STACK = 2 # Stack reference (byref parameter)  0010 in binary
 REF_KIND_GENERIC = 3 # 0011 in binary (STACK | HEAP) - will be used as placeholder when we dont know the actual type (yet)
 
 # Generic initializer subtypes
-INITIALIZER_SUBTYPE_LINEAR = 1    # Positional initialization for structs/tuples/arrays
-INITIALIZER_SUBTYPE_NAMED = 2     # C99-style field naming (future)
+INITIALIZER_SUBTYPE_LINEAR = 0    # Positional initialization for structs/tuples/arrays
+INITIALIZER_SUBTYPE_NAMED = 1     # C99-style field naming (future)
 
 COMPOUND_ASSIGN_TO_OP_MAP = {
     TT_PLUS_ASSIGN: '+',
