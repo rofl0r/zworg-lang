@@ -56,7 +56,8 @@ class TypeRegistry:
     TYPE_KIND_PRIMITIVE = 0
     TYPE_KIND_STRUCT = 1
     TYPE_KIND_TUPLE = 2
-    TYPE_KIND_ARRAY = 3
+    TYPE_KIND_ENUM = 3
+    TYPE_KIND_ARRAY = 4
 
     def __init__(self):
         """Initialize the registry"""
@@ -97,9 +98,16 @@ class TypeRegistry:
     def get_tuple_prefix(self):
 	return "__zw_tuple_"
 
+    def get_enum_prefix(self):
+	return "__zw_enum_"
+
     def is_tuple_type(self, type_id):
         descriptor = self._type_descriptors.get(type_id)
         return descriptor is not None and descriptor.kind == self.TYPE_KIND_TUPLE
+
+    def is_enum_type(self, type_id):
+        descriptor = self._type_descriptors.get(type_id)
+        return descriptor is not None and descriptor.kind == self.TYPE_KIND_ENUM
 
     # Array type methods
     def register_array_type(self, element_type_id, size=None):
@@ -176,6 +184,8 @@ class TypeRegistry:
         # so we don't need to do lame string comparison over and over
         if name.startswith(self.get_tuple_prefix()):
             descriptor.kind = self.TYPE_KIND_TUPLE
+        elif name.startswith(self.get_enum_prefix()):
+            descriptor.kind = self.TYPE_KIND_ENUM
 
         self._type_descriptors[type_id] = descriptor
 
@@ -191,15 +201,18 @@ class TypeRegistry:
 
         return type_id
 
+    def _is_struct_descriptor(self, descriptor):
+        return descriptor is not None and descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE, self.TYPE_KIND_ENUM]
+
     def is_struct_type(self, type_id):
         """Check if a type is a struct type using descriptor information"""
         descriptor = self._type_descriptors.get(type_id)
-        return descriptor is not None and descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]
+        return self._is_struct_descriptor(descriptor)
 
     def is_generic_struct(self, struct_id):
         """Check if a struct is generic (has type parameters)"""
         descriptor = self._type_descriptors.get(struct_id)
-        if descriptor is None or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
+        if not self._is_struct_descriptor(descriptor):
             return False
         return len(descriptor.param_mapping) > 0
 
@@ -249,7 +262,7 @@ class TypeRegistry:
         """
         # Step 1: Validate the generic struct
         descriptor = self._type_descriptors.get(generic_struct_id)
-        if descriptor is None or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
+        if not self._is_struct_descriptor(descriptor):
             return -1
         
         # Step 2: Check if it's actually a generic struct
@@ -309,13 +322,13 @@ class TypeRegistry:
 
     def instantiate_generic_method(self, method_name, generic_struct_id, concrete_struct_id, type_mapping=None):
         """Create a concrete method implementation from a generic method
-        
+
         Args:
             method_name: Name of the method to instantiate
             generic_struct_id: Type ID of the generic struct template
             concrete_struct_id: Type ID of the concrete struct instance
             type_mapping: Optional mapping from generic type IDs to concrete type IDs
-            
+
         Returns:
             ID of the concrete instantiated method
         """
@@ -323,35 +336,35 @@ class TypeRegistry:
         generic_method_id = self.lookup_function(method_name, generic_struct_id)
         if generic_method_id == -1:
             return -1
-        
+
         # Step 2: Get the generic struct descriptor and method
         generic_descriptor = self._type_descriptors.get(generic_struct_id)
-        if generic_descriptor is None or not generic_descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
+        if not self._is_struct_descriptor(generic_descriptor):
             return -1
-            
+
         generic_method = self.get_func_from_id(generic_method_id)
         if generic_method is None:
             return -1
-        
+
         # Step 3: Check if method is already instantiated
         existing_method_id = self.lookup_function(method_name, concrete_struct_id, check_parents=False)
         if existing_method_id != -1:
             return existing_method_id
-        
+
         # Step 4: Get or create type mapping
         if type_mapping is None:
             # Get the concrete struct descriptor
             concrete_descriptor = self._type_descriptors.get(concrete_struct_id)
             if concrete_descriptor is None:
                 return -1
-                
+
             # Find which concrete types were used for instantiation by querying the registry
             # This is a proper O(1) lookup that doesn't rely on string parsing
             for concrete_tuple, instantiated_id in generic_descriptor.instantiations.items():
                 if instantiated_id == concrete_struct_id:
                     # Found the matching instantiation
                     concrete_types = concrete_tuple
-                    
+
                     # Create the mapping from generic param IDs to concrete type IDs
                     type_mapping = {}
                     param_index = 0
@@ -360,27 +373,27 @@ class TypeRegistry:
                             type_mapping[param_id] = concrete_types[param_index]
                         param_index += 1
                     break
-                    
+
             # If we couldn't find a type mapping, this isn't a proper instantiation
             if type_mapping is None:
                 return -1
-        
+
         # Step 5: Transform return type
         concrete_return_type = self.resolve_generic_type(generic_method.return_type, type_mapping)
-        
+
         # Step 6: Transform parameter types
         concrete_params = []
         param_index = 0
         while param_index < len(generic_method.params):
             param_name, param_type, is_byref = generic_method.params[param_index]
-            
+
             # For 'self' parameter, use the concrete struct type directly
             if param_name == "self" and param_index == 0:
                 concrete_params.append((param_name, concrete_struct_id, is_byref))
             else:
                 concrete_param_type = self.resolve_generic_type(param_type, type_mapping)
                 concrete_params.append((param_name, concrete_param_type, is_byref))
-            
+
             param_index += 1
 
         # Step 7: Rewrite AST with all types exchanged
@@ -393,10 +406,10 @@ class TypeRegistry:
 
         # Step 8: Register the new concrete function
         return self.register_function(
-            method_name, 
-            concrete_return_type, 
+            method_name,
+            concrete_return_type,
             concrete_params,
-            concrete_struct_id, 
+            concrete_struct_id,
             concrete_ast_node,
             generic_method.is_ref_return
         )
@@ -436,7 +449,7 @@ class TypeRegistry:
             The type ID corresponding to the parameter, or -1 if not found
         """
         descriptor = self._type_descriptors.get(struct_id)
-        if descriptor and descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
+        if self._is_struct_descriptor(descriptor):
             return descriptor.param_mapping.get(param_name, -1)
         return -1
 
@@ -480,7 +493,7 @@ class TypeRegistry:
 
         # Get the struct descriptor
         descriptor = self._type_descriptors.get(type_id)
-        if not descriptor or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
+        if not self._is_struct_descriptor(descriptor):
             if token:
                 raise CompilerException("Type '%s' is not a struct" % struct_name, token)
             return False
@@ -549,7 +562,7 @@ class TypeRegistry:
         """
         # Get descriptor for this struct
         descriptor = self._type_descriptors.get(type_id)
-        if not descriptor or not descriptor.kind in [self.TYPE_KIND_STRUCT, self.TYPE_KIND_TUPLE]:
+        if not self._is_struct_descriptor(descriptor):
             return []  # Not a struct type
 
         # Initialize result list

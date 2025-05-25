@@ -1871,7 +1871,7 @@ class Parser:
         self.advance()
 
         # Create hidden struct name for enum implementation
-        hidden_struct_name = "__enum_%s" % enum_name
+        hidden_struct_name = "%s_%s" % (registry.get_enum_prefix(), enum_name)
 
         # Check if a struct with this name already exists
         for n in [enum_name, hidden_struct_name]:
