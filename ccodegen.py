@@ -70,6 +70,9 @@ def make_reserved_identifier(name):
     """Transform an identifier into a reserved one by adding zw_ prefix"""
     return "zw_" + name
 
+def is_byval_struct_type(type_id):
+    return registry.is_tuple_type(type_id) or registry.is_enum_type(type_id)
+
 def type_to_c(type_id, use_handles=True):
     """Convert type_id to a C type string"""
     if registry.is_primitive_type(type_id):
@@ -84,7 +87,7 @@ def type_to_c(type_id, use_handles=True):
         return "%s*" % elem_type
 
     elif registry.is_struct_type(type_id):
-        if registry.is_tuple_type(type_id):
+        if is_byval_struct_type(type_id):
             use_handles = False
         if use_handles:
             return "handle"
@@ -322,7 +325,7 @@ class CCodeGenerator:
     def dereference(self, type_id, expr):
         """Generate code to dereference a type"""
         # we should never get a tuple type byref
-        assert(not registry.is_tuple_type(type_id))
+        assert(not is_byval_struct_type(type_id))
         if registry.is_struct_type(type_id):
             struct_string = type_to_c(type_id, use_handles=False)
             return '*((%s*)ha_obj_get_ptr(&ha, %s))' % (struct_string, expr)
@@ -354,7 +357,7 @@ class CCodeGenerator:
         """Get the ref_kind for fields in a container type"""
         # All structs that use handles have ref_kind != REF_KIND_NONE
         # Tuples and other value types have REF_KIND_NONE
-        if not registry.is_tuple_type(container_type) and registry.is_struct_type(container_type):
+        if registry.is_struct_type(container_type) and not is_byval_struct_type(container_type):
             return REF_KIND_GENERIC
         return REF_KIND_NONE
 
@@ -465,12 +468,13 @@ class CCodeGenerator:
     def generate_var_decl(self, node, is_global=False):
         """Generate C code for a variable declaration (both local and global)"""
         var_type = type_to_c(node.var_type)
-        # in this context we want is_struct to exclude tuples
-        is_tuple = registry.is_tuple_type(node.var_type)
-        if is_tuple:
+
+        # potentially need to inject tuple declaration
+        if registry.is_tuple_type(node.var_type):
             self.scope_manager.declare_tuple_type(node.var_type, tuple_decl(node.var_type))
 
-        is_struct = registry.is_struct_type(node.var_type) and not is_tuple
+        # in this context we want is_struct to exclude byval struct type
+        is_struct = registry.is_struct_type(node.var_type) and not is_byval_struct_type(node.var_type)
 
         # Check if the variable is const (not TT_VAR)
         if node.decl_type != TT_VAR:
@@ -495,7 +499,7 @@ class CCodeGenerator:
         # Register variable in scope manager
         if not is_global:
             self.scope_manager.add_variable(node.var_name, node.var_type, is_struct=is_struct)
-            if is_struct and not is_tuple and node.expr:
+            if is_struct and not is_byval_struct_type(node.var_type) and node.expr:
                 # if variable gets assigned result of another expression, we
                 # dont need to allocate storage for it.
                 # Only mark as not needing storage if BOTH sides have ref_kind != REF_KIND_NONE
@@ -527,7 +531,7 @@ class CCodeGenerator:
         # Add test printf for main function or global variables
         # But only for primitive types and strings, not structs
         if not is_struct and (self.current_function == 'main' or is_global):
-            if not registry.is_tuple_type(node.var_type):
+            if not is_byval_struct_type(node.var_type):
                 self.add_test_printf(node.var_name, node.var_type)
 
     def generate_function_prototype_string(self, node):
@@ -847,9 +851,7 @@ class CCodeGenerator:
                     return self.dereference(node.expr_type, node.name)
 
             # Set appropriate ref_kind for struct instances that use handles
-            if (registry.is_struct_type(node.expr_type) and
-                node.ref_kind == REF_KIND_NONE):
-                # Use the same logic as get_container_field_ref_kind but for the node itself
+            if node.ref_kind == REF_KIND_NONE:
                 node.ref_kind = self.get_container_field_ref_kind(node.expr_type)
 
             return node.name
@@ -910,7 +912,7 @@ class CCodeGenerator:
             # for nested struct access to REF_KIND_NONE, because we patch in
             # the ref_kind for struct variables after the fact. we need to treat all struct
             # accesses with dereferencing, except for the case of inner structs.
-            if node.obj.node_type == AST_NODE_MEMBER_ACCESS or registry.is_tuple_type(node.obj.expr_type):
+            if node.obj.node_type == AST_NODE_MEMBER_ACCESS or is_byval_struct_type(node.obj.expr_type):
                 return "%s.%s"%(expr, node.member_name)
             struct_string = type_to_c(node.obj.expr_type, use_handles=False)
             return '((%s*)(ha_obj_get_ptr(&ha, %s)))->%s' % (struct_string, expr, node.member_name)
