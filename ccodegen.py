@@ -281,6 +281,23 @@ class CCodeGenerator:
     def indent(self):
         return '\t' * self.indent_level
 
+    def needs_dereference_with_ref_kind(self, lhs_ref_kind, rhs_ref_kind):
+        """
+        Check dereferencing needs based on explicit reference kinds
+        Same return values as needs_dereference.
+        """
+        left_needs = lhs_ref_kind != REF_KIND_NONE and rhs_ref_kind == REF_KIND_NONE
+        right_needs = lhs_ref_kind == REF_KIND_NONE and rhs_ref_kind != REF_KIND_NONE
+
+        if left_needs and right_needs:
+            return 2  # Both sides need dereferencing
+        elif left_needs:
+            return -1  # Left side needs dereferencing
+        elif right_needs:
+            return 1  # Right side needs dereferencing
+        else:
+            return 0  # No dereferencing needed
+
     def needs_dereference(self, lhs_node, rhs_node):
         """
         Check dereferencing needs when combining LHS and RHS
@@ -298,17 +315,7 @@ class CCodeGenerator:
         if rhs_node.node_type == AST_NODE_NEW:
             rhs_ref_kind = rhs_node.struct_init.ref_kind
 
-        left_needs = lhs_ref_kind != REF_KIND_NONE and rhs_ref_kind == REF_KIND_NONE
-        right_needs = lhs_ref_kind == REF_KIND_NONE and rhs_ref_kind != REF_KIND_NONE
-
-        if left_needs and right_needs:
-            return 2  # Both sides need dereferencing
-        elif left_needs:
-            return -1  # Left side needs dereferencing
-        elif right_needs:
-            return 1  # Right side needs dereferencing
-        else:
-            return 0  # No dereferencing needed
+        return self.needs_dereference_with_ref_kind(lhs_ref_kind, rhs_ref_kind)
 
     def dereference(self, type_id, expr):
         """Generate code to dereference a type"""
