@@ -275,6 +275,8 @@ class CCodeGenerator:
         self.current_func_obj = None # Type registry func obj
         # Stack to track variables for testing
         self.test_printfs = []
+        # Stack to track initializer context
+        self.initializer_context = []  # Stack of (container_type, current_index) tuples
         self.scope_manager = ScopeManager()
         self.flattener = AstExpressionFlattener(registry)
 
@@ -325,6 +327,36 @@ class CCodeGenerator:
             struct_string = type_to_c(type_id, use_handles=False)
             return '*((%s*)ha_obj_get_ptr(&ha, %s))' % (struct_string, expr)
         return "*(%s)"%expr
+
+    def push_initializer_context(self, container_type):
+        """Push a new initializer context onto the stack"""
+        self.initializer_context.append((container_type, 0))
+
+    def pop_initializer_context(self):
+        """Pop the current initializer context from the stack"""
+        if self.initializer_context:
+            return self.initializer_context.pop()
+        return None
+
+    def current_initializer_context(self):
+        """Get the current initializer context or None"""
+        if self.initializer_context:
+            return self.initializer_context[-1]
+        return None
+
+    def advance_initializer_index(self):
+        """Advance the current index in the initializer context"""
+        if self.initializer_context:
+            container_type, index = self.initializer_context[-1]
+            self.initializer_context[-1] = (container_type, index + 1)
+
+    def get_container_field_ref_kind(self, container_type):
+        """Get the ref_kind for fields in a container type"""
+        # All structs that use handles have ref_kind != REF_KIND_NONE
+        # Tuples and other value types have REF_KIND_NONE
+        if not registry.is_tuple_type(container_type) and registry.is_struct_type(container_type):
+            return REF_KIND_GENERIC
+        return REF_KIND_NONE
 
     def generate_header(self):
         """Generate C typedefs and standard includes"""
@@ -697,6 +729,9 @@ class CCodeGenerator:
         if registry.is_tuple_type(node.expr_type):
             self.scope_manager.declare_tuple_type(node.expr_type, tuple_decl(node.expr_type))
 
+        # Push initializer context before we start processing elements
+        self.push_initializer_context(node.expr_type)
+
         # Get type information for casting
         type_cast = ""
         if registry.is_struct_type(node.expr_type):
@@ -712,6 +747,7 @@ class CCodeGenerator:
                 if i > 0:
                     result += ", "
                 result += self.generate_expression(elem)
+                self.advance_initializer_index()
 
             # If this is a fixed-size array, output zeros for missing elements
             array_size = registry.get_array_size(node.expr_type)
@@ -741,6 +777,7 @@ class CCodeGenerator:
                 if i > 0:
                     result += ", "
                 result += self.generate_expression(elem)
+                self.advance_initializer_index()
 
         elif node.subtype == INITIALIZER_SUBTYPE_NAMED:
             # Reserved for future C99-style named initializers
@@ -748,6 +785,8 @@ class CCodeGenerator:
 
         # Close the initializer
         result += "}"
+        # Pop initializer context when done
+        self.pop_initializer_context()
         return result
 
     def get_method_name(self, struct_name, func_name):
@@ -794,6 +833,25 @@ class CCodeGenerator:
             return self.generate_expression(node.struct_init)
 
         elif node.node_type == AST_NODE_VARIABLE:
+            # Special case for initializers - check if we're in a container context
+            current_context = self.current_initializer_context()
+            if current_context:
+                container_type, index = current_context
+
+                # Get the appropriate ref_kind for fields in this container
+                field_ref_kind = self.get_container_field_ref_kind(container_type)
+
+                # Check if we need to dereference based on ref_kinds
+                deref_needed = self.needs_dereference_with_ref_kind(field_ref_kind, node.ref_kind)
+                if deref_needed == 1 or deref_needed == 2:  # Right side needs dereferencing
+                    return self.dereference(node.expr_type, node.name)
+
+            # Set appropriate ref_kind for struct instances that use handles
+            if (registry.is_struct_type(node.expr_type) and
+                node.ref_kind == REF_KIND_NONE):
+                # Use the same logic as get_container_field_ref_kind but for the node itself
+                node.ref_kind = self.get_container_field_ref_kind(node.expr_type)
+
             return node.name
 
         elif node.node_type == AST_NODE_BINARY_OP:
