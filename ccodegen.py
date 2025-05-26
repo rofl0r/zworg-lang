@@ -46,6 +46,7 @@ main_header = """
 int main(int argc, char **argv) {
 	int stack_base;
 	ha_init(&ha, &stack_base);
+	/* ZW__HEADER_INJECT_GLOBALS */
 	zw_main();
 	return 0;
 }
@@ -280,6 +281,7 @@ class CCodeGenerator:
         self.test_printfs = []
         # Stack to track initializer context
         self.initializer_context = []  # Stack of (container_type, current_index) tuples
+        self.global_initializers = []  # Store initializers for global handle-based structs
         self.scope_manager = ScopeManager()
         self.flattener = AstExpressionFlattener(registry)
 
@@ -419,6 +421,10 @@ class CCodeGenerator:
             # need to patch in tuple struct types on the fly since they're not declared in the AST
             tup_str = self.scope_manager.get_tuple_decls()
             result = result.replace(marker, tup_str)
+
+        marker = "/* ZW__HEADER_INJECT_GLOBALS */"
+        if marker in result:
+            result = result.replace(marker, '\n\t'.join(self.global_initializers))
 
         return result
 
@@ -577,7 +583,36 @@ class CCodeGenerator:
 
     def generate_global_var(self, node):
         """Generate C code for a global variable"""
-        self.generate_var_decl(node, is_global=True)
+
+        # Check if this is a handle-based struct (not by-value)
+        is_handle_struct = registry.is_struct_type(node.var_type) and not is_byval_struct_type(node.var_type)
+
+        if not is_handle_struct:
+            # For primitives and by-value structs, generate as normal
+            self.generate_var_decl(node, is_global=True)
+            return
+
+        # Handle special case for handle-based structs
+        var_type = type_to_c(node.var_type)  # "handle"
+        struct_type = type_to_c(node.var_type, use_handles=False)  # actual struct type
+
+        # Add const qualifier if needed
+        const_qualifier = 'const ' if node.decl_type != TT_VAR else ''
+
+        # 1. Declare global handle
+        self.output.write(var_type + ' ' + node.var_name + ';\n')
+
+        if node.expr:
+            # 2. Create static storage with initializer
+            static_name = make_reserved_identifier('_static_' + node.var_name)
+            expr_code = self.generate_expression(node.expr)
+            self.output.write(const_qualifier + struct_type + ' ' + static_name + ' = ' + expr_code + ';\n')
+
+            # 3. Add initialization code for program startup
+            self.global_initializers.append(
+                '%s = ha_array_alloc(&ha, sizeof(%s), &%s);' %
+                (node.var_name, struct_type, static_name)
+            )
 
     def add_test_printf(self, var_name, type_id):
         """Add printf for testing variable value"""
