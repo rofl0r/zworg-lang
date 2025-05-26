@@ -107,9 +107,8 @@ def tuple_decl(type_id):
 
 class VarLifecycle:
     """Track lifecycle information for a variable"""
-    def __init__(self, type_id, is_struct=False):
+    def __init__(self, type_id):
         self.type_id = type_id
-        self.is_struct = is_struct  # Whether this is a struct type
         self.escapes = False  # True if assigned to struct member or passed as steal
         self.needs_storage = True # we don't need to emit an initializer expression if this is e.g. a direct result from func return
 
@@ -203,7 +202,10 @@ class ScopeManager:
 
         # Add variable declarations - only allocate storage for variables that need it
         for name, var in scope.get_vars_in_order():
-            if var.is_struct and var.needs_storage:
+            # Is this a handle-based struct type (excluding by-value structs)?
+            var_is_struct = registry.is_struct_type(var.type_id) and not is_byval_struct_type(var.type_id)
+
+            if var_is_struct and var.needs_storage:
                 if var.escapes:
                     # Heap allocation for escaping variables
                     struct_string = type_to_c(var.type_id, use_handles=False)
@@ -215,7 +217,7 @@ class ScopeManager:
                     helper_header_output.write("\t%s %s = {0}; \\\n" % (type_to_c(var.type_id, use_handles=False), storage_name))
                     helper_header_output.write("\thandle %s = ha_stack_alloc(&ha, sizeof(%s), &%s); \\\n" %
                                             (name, storage_name, storage_name))
-            elif var.is_struct:
+            elif var_is_struct:
                 # Just declare handle for variables getting value from elsewhere
                 helper_header_output.write("\thandle %s; \\\n" % name)
 
@@ -228,7 +230,8 @@ class ScopeManager:
         # Add cleanup code for struct variables in reverse declaration order
         cleanup_needed = False
         for name, var in reversed(scope.get_vars_in_order()):
-            if var.is_struct and var.escapes and var.needs_storage:
+            var_is_struct = registry.is_struct_type(var.type_id) and not is_byval_struct_type(var.type_id)
+            if var_is_struct and var.escapes and var.needs_storage:
                 helper_header_output.write("\tha_obj_free(&ha, %s); \\\n" % name)
                 cleanup_needed = True
 
@@ -236,13 +239,13 @@ class ScopeManager:
 
         return scope
 
-    def add_variable(self, name, type_id, is_struct=False):
+    def add_variable(self, name, type_id):
         """Add a variable to the current scope"""
         current = self.current_scope()
         if not current:
             return None  # At global scope, not tracking
 
-        var = VarLifecycle(type_id, is_struct)
+        var = VarLifecycle(type_id)
         current.add_variable(name, var)
         return var
 
@@ -504,7 +507,7 @@ class CCodeGenerator:
 
         # Register variable in scope manager
         if not is_global:
-            self.scope_manager.add_variable(node.var_name, node.var_type, is_struct=is_struct)
+            self.scope_manager.add_variable(node.var_name, node.var_type)
             if is_struct and not is_byval_struct_type(node.var_type) and node.expr:
                 # if variable gets assigned result of another expression, we
                 # dont need to allocate storage for it.
