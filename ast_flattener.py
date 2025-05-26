@@ -22,9 +22,9 @@ class AstExpressionFlattener:
         """Reset temporary variable counter when processing a new function"""
         self.temp_counter = 0
 
-    def inject_struct_instance_ref_kind(self, node, make_copy=True):
+    def inject_ref_kind(self, node, make_copy=True):
         """
-        Inject appropriate reference kind for struct instances (except tuples).
+        Inject appropriate reference kind for arrays and non-byval struct instances.
         Returns modified node or original if no change needed.
         """
         if node.node_type == AST_NODE_VAR_DECL:
@@ -33,9 +33,11 @@ class AstExpressionFlattener:
             type_id = node.expr_type
 
         if make_copy: node = copy.copy(node)
-        if (self.registry.is_struct_type(type_id) and
-            not self.registry.is_tuple_type(type_id) and
-            node.ref_kind == REF_KIND_NONE):
+        if node.ref_kind == REF_KIND_NONE and (
+                self.registry.is_array_type(type_id) or
+                (self.registry.is_struct_type(type_id) and
+                 not self.registry.is_tuple_type(type_id) and
+                 not self.registry.is_enum_type(type_id))):
                 node.ref_kind = REF_KIND_GENERIC
 
         return node
@@ -43,19 +45,19 @@ class AstExpressionFlattener:
     def create_variable_node(self, token, name, type_id):
         """Create a variable node with appropriate ref_kind for struct instances"""
         var_node = VariableNode(token, name, type_id)
-        return self.inject_struct_instance_ref_kind(var_node, make_copy=False)
+        return self.inject_ref_kind(var_node, make_copy=False)
 
     def create_var_decl_node(self, token, decl_type, name, type_id, expr=None):
         """Create a variable declaration node with appropriate ref_kind for struct instances"""
         var_decl = VarDeclNode(token, decl_type, name, type_id, expr)
-        return self.inject_struct_instance_ref_kind(var_decl, make_copy=False)
+        return self.inject_ref_kind(var_decl, make_copy=False)
 
     def copy_with_ref_kind(self, node):
         """
         Make a copy of a node and inject struct ref_kind if needed.
         This function always makes a copy.
         """
-        return self.inject_struct_instance_ref_kind(node, make_copy=True)
+        return self.inject_ref_kind(node, make_copy=True)
 
     def flatten_function(self, func_node):
         """Entry point: Transform a function by flattening expressions in its body"""

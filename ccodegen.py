@@ -37,6 +37,34 @@ typedef char* string;
 /* Global handle allocator */
 static struct handle_allocator ha;
 
+/* Array helper functions and macros */
+#ifdef ZWORG_BOUNDS_CHECK
+static inline void* zw_array_element_ptr_internal(handle arr, size_t idx, size_t elem_size) {
+    struct array_meta *meta = allocator_get_ptr(ha.allocators, arr.idx);
+    if (idx * elem_size >= meta->len) {
+        fprintf(stderr, "Array bounds check failed: index %zu out of bounds %zu\\n",
+                idx, meta->len / elem_size);
+        abort();
+    }
+    return &((char*)ha_array_get_ptr(&ha, arr))[idx * elem_size];
+}
+
+#define ZW_ARRAY_ACCESS(elem_type, arr_handle, index) \
+    (*(elem_type*)zw_array_element_ptr_internal(arr_handle, index, sizeof(elem_type)))
+
+#define ZW_ARRAY_ELEMENT_PTR(elem_type, arr_handle, index) \
+    ((elem_type*)zw_array_element_ptr_internal(arr_handle, index, sizeof(elem_type)))
+#else
+#define ZW_ARRAY_ACCESS(elem_type, arr_handle, index) \
+    (((elem_type*)ha_array_get_ptr(&ha, (arr_handle)))[(index)])
+
+#define ZW_ARRAY_ELEMENT_PTR(elem_type, arr_handle, index) \
+    (&((elem_type*)ha_array_get_ptr(&ha, (arr_handle)))[(index)])
+#endif
+
+#define ZW_ARRAY_LEN(elem_type, arr_handle) \
+    (((struct array_meta*)allocator_get_ptr(ha.allocators, (arr_handle).idx))->len / sizeof(elem_type))
+
 /* Variable declaration and cleanup code */
 /* ZW__HEADER_INJECT_MACROS */
 
@@ -82,10 +110,16 @@ def type_to_c(type_id, use_handles=True):
         return type_name
 
     elif registry.is_array_type(type_id):
-        # For arrays, get element type and make it a pointer
+        # For arrays, return handle when use_handles is True
+        if use_handles:
+            return "handle"
+        # Otherwise, return the actual array type for static storage
         elem_type_id = registry.get_array_element_type(type_id)
-        elem_type = type_to_c(elem_type_id)
-        return "%s*" % elem_type
+        elem_type = type_to_c(elem_type_id, use_handles=False)
+        size = registry.get_array_size(type_id)
+        if size is not None:
+            return "%s[%d]" % (elem_type, size)
+        return "%s*" % elem_type  # Dynamic arrays
 
     elif registry.is_struct_type(type_id):
         if is_byval_struct_type(type_id):
@@ -111,6 +145,7 @@ class VarLifecycle:
         self.type_id = type_id
         self.escapes = False  # True if assigned to struct member or passed as steal
         self.needs_storage = True # we don't need to emit an initializer expression if this is e.g. a direct result from func return
+        self.static_data = None  # For initializers with static data (can apply to arrays or structs)
 
     def __repr__(self):
         return "Var(%s)" % ("escapes" if self.escapes else "local")
@@ -204,6 +239,7 @@ class ScopeManager:
         for name, var in scope.get_vars_in_order():
             # Is this a handle-based struct type (excluding by-value structs)?
             var_is_struct = registry.is_struct_type(var.type_id) and not is_byval_struct_type(var.type_id)
+            var_is_array = registry.is_array_type(var.type_id)
 
             if var_is_struct and var.needs_storage:
                 if var.escapes:
@@ -217,7 +253,29 @@ class ScopeManager:
                     helper_header_output.write("\t%s %s = {0}; \\\n" % (type_to_c(var.type_id, use_handles=False), storage_name))
                     helper_header_output.write("\thandle %s = ha_stack_alloc(&ha, sizeof(%s), &%s); \\\n" %
                                             (name, storage_name, storage_name))
-            elif var_is_struct:
+            elif var_is_array and var.needs_storage:
+                # Get array element type and size
+                elem_type_id = registry.get_array_element_type(var.type_id)
+                elem_type = type_to_c(elem_type_id, use_handles=False)
+                array_size = registry.get_array_size(var.type_id)
+
+                # Fixed size arrays always have static data and size
+                assert(var.static_data is not None)
+                assert(array_size is not None)
+
+                # Create storage with initializer
+                storage_name = make_reserved_identifier("%s_storage" % name)
+                # Handle array type declaration correctly in C syntax (int name[5], not int[5] name)
+                elem_type_id = registry.get_array_element_type(var.type_id)
+                elem_type_c = type_to_c(elem_type_id, use_handles=False)
+                helper_header_output.write("\t%s %s[%d] = %s; \\\n" %
+                                        (elem_type_c, storage_name, array_size, var.static_data))
+
+                # Allocate array with the static data
+                helper_header_output.write("\thandle %s = ha_array_alloc(&ha, sizeof(%s) * %d, &%s); \\\n" %
+                                        (name, elem_type, array_size, storage_name))
+
+            elif var_is_struct or var_is_array:
                 # Just declare handle for variables getting value from elsewhere
                 helper_header_output.write("\thandle %s; \\\n" % name)
 
@@ -231,8 +289,14 @@ class ScopeManager:
         cleanup_needed = False
         for name, var in reversed(scope.get_vars_in_order()):
             var_is_struct = registry.is_struct_type(var.type_id) and not is_byval_struct_type(var.type_id)
+            var_is_array = registry.is_array_type(var.type_id)
+
             if var_is_struct and var.escapes and var.needs_storage:
                 helper_header_output.write("\tha_obj_free(&ha, %s); \\\n" % name)
+                cleanup_needed = True
+            elif var_is_array and var.needs_storage:
+                # Arrays always need cleanup when they have storage
+                helper_header_output.write("\tha_array_free(&ha, %s); \\\n" % name)
                 cleanup_needed = True
 
         helper_header_output.write("\n")
@@ -256,6 +320,11 @@ class ScopeManager:
             if name in scope.var_dict:
                 return scope.var_dict[name]
         return None
+
+    def set_static_data(self, name, static_data):
+        """Set static data for initialization (arrays or structs)"""
+        var = self.find_variable(name)
+        var.static_data = static_data
 
     def mark_variable_escaping(self, name):
         """Mark a variable as escaping"""
@@ -474,6 +543,18 @@ class CCodeGenerator:
 
         self.output.write(tup_str + result);
 
+    def generate_array_access(self, node):
+        """Generate C code for an array access expression"""
+        array_expr = self.generate_expression(node.array)
+        index_expr = self.generate_expression(node.index)
+
+        # Get the element type for the array
+        elem_type_id = registry.get_array_element_type(node.array.expr_type)
+        elem_type = type_to_c(elem_type_id)
+
+        # Generate array access with bounds checking
+        return "ZW_ARRAY_ACCESS(%s, %s, %s)" % (elem_type, array_expr, index_expr)
+
     def generate_var_decl(self, node, is_global=False):
         """Generate C code for a variable declaration (both local and global)"""
         var_type = type_to_c(node.var_type)
@@ -482,8 +563,10 @@ class CCodeGenerator:
         if registry.is_tuple_type(node.var_type):
             self.scope_manager.declare_tuple_type(node.var_type, tuple_decl(node.var_type))
 
-        # in this context we want is_struct to exclude byval struct type
-        is_struct = registry.is_struct_type(node.var_type) and not is_byval_struct_type(node.var_type)
+        # in this context we want only by-ref struct types
+        is_handle_struct = registry.is_struct_type(node.var_type) and not is_byval_struct_type(node.var_type)
+
+        is_array = registry.is_array_type(node.var_type)
 
         # Check if the variable is const (not TT_VAR)
         if node.decl_type != TT_VAR:
@@ -508,7 +591,7 @@ class CCodeGenerator:
         # Register variable in scope manager
         if not is_global:
             self.scope_manager.add_variable(node.var_name, node.var_type)
-            if is_struct and not is_byval_struct_type(node.var_type) and node.expr:
+            if node.expr and (is_handle_struct or is_array):
                 # if variable gets assigned result of another expression, we
                 # dont need to allocate storage for it.
                 # Only mark as not needing storage if BOTH sides have ref_kind != REF_KIND_NONE
@@ -524,7 +607,7 @@ class CCodeGenerator:
                     self.scope_manager.mark_variable_escaping(node.var_name)
 
         if init_expr:
-            if is_struct:
+            if is_handle_struct:
                 # If left is a reference, and initializer's isn't, we need to dereference LHS
                 if deref_needed == -1 or deref_needed == 2:
                     self.output.write(self.indent() + '%s = %s;\n' %
@@ -532,14 +615,16 @@ class CCodeGenerator:
                 else:
                     # Direct handle assignment for expressions that return handles
                     self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, expr_code))
+            elif is_array and registry.get_array_size(node.var_type) is not None:
+                self.scope_manager.set_static_data(node.var_name, init_expr)
             else:
                 self.output.write(self.indent() + '%s %s = %s;\n' % (var_type, node.var_name, init_expr))
-        elif not is_struct: # struct already declared via macro
+        elif not is_handle_struct: # struct already declared via macro
             self.output.write(self.indent() + '%s %s;\n' % (var_type, node.var_name))
 
         # Add test printf for main function or global variables
         # But only for primitive types and strings, not structs
-        if not is_struct and (self.current_function == 'main' or is_global):
+        if not is_handle_struct and not is_array and (self.current_function == 'main' or is_global):
             if not is_byval_struct_type(node.var_type):
                 self.add_test_printf(node.var_name, node.var_type)
 
@@ -957,6 +1042,9 @@ class CCodeGenerator:
 
         elif node.node_type == AST_NODE_GENERIC_INITIALIZER:
             return self.generate_generic_initializer(node)
+
+        elif node.node_type == AST_NODE_ARRAY_ACCESS:
+            return self.generate_array_access(node)
 
         elif node.node_type == AST_NODE_NIL:
             return "handle_nil"
