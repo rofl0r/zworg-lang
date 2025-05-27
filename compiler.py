@@ -358,7 +358,7 @@ class ArrayResizeNode(ASTNode):
 
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
-    if node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING]:
+    if node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING, AST_NODE_NIL]:
         return True
     elif node.node_type == AST_NODE_GENERIC_INITIALIZER:
         # Allow initializers where all elements are literals
