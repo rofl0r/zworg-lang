@@ -617,6 +617,8 @@ class CCodeGenerator:
                     self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, expr_code))
             elif is_array and registry.get_array_size(node.var_type) is not None:
                 self.scope_manager.set_static_data(node.var_name, init_expr)
+            elif is_array: # array already declared via macro
+                self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, init_expr))
             else:
                 self.output.write(self.indent() + '%s %s = %s;\n' % (var_type, node.var_name, init_expr))
         elif not is_handle_struct: # struct already declared via macro
