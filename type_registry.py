@@ -76,7 +76,7 @@ class TypeRegistry:
         # Function storage
         self._functions = {}    # funcid -> Function object
         self._next_funcid = 1   # Start with 1 so -1 means "not found"
-        self._func_map = {}     # (struct_id, func_name) -> funcid
+        self._methods = {}      # (struct_id) -> dict(funcname) -> funcid
 
         # Initialize primitive types
         self._initialize_primitive_types()
@@ -416,7 +416,7 @@ class TypeRegistry:
 
     def _instantiate_all_methods(self, generic_struct_id, concrete_struct_id, type_mapping):
         """Instantiate all methods from a generic struct for a concrete struct
-        
+
         Args:
             generic_struct_id: ID of the generic struct template
             concrete_struct_id: ID of the concrete struct instance
@@ -424,11 +424,9 @@ class TypeRegistry:
         """
         # Find all methods defined for the generic struct
         generic_methods = []
-        for key, func_id in self._func_map.items():
-            struct_id, func_name = key
-            if struct_id == generic_struct_id:
-                generic_methods.append(func_name)
-        
+        if generic_struct_id in self._methods:
+            generic_methods = list(self._methods[generic_struct_id].keys())
+
         # For each method of the generic struct, instantiate a concrete version
         for method_name in generic_methods:
             self.instantiate_generic_method(
@@ -613,8 +611,9 @@ class TypeRegistry:
         func = Function(qualified_name, return_type, params, parent_struct_id, ast_node, is_ref_return=is_ref_return)
         self._functions[func_id] = func
 
-        # Add to unified lookup map
-        self._func_map[(parent_struct_id, name)] = func_id
+        if parent_struct_id not in self._methods:
+            self._methods[parent_struct_id] = {}
+        self._methods[parent_struct_id][name] = func_id
 
         return func_id
 
@@ -630,19 +629,13 @@ class TypeRegistry:
     def lookup_function(self, name, struct_id=-1, check_parents=True):
         """Look up a function by name and struct ID"""
         # Try direct lookup first
-        key = (struct_id, name)
-        func_id = self._func_map.get(key, -1)
-
-        # If found or this is a global function, return the result
-        if func_id != -1 or struct_id == -1 or not check_parents:
-            return func_id
+        if struct_id in self._methods and name in self._methods[struct_id]:
+            return self._methods[struct_id][name]
 
         # If not found and this is a struct, check parent structs
-        struct_name = self.get_struct_name(struct_id)
-        if struct_name:
-            parent_name = self.get_struct_parent(struct_name)
-            if parent_name:
-                parent_id = self.get_struct_id(parent_name)
+        if struct_id != -1 and check_parents:
+            parent_id = self.get_struct_parent_id(struct_id)
+            if parent_id != -1:
                 return self.lookup_function(name, parent_id, check_parents)
 
         return -1  # Not found anywhere
@@ -661,7 +654,7 @@ class TypeRegistry:
         """Reset function registry"""
         self._functions = {}
         self._next_funcid = 1
-        self._func_map = {}
+        self._methods = {}
 
     def var_type_to_string(self, var_type):
         """Convert a type ID to a string representation (without reference info)"""
