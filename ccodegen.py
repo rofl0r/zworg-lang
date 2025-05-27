@@ -674,27 +674,36 @@ class CCodeGenerator:
 
         # Check if this is a handle-based struct (not by-value)
         is_handle_struct = registry.is_struct_type(node.var_type) and not is_byval_struct_type(node.var_type)
+        is_array = registry.is_array_type(node.var_type)
 
-        if not is_handle_struct:
+        if not is_handle_struct and not is_array:
             # For primitives and by-value structs, generate as normal
             self.generate_var_decl(node, is_global=True)
             return
 
         # Handle special case for handle-based structs
         var_type = type_to_c(node.var_type)  # "handle"
-        struct_type = type_to_c(node.var_type, use_handles=False)  # actual struct type
+        struct_type = type_to_c(node.var_type, use_handles=False)  # actual struct/array type
 
         # Add const qualifier if needed
         const_qualifier = 'const ' if node.decl_type != TT_VAR else ''
 
         # 1. Declare global handle
         self.output.write(var_type + ' ' + node.var_name + ';\n')
-
         if node.expr:
             # 2. Create static storage with initializer
             static_name = make_reserved_identifier('_static_' + node.var_name)
             expr_code = self.generate_expression(node.expr)
-            self.output.write(const_qualifier + struct_type + ' ' + static_name + ' = ' + expr_code + ';\n')
+            if is_array:
+                array_size = registry.get_array_size(node.var_type)
+                if array_size is None:
+                    self.global_initializers.append('%s = %s;' % (node.var_name, expr_code))
+                    return
+                elem_type_id = registry.get_array_element_type(node.var_type)
+                elem_type = type_to_c(elem_type_id, use_handles=False)
+                self.output.write('%s%s %s[%d] = %s;\n' % (const_qualifier, elem_type, static_name, array_size, expr_code))
+            else:
+                self.output.write(const_qualifier + struct_type + ' ' + static_name + ' = ' + expr_code + ';\n')
 
             # 3. Add initialization code for program startup
             self.global_initializers.append(
