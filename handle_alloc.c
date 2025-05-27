@@ -140,9 +140,11 @@ void ha_obj_free(struct handle_allocator *self, handle h) {
 	allocator_free(self->allocators + h.allocator_id, h.idx);
 }
 
+void *ha_array_get_ptr(struct handle_allocator *self, handle h);
 void *ha_stack_get_ptr(struct handle_allocator *self, handle h);
 void *ha_obj_get_ptr(struct handle_allocator *self, handle h) {
         if(h.allocator_id == 0xffff) return ha_stack_get_ptr(self, h);
+        if(h.allocator_id == 0) return ha_array_get_ptr(self, h);
 	assert(h.allocator_id < self->count);
 #ifndef DEBUG_ALLOCATOR
 	assert(h.generation == 1);
