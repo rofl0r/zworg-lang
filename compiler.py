@@ -339,8 +339,8 @@ class ArrayAccessNode(ASTNode):
         self.array = array
         self.index = index
         self.expr_type = element_type
-        # Arrays elements can be used as references when the array is a reference
-        self.ref_kind = array.ref_kind
+        # Arrays elements are always accessed by value - since we have no arrays of arrays.
+        self.ref_kind = REF_KIND_NONE
 
     def __repr__(self):
         return "ArrayAccess(%s[%s])" % (repr(self.array), repr(self.index))
@@ -1568,10 +1568,6 @@ class Parser:
 
         # Create and return the array access node
         access_node = ArrayAccessNode(self.token, array_node, index_expr, element_type)
-
-        # Handle reference kind propagation - array elements can be referenced for modification
-        if array_node.ref_kind != REF_KIND_NONE:
-            access_node.ref_kind = array_node.ref_kind
 
         return access_node
 
