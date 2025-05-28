@@ -2837,9 +2837,17 @@ def test(use_interpreter=True):
     interpreter = Interpreter() if use_interpreter else CRunner()
 
     failed_tests = []
+    # Dictionary to track test hashes: hash -> [test index]
+    test_hashes = {}
 
     # Run all test cases
     for i, test_case in enumerate(test_cases):
+        # Calculate test hash and track duplicates
+        test_hash = get_hash(test_case["code"])
+        if test_hash not in test_hashes:
+            test_hashes[test_hash] = []
+        test_hashes[test_hash].append(i)
+
         interpreter.reset()
 
         test_num = i + 1
@@ -2921,6 +2929,23 @@ def test(use_interpreter=True):
     print("Total tests: %d" % len(test_cases))
     print("Failed test IDs: %s" % (", ".join(str(num) for num in failed_tests) if failed_tests else "None"))
     print("All tests passed: %s" % ("No" if failed_tests else "Yes"))
+    # Print duplicate tests
+    duplicates = {h: tests for h, tests in test_hashes.items() if len(tests) > 1}
+    if duplicates:
+        print("\n========== Duplicate Tests ==========")
+        for hash_value, tests in duplicates.items():
+            print("Duplicate test group:")
+            for i in tests:
+                print("  Test %d: %s" % (i+1, test_cases[i]["name"]))
+
+import hashlib
+
+def get_hash(test_code):
+    """Generate MD5 hash of test code - works in Python 2.7 and 3.x"""
+    if isinstance(test_code, str):
+        # In Python 3, we need to encode strings to bytes
+        test_code = test_code.encode('utf-8')
+    return hashlib.md5(test_code).hexdigest()
 
 def add_line_numbers(text):
     out = ''
