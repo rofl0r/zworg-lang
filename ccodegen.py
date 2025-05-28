@@ -564,6 +564,19 @@ class CCodeGenerator:
 
         self.output.write(tup_str + result);
 
+    def generate_array_resize(self, node):
+        """Generate C code for an array resize expression (new array allocator)"""
+        # Generate the array and size expressions
+        array_expr = self.generate_expression(node.array_expr)
+        size_expr = self.generate_expression(node.size_expr)
+
+        # Get the element type for the array
+        elem_type_id = registry.get_array_element_type(node.array_expr.expr_type)
+        element_type = type_to_c(elem_type_id, use_handles=False)
+
+        # Calculate total size by multiplying element size with the requested count
+        return "ha_array_realloc(&ha, %s, sizeof(%s) * %s)" % (array_expr, element_type, size_expr)
+
     def generate_array_access(self, node):
         """Generate C code for an array access expression"""
         array_expr = self.generate_expression(node.array)
@@ -1077,6 +1090,9 @@ class CCodeGenerator:
 
         elif node.node_type == AST_NODE_ARRAY_ACCESS:
             return self.generate_array_access(node)
+
+        elif node.node_type == AST_NODE_ARRAY_RESIZE:
+            return self.generate_array_resize(node)
 
         elif node.node_type == AST_NODE_NIL:
             return "handle_nil"
