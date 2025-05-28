@@ -119,7 +119,7 @@ def type_to_c(type_id, use_handles=True):
         size = registry.get_array_size(type_id)
         if size is not None:
             return "%s[%d]" % (elem_type, size)
-        return "%s*" % elem_type  # Dynamic arrays
+        return "handle" # Dynamic arrays
 
     elif registry.is_struct_type(type_id):
         if is_byval_struct_type(type_id):
