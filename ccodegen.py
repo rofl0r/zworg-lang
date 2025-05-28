@@ -584,7 +584,8 @@ class CCodeGenerator:
 
         # Get the element type for the array
         elem_type_id = registry.get_array_element_type(node.array.expr_type)
-        elem_type = type_to_c(elem_type_id)
+        # since an array access is always by-value, never use handles
+        elem_type = type_to_c(elem_type_id, use_handles=False)
 
         # Generate array access with bounds checking
         return "ZW_ARRAY_ACCESS(%s, %s, %s)" % (elem_type, array_expr, index_expr)
@@ -1080,7 +1081,8 @@ class CCodeGenerator:
             # for nested struct access to REF_KIND_NONE, because we patch in
             # the ref_kind for struct variables after the fact. we need to treat all struct
             # accesses with dereferencing, except for the case of inner structs.
-            if node.obj.node_type == AST_NODE_MEMBER_ACCESS or is_byval_struct_type(node.obj.expr_type):
+            # also, array accesses are always by-value too.
+            if node.obj.node_type == AST_NODE_MEMBER_ACCESS or node.obj.node_type == AST_NODE_ARRAY_ACCESS or is_byval_struct_type(node.obj.expr_type):
                 return "%s.%s"%(expr, node.member_name)
             struct_string = type_to_c(node.obj.expr_type, use_handles=False)
             return '((%s*)(ha_obj_get_ptr(&ha, %s)))->%s' % (struct_string, expr, node.member_name)
