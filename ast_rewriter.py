@@ -177,10 +177,13 @@ class AstTypeRewriter:
     def rewrite_function_decl(self, node, should_rewrite):
         """Rewrite a function declaration node"""
         new_node = copy.copy(node)
-        
+
+        # If this is a method of a generic struct, translate its parent struct ID
+        new_node.parent_struct_id = self.replace_type_if_needed(new_node.parent_struct_id, should_rewrite)
+
         # Rewrite return type
         new_node.return_type = self.replace_type_if_needed(new_node.return_type, should_rewrite)
-        
+
         # Rewrite parameter types
         if hasattr(new_node, 'params'):
             new_params = []
@@ -188,15 +191,15 @@ class AstTypeRewriter:
                 new_type_id = self.replace_type_if_needed(type_id, should_rewrite)
                 new_params.append((name, new_type_id, is_byref))
             new_node.params = new_params
-        
+
         # Rewrite function body
         if hasattr(new_node, 'body'):
             new_node.body = []
             for stmt in node.body:
                 new_node.body.append(self.rewrite(stmt, node_types=[AST_NODE_ALL]))
-        
+
         return new_node
-    
+
     def rewrite_call(self, node, should_rewrite):
         """Rewrite a function/method call node"""
         new_node = copy.copy(node)
