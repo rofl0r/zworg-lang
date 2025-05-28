@@ -130,14 +130,34 @@ def type_to_c(type_id, use_handles=True):
 
     return "void"  # Default fallback
 
-def tuple_decl(type_id):
-    fields = registry.get_struct_fields(type_id)
-    result = "struct %s {"%registry.get_struct_name(type_id)
+def make_struct_decl(struct_id):
+    """
+    Generate a C struct definition from registry data
+    Returns a string with the complete struct declaration
+    """
+    struct_name = registry.get_struct_name(struct_id)
+    fields = registry.get_struct_fields(struct_id)
+    result = "struct %s {\n" % struct_name
+
     for field_name, field_type in fields:
-        field_c_type = type_to_c(field_type, use_handles=False)
-        result += "%s %s; " % (field_c_type, field_name)
-    result += "};\n"
+        if registry.is_array_type(field_type):
+            element_type = registry.get_array_element_type(field_type)
+            array_size = registry.get_array_size(field_type)
+            element_c_type = type_to_c(element_type, use_handles=False)
+
+            if array_size is None:
+                result += "\thandle %s;\n" % field_name
+            else:
+                result += "\t%s %s[%d];\n" % (element_c_type, field_name, array_size)
+        else:
+            field_c_type = type_to_c(field_type, use_handles=False)
+            result += "\t%s %s;\n" % (field_c_type, field_name)
+
+    result += "};\n\n"
     return result
+
+def tuple_decl(type_id):
+    return make_struct_decl(type_id)
 
 class VarLifecycle:
     """Track lifecycle information for a variable"""
