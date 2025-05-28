@@ -15,6 +15,301 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "struct return from array",
+            "code": """
+                struct Foo do x:int ; end
+                def Foo_ret(arr:Foo[], n:int):Foo do
+                    return arr[n]
+                end
+                def main() do
+                    var dyn:Foo[]
+                    dyn = new(dyn, 10)
+                    dyn[4].x = 1337
+                    var f := Foo_ret(dyn, 4)
+                    var x:= f.x
+                end
+            """,
+            "expected_env": {"x": 1337}
+        },
+        {
+            "name": "simple dynamic array resize",
+            "code": """
+                def main() do
+                    var dyn:int[]
+                    dyn = new(dyn, 10)
+                    dyn[4] = 1337
+                    var x:=dyn[4]
+                end
+            """,
+            "expected_env": {"x": 1337}
+        },
+        {
+            "name": "simple array assign",
+            "code": """
+                def main() do
+                    var arr:int[10]
+                    arr[4] = 1337
+                    var x:=arr[4]
+                end
+            """,
+            "expected_env": {"x": 1337}
+        },
+        {
+            "name": "global arrays with and without initializer",
+            "code": """
+                var gnums_zeroed: int[5]
+                var gnums_set: longlong[3] = {1,2,3}
+                var gnums_dynamic_zeroed: u8[]
+                var gnums_dynamic_set: u8[] = nil
+
+                def main() do
+                    var nz2 := gnums_zeroed[2]
+                    var ns2 := gnums_set[2]
+                    var gh := gnums_dynamic_zeroed
+                end
+            """,
+            "expected_env": {"nz2": 0, "ns2": 3}
+        },
+        {
+            "name": "fixed size array without initializer",
+            "code": """
+                def main() do
+                    var nums: int[5]
+                    var n_2 := nums[2]
+                end
+            """,
+            "expected_env": {"n_2": 0}
+        },
+        {
+           "name": "nested struct, stack and heap constructor",
+           "code": """
+		struct Foo do x:int; y:int; end;
+                struct Bar do foo:Foo; z:int; end;
+                def Bar.init() do end;
+                def main() do var b1:=Bar(); var b2:Bar=new Bar(); var x:= b2.foo.x; var z:=b2.z; end
+           """,
+           "expected_env": {"x": 0, "z": 0}
+        },
+        {
+            "name": "mixed struct and tuple initializers x",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = {10, 20}
+                    var t := {Point(), "coordinate"}
+                    t = {p, "coordinate"}
+                    var x := t._0.x
+                    var s := t._1
+                end
+            """,
+            "expected_env": {"x": 10, "s": "coordinate"}
+        },
+        {
+            "name": "mixed struct and tuple initializers",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = {10, 20}
+                    var t := {p, "coordinate"}
+                    var x := t._0.x
+                    var s := t._1
+                end
+            """,
+            "expected_env": {"x": 10, "s": "coordinate"}
+        },
+        {
+            "name": "tuple initializer with type inference",
+            "code": """
+                def main() do
+                    var t := {1, 2, 3}
+                    var x:= t._0 + t._1 + t._2
+                end
+            """,
+            "expected_env": {"x": 6}
+        },
+        {
+            "name": "tuple initializer and return type with type inference",
+            "code": """
+                def ret_tup():{int, long} do return {1,2}; end
+                def main() do
+                    var t := ret_tup()
+                    var x:= t._1
+                end
+            """,
+            "expected_env": {"x": 2}
+        },
+        {
+            "name": "tuple initializer with type inference and strings",
+            "code": """
+                def main() do
+                    var t := {1, 2, 3}
+                    var s := {"hello", 42}
+                    var x:= t._0 + t._1 + t._2
+                    var y:= s._0 + " " + "world"
+                    var z:= s._1
+                end
+            """,
+            "expected_env": {"x": 6, "y": "hello world", "z": 42}
+        },
+        {
+            "name": "struct initializer with type annotation",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = {10, 20}
+                    var x:=p.x
+                    var y:=p.y
+                end
+            """,
+            "expected_env": {"x": 10, "y":20}
+        },
+        {
+            "name": "partial struct initializer",
+            "code": """
+                struct Point do x:int; y:int; end
+                def main() do
+                    var p:Point = {10}
+                    var x:=p.x
+                    var y:=p.y
+                end
+            """,
+            "expected_env": {"x": 10, "y":0}
+        },
+        {
+            "name": "return struct initializer from function",
+            "code": """
+                struct Point do x:int; y:int; end
+                def makePoint(a:int, b:int):Point do
+                    return {a, b}
+                end
+                def main() do
+                    var p := makePoint(10, 20)
+                    var x := p.x
+                    var y := p.y
+                end
+            """,
+            "expected_env": {"x": 10, "y":20}
+        },
+        {
+            "name": "nested initializers",
+            "code": """
+                struct Point do x:int; y:int; end
+                struct Rect do
+                    topleft:Point; bottomright:Point
+                end
+                def main() do
+                    var r:Rect = {{1, 2}, {3, 4}}
+                    var a:= r.topleft.x
+                    var b:= r.topleft.y
+                    var c:= r.bottomright.x
+                    var d:= r.bottomright.y
+                end
+            """,
+            "expected_env": {"a": 1, "b":2, "c":3, "d":4}
+        },
+        {
+            "name": "nested partial initializers",
+            "code": """
+                struct Point do x:int; y:int; end
+                struct Rect do
+                    topleft:Point; bottomright:Point
+                end
+                def main() do
+                    var r:Rect = {{1}}
+                    var a:= r.topleft.x
+                    var b:= r.topleft.y
+                    var c:= r.bottomright.x
+                    var d:= r.bottomright.y
+                end
+            """,
+            "expected_env": {"a": 1, "b":0, "c":0, "d":0}
+        },
+        {
+            "name": "mixed types in tuple initializer",
+            "code": """
+                def main() do
+                    var t := {1, "hello", 2.5}
+                    var a:= t._0
+                    var b:= t._1
+                    var c:= t._2
+                end
+            """,
+            "expected_env": {"a": 1, "b":"hello", "c":2.5}
+        },
+        {
+            "name": "struct initializer with multiple fields",
+            "code": """
+                struct Person do
+                    name:string
+                    age:int
+                    height:float
+                end
+                def main() do
+                    var p:Person = {"John", 30, 1.85}
+                    var a:= p.name
+                    var b:= p.age
+                    var c:= p.height
+                end
+            """,
+            "expected_env": {"a": "John", "b": 30, "c": 1.85}
+        },
+        {
+            "name": "nested tuple in struct initializer",
+            "code": """
+                struct Container do
+                    data:{int, string}
+                end
+                def main() do
+                    var c:Container = {{1, "hello"}}
+                    var i := c.data._0
+                    var s := c.data._1
+                end
+            """,
+            "expected_env": {"i": 1, "s": "hello"}
+        },
+        {
+            "name": "struct literal in global scope",
+            "code": """
+                struct Color do Red:int; Green:int; Blue:int; end
+                const Color:Color={0,1,2}
+                def main() do
+                    var x := Color.Red;
+                    var y := Color.Green;
+                    var z := Color.Blue
+                end
+            """,
+            "expected_env": {"x": 0, "y": 1, "z": 2}
+        },
+        {
+           "name": "nested initializer",
+           "code": """
+		struct Foo do x:int; y:int; end;
+                struct Bar do foo:Foo; z:int; end;
+                def main() do var b1:=Bar(); var b2:Bar=new Bar(); b2={{1,2},3}; var x:= b2.foo.x; var z:=b2.z; end
+           """,
+           "expected_env": {"x": 1, "z":3}
+        },
+        {
+           "name": "method call, no constructor",
+           "code": """
+		struct Foo do x:int; end;
+                def Foo.inc(n:int):Foo do var fn:=Foo(); fn.x=n; return fn; end
+                def main() do var f:=Foo(); var f2:= f.inc(1); var x:= f2.x; end
+           """,
+           "expected_env": {"x": 1}
+        },
+        {
+           "name": "method call escape analyis",
+           "code": """
+		struct Foo do x:int; end;
+		struct Bar do x:int; end;
+                def Foo.init() do end
+                def Foo.inc(n:int):Foo do var fn:=Foo(); fn.x=n; return fn; end
+                def main() do var f:=Foo(); var b:Bar={1}; var f2:= f.inc(1); var x:= f2.x; end
+           """,
+           "expected_env": {"x": 1}
+        },
+        {
             "name": "variable declaration with type inference (:=)",
             "code": "def main() do var x := 5; end",
             "expected_env": {"x": 5}
@@ -1427,161 +1722,6 @@ test_cases = [
                 end
            """,
            "expected_env": {"x": 4}
-        },
-        {
-            "name": "tuple initializer with type inference",
-            "code": """
-                def main() do
-                    var t := {1, 2, 3}
-                    var s := {"hello", 42}
-                    var x:= t._0 + t._1 + t._2
-                    var y:= s._0 + " " + "world"
-                    var z:= s._1
-                end
-            """,
-            "expected_env": {"x": 6, "y": "hello world", "z": 42}
-        },
-        {
-            "name": "struct initializer with type annotation",
-            "code": """
-                struct Point do x:int; y:int; end
-                def main() do
-                    var p:Point = {10, 20}
-                    var x:=p.x
-                    var y:=p.y
-                end
-            """,
-            "expected_env": {"x": 10, "y":20}
-        },
-        {
-            "name": "partial struct initializer",
-            "code": """
-                struct Point do x:int; y:int; end
-                def main() do
-                    var p:Point = {10}
-                    var x:=p.x
-                    var y:=p.y
-                end
-            """,
-            "expected_env": {"x": 10, "y":0}
-        },
-        {
-            "name": "return struct initializer from function",
-            "code": """
-                struct Point do x:int; y:int; end
-                def makePoint(a:int, b:int):Point do
-                    return {a, b}
-                end
-                def main() do
-                    var p := makePoint(10, 20)
-                    var x := p.x
-                    var y := p.y
-                end
-            """,
-            "expected_env": {"x": 10, "y":20}
-        },
-        {
-            "name": "nested initializers",
-            "code": """
-                struct Point do x:int; y:int; end
-                struct Rect do
-                    topleft:Point; bottomright:Point
-                end
-                def main() do
-                    var r:Rect = {{1, 2}, {3, 4}}
-                    var a:= r.topleft.x
-                    var b:= r.topleft.y
-                    var c:= r.bottomright.x
-                    var d:= r.bottomright.y
-                end
-            """,
-            "expected_env": {"a": 1, "b":2, "c":3, "d":4}
-        },
-        {
-            "name": "nested partial initializers",
-            "code": """
-                struct Point do x:int; y:int; end
-                struct Rect do
-                    topleft:Point; bottomright:Point
-                end
-                def main() do
-                    var r:Rect = {{1}}
-                    var a:= r.topleft.x
-                    var b:= r.topleft.y
-                    var c:= r.bottomright.x
-                    var d:= r.bottomright.y
-                end
-            """,
-            "expected_env": {"a": 1, "b":0, "c":0, "d":0}
-        },
-        {
-            "name": "mixed types in tuple initializer",
-            "code": """
-                def main() do
-                    var t := {1, "hello", 2.5}
-                    var a:= t._0
-                    var b:= t._1
-                    var c:= t._2
-                end
-            """,
-            "expected_env": {"a": 1, "b":"hello", "c":2.5}
-        },
-        {
-            "name": "struct initializer with multiple fields",
-            "code": """
-                struct Person do
-                    name:string
-                    age:int
-                    height:float
-                end
-                def main() do
-                    var p:Person = {"John", 30, 1.85}
-                    var a:= p.name
-                    var b:= p.age
-                    var c:= p.height
-                end
-            """,
-            "expected_env": {"a": "John", "b": 30, "c": 1.85}
-        },
-        {
-            "name": "nested tuple in struct initializer",
-            "code": """
-                struct Container do
-                    data:{int, string}
-                end
-                def main() do
-                    var c:Container = {{1, "hello"}}
-                    var i := c.data._0
-                    var s := c.data._1
-                end
-            """,
-            "expected_env": {"i": 1, "s": "hello"}
-        },
-        {
-            "name": "mixed struct and tuple initializers",
-            "code": """
-                struct Point do x:int; y:int; end
-                def main() do
-                    var p:Point = {10, 20}
-                    var t := {p, "coordinate"}
-                    var x := t._0.x
-                    var s := t._1
-                end
-            """,
-            "expected_env": {"x": 10, "s": "coordinate"}
-        },
-        {
-            "name": "struct literal in global scope",
-            "code": """
-                struct Color do Red:int; Green:int; Blue:int; end
-                const Color:Color={0,1,2}
-                def main() do
-                    var x := Color.Red;
-                    var y := Color.Green;
-                    var z := Color.Blue
-                end
-            """,
-            "expected_env": {"x": 0, "y": 1, "z": 2}
         },
         {
             "name": "operator precedence - unary op vs member access",
