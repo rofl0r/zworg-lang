@@ -78,6 +78,9 @@ class TypeRegistry:
         self._next_funcid = 1   # Start with 1 so -1 means "not found"
         self._methods = {}      # (struct_id) -> dict(funcname) -> funcid
 
+        # Track generic specializations in creation order
+        self._specializations = []  # list of (generic_id, concrete_id, concrete_tuple)
+
         # Initialize primitive types
         self._initialize_primitive_types()
 
@@ -311,13 +314,16 @@ class TypeRegistry:
             self.add_field(concrete_name, field_name, concrete_field_type)
             
             field_index += 1
-        
+
         # Step 10: Cache the instantiation
         descriptor.instantiations[concrete_tuple] = concrete_id
-        
+
+        # Track this specialization
+        self._specializations.append((generic_struct_id, concrete_id, concrete_tuple))
+
         # Step 11: Instantiate all methods for this concrete struct
         self._instantiate_all_methods(generic_struct_id, concrete_id, type_mapping)
-        
+
         return concrete_id
 
     def instantiate_generic_method(self, method_name, generic_struct_id, concrete_struct_id, type_mapping=None):
@@ -450,6 +456,15 @@ class TypeRegistry:
         if self._is_struct_descriptor(descriptor):
             return descriptor.param_mapping.get(param_name, -1)
         return -1
+
+    def get_specializations(self):
+        """Get all tracked generic specializations in creation order"""
+        return self._specializations
+
+    def get_struct_methods(self, struct_id):
+        """get all function ids of a given struct_id"""
+        if struct_id not in self._methods: return []
+        return list(self._methods[struct_id].values())
 
     def _get_type_id_from_name(self, type_name):
         """Helper to get type ID from name for both primitive types and structs

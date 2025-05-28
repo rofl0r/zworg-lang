@@ -450,15 +450,17 @@ class CCodeGenerator:
 
         for node in ast:
             if node.node_type == AST_NODE_FUNCTION_DECL:
-                functions.append(node)
+                if not registry.is_generic_struct(node.parent_struct_id):
+                    functions.append(node)
             elif node.node_type == AST_NODE_VAR_DECL:
                 globals.append(node)
             elif node.node_type == AST_NODE_STRUCT_DEF:
-                structs.append(node)
+                if not registry.is_generic_struct(node.struct_id):
+                    structs.append(node)
 
         # Generate struct definitions first
         for struct in structs:
-            self.generate_struct_def(struct)
+            self.generate_struct_def(struct.struct_id)
 
         # marker to insert tuples that need to come after struct defs
         self.output.write("\n/* ZW__HEADER_INJECT_TUPLES */\n")
@@ -474,6 +476,10 @@ class CCodeGenerator:
         # Generate global variables
         for var_decl in globals:
             self.generate_global_var(var_decl)
+
+        # create code and struct defs for concrete generics
+        # TODO: these might not be emitted in the correct order
+        self.generate_specializations()
 
         # Generate function definitions
         for func in functions:
@@ -500,6 +506,20 @@ class CCodeGenerator:
 
         return result
 
+    def generate_specializations(self):
+        """Generate code for all generic specializations"""
+        # Get all specializations in creation order
+        for generic_id, concrete_id, concrete_tuple in registry.get_specializations():
+            self.generate_struct_def(concrete_id)
+            # Generate all methods using the get_struct_methods function
+            for func_id in registry.get_struct_methods(concrete_id):
+                func = registry.get_func_from_id(func_id)
+                if func and func.ast_node:
+                    # Flatten the method AST
+                    flattened = self.rewrite_function(func.ast_node)
+                    # Generate the method code
+                    self.generate_function(flattened)
+
     def rewrite_function(self, node):
         """ decompose complex expressions in func body, apply other AST patches"""
         func_id = registry.lookup_function(node.name, node.parent_struct_id)
@@ -516,16 +536,17 @@ class CCodeGenerator:
         """Generate the C main function that initializes the runtime and calls zw_main"""
         self.output.write(main_header)
 
-    def generate_struct_def(self, node):
+    def generate_struct_def(self, struct_id):
         """Generate C code for a struct definition"""
         # we first track all tuples we need, then emit those before the
         # the actual struct def, and mark them as processed so they dont
         # get declared again.
         tuples_needed = []
-        result = 'struct %s {\n' % node.name
+        result = 'struct %s {\n' % registry.get_struct_name(struct_id)
+        fields = registry.get_struct_fields(struct_id, include_parents=True)
 
         # Generate struct members
-        for field_name, field_type in node.fields:
+        for field_name, field_type in fields:
             # deal with tuple structs we may find inside another struct
             if registry.is_tuple_type(field_type):
                 if not self.scope_manager.is_tuple_processed(field_type):
