@@ -14,6 +14,10 @@ typedef struct handle
 
 static const handle handle_nil = {0};
 
+static int handle_cmp(handle a, handle b) {
+	return memcmp(&a, &b, sizeof(a));
+}
+
 struct allocator
 {
 	uint32_t alloc_size; // this can be hardcoded in when generating allocators
@@ -210,6 +214,8 @@ void ha_array_free(struct handle_allocator *self, handle h) {
 
 handle ha_array_realloc(struct handle_allocator *self, handle h, size_t newsize) {
 	assert(h.allocator_id == 0);
+        if(handle_cmp(h, handle_nil) == 0)
+		return ha_array_alloc(self, newsize, (void*)0);
 #ifdef DEBUG_ALLOCATOR
 	assert("use-after-free" && h.generation == self->allocators[h.allocator_id].gen_ids[h.idx]);
 #endif
