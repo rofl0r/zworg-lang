@@ -1080,7 +1080,18 @@ class CCodeGenerator:
         elif node.node_type == AST_NODE_CALL:
             func_name = self.get_method_name_from_node(node)
             args = []
-            for arg in node.args:
+            is_constructor = node.obj and node.name == "init"
+            for i, arg in enumerate(node.args):
+                # if this is the self parameter of a method, and it's an array access
+                if i == 0 and node.obj and arg.node_type == AST_NODE_ARRAY_ACCESS:
+                    elem_type_id = registry.get_array_element_type(arg.array.expr_type)
+                    array_expr = self.generate_expression(arg.array)
+                    index_expr = self.generate_expression(arg.index)
+                    # Use compound literal to create a direct handle to the array element
+                    handle_expr = "ha_array_elem_handle(&ha, &(struct array_elem_handle_data){%s, %s * sizeof(%s)})" % (
+                        array_expr, index_expr, type_to_c(elem_type_id, use_handles=False))
+                    args.append(handle_expr)
+                    continue
                 args.append(self.generate_expression(arg))
                 if arg.node_type == AST_NODE_VARIABLE:
                     self.scope_manager.mark_variable_escaping(arg.name)

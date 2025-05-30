@@ -107,7 +107,7 @@ find_allocator_for_size(struct handle_allocator *self, uint32_t size) {
 
 handle ha_obj_alloc(struct handle_allocator *self, uint32_t size) {
 	if(find_allocator_for_size(self, size) == (size_t)-1) {
-		assert(self->count <= 0xfffe); /* currently only 64k possible sizeclasses, last is reserved for stack */
+		assert(self->count <= 0xfffd); /* currently only 64k possible sizeclasses, 0xffff is reserved for stack and 0xfffe for temporary array elem handles */
 		void *new = realloc(self->allocators, (self->count+1)*sizeof(struct allocator));
 		if(!new) return handle_nil;
 		self->allocators = new;
@@ -144,11 +144,23 @@ void ha_obj_free(struct handle_allocator *self, handle h) {
 	allocator_free(self->allocators + h.allocator_id, h.idx);
 }
 
+struct array_elem_handle_data {
+	handle array_handle;
+	size_t array_idx;
+};
+
 void *ha_array_get_ptr(struct handle_allocator *self, handle h);
 void *ha_stack_get_ptr(struct handle_allocator *self, handle h);
 void *ha_obj_get_ptr(struct handle_allocator *self, handle h) {
         if(h.allocator_id == 0xffff) return ha_stack_get_ptr(self, h);
         if(h.allocator_id == 0) return ha_array_get_ptr(self, h);
+	if(h.allocator_id == 0xfffe) {
+		h.allocator_id = 0xffff;
+		struct array_elem_handle_data *d = ha_stack_get_ptr(self, h);
+		assert(d->array_handle.allocator_id == 0);
+		char* ad = ha_array_get_ptr(self, d->array_handle);
+		return ad + d->array_idx;
+	}
 	assert(h.allocator_id < self->count);
 #ifndef DEBUG_ALLOCATOR
 	assert(h.generation == 1);
@@ -257,6 +269,15 @@ handle ha_stack_alloc(struct handle_allocator *self, size_t size, void*existing)
 void *ha_stack_get_ptr(struct handle_allocator *self, handle h) {
 	assert(h.allocator_id == 0xffff);
 	return (void*)((intptr_t)self->stackbase - h.idx);
+}
+
+/* get a temporary stack handle to an object inside an array handle.
+   handle_data must live on the stack, and array_idx is the element's position
+   in bytes from the array data start, not actual the element index. */
+handle ha_array_elem_handle(struct handle_allocator *self, struct array_elem_handle_data *handle_data) {
+	handle h = ha_stack_alloc(self, sizeof(*handle_data), handle_data);
+	h.allocator_id = 0xfffe;
+	return h;
 }
 
 void ha_init(struct handle_allocator *self, void *stack) {
