@@ -102,6 +102,16 @@ def make_reserved_identifier(name):
 def is_byval_struct_type(type_id):
     return registry.is_tuple_type(type_id) or registry.is_enum_type(type_id)
 
+def is_handle(type_id, ref_kind):
+    """Determine if a type with given ref_kind should be treated as a handle"""
+    # currently nil is internally (for simplicity) treated the same as
+    # primitive types. we might revise this later.
+    if type_id == TYPE_NIL: return True
+    # Primitive types are never handles, regardless of ref_kind
+    if registry.is_primitive_type(type_id): return False
+    # Non-primitive types with not-NONE ref_kind are handles
+    return ref_kind != REF_KIND_NONE
+
 def type_to_c(type_id, use_handles=True):
     """Convert type_id to a C type string"""
     if registry.is_primitive_type(type_id):
@@ -1080,6 +1090,11 @@ class CCodeGenerator:
             left = self.generate_expression(node.left)
             right = self.generate_expression(node.right)
             op = C_OP_MAP.get(node.operator, node.operator)
+            if (is_handle(node.left.expr_type, node.left.ref_kind) and
+                is_handle(node.right.expr_type, node.right.ref_kind)):
+                assert(op in ["==", "!="])
+                if op == '==': return "(!handle_cmp(%s, %s))"%(left, right)
+                if op == '!=': return "(handle_cmp(%s, %s))"%(left, right)
             return '(%s %s %s)' % (left, op, right)
 
         elif node.node_type == AST_NODE_BITOP:

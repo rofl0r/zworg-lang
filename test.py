@@ -15,6 +15,67 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "unary not with typedef primitive",
+            "code": """
+                typedef foo: int
+                def main() do
+                    var x:= 0
+                    var f:foo=0
+                    if not f do x+=1; end
+                end
+            """,
+            "expected_env": {"x": 1}
+        },
+        {
+            "name": "comparison with nil",
+            "code": """
+                struct TestStruct do value: int; end
+                def main() do
+                    var nil_array: int[] = nil
+                    var x:= 0
+                    if(nil_array == nil) do x += 3; end
+                    if(nil_array != nil) do x += 7; end
+                end
+            """,
+            "expected_env": {"x": 3}
+        },
+        {
+            "name": "dynamic array resize from nil",
+            "code": """
+                struct TestStruct do value: int; end
+                def TestStruct.init(v: int) do self.value = v; end
+                def main() do
+                    // Test 1: Resize nil int array
+                    var nil_array: int[] = nil
+                    nil_array = new(nil_array, 3)
+                    nil_array[0] = 111
+                    var nil_result := nil_array[0]
+                    // Test 2: Resize nil struct array
+                    var struct_array: TestStruct[] = nil
+                    struct_array = new(struct_array, 2)
+                    struct_array[0] = new TestStruct(222)
+                    var struct_result := struct_array[0].value
+                    // Test 3: Test that an array after new is not nil
+                    var is_nil := 0
+                    var x: int[] = nil
+                    if x == nil do
+                        is_nil = 1
+                    end
+                    x = new(x, 1)
+                    var not_nil := 0
+                    if x != nil do
+                        not_nil = 1
+                    end
+                end
+            """,
+            "expected_env": {
+                "nil_result": 111,
+                "struct_result": 222,
+                "is_nil": 1,
+                "not_nil": 1
+            }
+        },
+        {
             "name": "struct return from array",
             "code": """
                 struct Foo do x:int ; end
@@ -862,42 +923,6 @@ test_cases = [
                 "still_preserved": 20,
                 "assigned_value": 100,
                 "z_value": 84
-            }
-        },
-        {
-            "name": "dynamic array resize from nil",
-            "code": """
-                struct TestStruct do value: int; end
-                def TestStruct.init(v: int) do self.value = v; end
-                def main() do
-                    // Test 1: Resize nil int array
-                    var nil_array: int[] = nil
-                    nil_array = new(nil_array, 3)
-                    nil_array[0] = 111
-                    var nil_result := nil_array[0]
-                    // Test 2: Resize nil struct array
-                    var struct_array: TestStruct[] = nil
-                    struct_array = new(struct_array, 2)
-                    struct_array[0] = new TestStruct(222)
-                    var struct_result := struct_array[0].value
-                    // Test 3: Test that an array after new is not nil
-                    var is_nil := 0
-                    var x: int[] = nil
-                    if x == nil do
-                        is_nil = 1
-                    end
-                    x = new(x, 1)
-                    var not_nil := 0
-                    if x != nil do
-                        not_nil = 1
-                    end
-                end
-            """,
-            "expected_env": {
-                "nil_result": 111,
-                "struct_result": 222,
-                "is_nil": 1,
-                "not_nil": 1
             }
         },
         {

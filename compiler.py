@@ -1368,6 +1368,11 @@ class Parser:
 
         if t.type in [TT_MINUS, TT_NOT, TT_BITNOT]:  # Unary operators
             expr = self.expression(UNARY_PRECEDENCE)
+            if t.type == TT_NOT:
+                if expr.expr_type == TYPE_NIL or expr.ref_kind != REF_KIND_NONE: # desugar into nil comparison
+                    return CompareNode(t, "==", expr, NilNode(t))
+                elif not registry.is_primitive_type(expr.expr_type):
+                    self.error("Cannot use not operator on-non-primitive or non-heap type '%s'" % registry.var_type_to_string(expr.expr_type))
             return UnaryOpNode(t, t.value, expr, expr.expr_type)
 
         if t.type == TT_LBRACE:
