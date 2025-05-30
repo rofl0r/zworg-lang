@@ -547,29 +547,12 @@ class AstExpressionFlattener:
         # Process all elements in the initializer
         new_elements = []
         hoisted_stmts = []
-        is_array_init = self.registry.is_array_type(node.expr_type)
-
+        
         for elem in node.elements:
-            # For arrays, don't flatten constructors
-            if is_array_init and self.is_constructor_node(elem):
-                # Just process the constructor args
-                arg_exprs = []
-                for i, arg in enumerate(elem.args):
-                    if i == 0:  # Skip flattening the first 'self' placeholder
-                        arg_exprs.append(arg)
-                    else:
-                        arg_expr, arg_hoisted = self.flatten_expr(arg)
-                        arg_exprs.append(arg_expr)
-                        hoisted_stmts.extend(arg_hoisted)
-
-                new_call = copy.copy(elem)
-                new_call.args = arg_exprs
-                new_elements.append(new_call)
-            else:
-                elem_expr, elem_hoisted = self.flatten_expr(elem)
-                new_elements.append(elem_expr)
-                hoisted_stmts.extend(elem_hoisted)
-
+            elem_expr, elem_hoisted = self.flatten_expr(elem)
+            new_elements.append(elem_expr)
+            hoisted_stmts.extend(elem_hoisted)
+        
         new_init = copy.copy(node)
         new_init.elements = new_elements
         
