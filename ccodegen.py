@@ -1094,7 +1094,12 @@ class CCodeGenerator:
                     continue
                 args.append(self.generate_expression(arg))
                 if arg.node_type == AST_NODE_VARIABLE:
-                    self.scope_manager.mark_variable_escaping(arg.name)
+                    # never mark self in constructor calls as escaping
+                    if is_constructor and i == 0: pass
+                    # never mark temp vars inserted by ast_flattener as escaping
+                    elif arg.name.startswith("__temp_"): pass
+                    else:
+                        self.scope_manager.mark_variable_escaping(arg.name)
             return '%s(%s)' % (func_name, ', '.join(args))
 
         elif node.node_type == AST_NODE_COMPARE:
