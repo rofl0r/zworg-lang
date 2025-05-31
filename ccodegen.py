@@ -294,17 +294,22 @@ class ScopeManager:
                 assert(var.static_data is not None)
                 assert(array_size is not None)
 
-                # Create storage with initializer
-                storage_name = make_reserved_identifier("%s_storage" % name)
-                # Handle array type declaration correctly in C syntax (int name[5], not int[5] name)
-                elem_type_id = registry.get_array_element_type(var.type_id)
-                elem_type_c = type_to_c(elem_type_id, use_handles=False)
-                helper_header_output.write("\t%s %s[%d] = %s; \\\n" %
-                                        (elem_type_c, storage_name, array_size, var.static_data))
+                # If not heap var, create stack storage with initializer
+                if not var.heap_alloc:
+                    storage_name = make_reserved_identifier("%s_storage" % name)
+                    # Handle array type declaration correctly in C syntax (int name[5], not int[5] name)
+                    elem_type_id = registry.get_array_element_type(var.type_id)
+                    elem_type_c = type_to_c(elem_type_id, use_handles=False)
+                    helper_header_output.write("\t%s %s[%d] = %s; \\\n" %
+                                            (elem_type_c, storage_name, array_size, var.static_data))
 
-                # Allocate array with the static data
-                helper_header_output.write("\thandle %s = ha_array_alloc(&ha, sizeof(%s) * %d, &%s); \\\n" %
-                                        (name, elem_type, array_size, storage_name))
+                    # Allocate array with the static data
+                    helper_header_output.write("\thandle %s = ha_array_alloc(&ha, sizeof(%s) * %d, &%s); \\\n" %
+                                            (name, elem_type, array_size, storage_name))
+                else:
+                    helper_header_output.write("\thandle %s = ha_array_alloc(&ha, sizeof(%s) * %d, (void*)0); \\\n" %
+                                            (name, elem_type, array_size))
+
 
             elif var_is_struct or var_is_array:
                 # Just declare handle for variables getting value from elsewhere
@@ -319,11 +324,12 @@ class ScopeManager:
         # Add cleanup code for struct variables in reverse declaration order
         cleanup_needed = False
         for name, var in reversed(scope.get_vars_in_order()):
+            if var.heap_alloc: continue
             var_is_struct = registry.is_struct_type(var.type_id) and not is_byval_struct_type(var.type_id)
             var_is_array = registry.is_array_type(var.type_id)
 
             # auto-clean variables we put on the heap ourselves
-            if var_is_struct and var.escapes and var.needs_storage and not var.heap_alloc:
+            if var_is_struct and var.escapes and var.needs_storage:
                 helper_header_output.write("\tha_obj_free(&ha, %s); \\\n" % name)
                 cleanup_needed = True
             elif var_is_array and var.needs_storage:
