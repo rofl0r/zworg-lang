@@ -1202,7 +1202,10 @@ class Parser:
                             _, element_type = fields[field_index]
 
                 # Recursively parse nested initializer
+                old_initializer_type = self.current_initializer_type
+                self.current_initializer_type = element_type
                 nested_init = self.parse_initializer_expression(element_type)
+                self.current_initializer_type = old_initializer_type
                 elements.append(nested_init)
             else:
                 # Regular expression element
