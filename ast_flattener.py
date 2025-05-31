@@ -16,6 +16,7 @@ class AstExpressionFlattener:
         """Initialize with registry for type information"""
         self.registry = registry
         self.current_function = None
+        self.constructor_var = None
         self._reset_temps()
 
     def _reset_temps(self):
@@ -185,6 +186,7 @@ class AstExpressionFlattener:
 
             # Create assignments only for constructor elements
             assignments = []
+            old_cv = self.constructor_var
             for idx in constructor_indices:
                 elem = stmt.expr.elements[idx]
                 # Create array access for the target element
@@ -193,14 +195,14 @@ class AstExpressionFlattener:
                 array_access = ArrayAccessNode(stmt.token, array_var, idx_node, element_type_id)
 
                 # Create assignment of constructor result to array element
+                self.constructor_var = array_access
                 constructor_expr, constructor_hoisted = self.flatten_expr(elem)
-                assign_op = BinaryOpNode(stmt.token, "=", array_access, constructor_expr, element_type_id)
-                assign_stmt = ExprStmtNode(stmt.token, assign_op)
 
                 # Add the assignment after any hoisted statements
                 if constructor_hoisted:
                     assignments.extend(constructor_hoisted)
-                assignments.append(assign_stmt)
+
+            self.constructor_var = old_cv
 
             # Return the array declaration followed by the assignments
             return [array_decl] + assignments
@@ -387,18 +389,31 @@ class AstExpressionFlattener:
         # Preserve the reference kind if already set (e.g., REF_KIND_HEAP for new expressions)
         preserved_ref_kind = node.ref_kind
 
-        # Create a temporary variable for the object
-        struct_type = node.expr_type
-        temp_name = self.get_temp_name()
-
         # Process constructor arguments if any
         arg_exprs = []
         hoisted_stmts = []
 
-        # For constructor calls, the first arg is a placeholder 'self'
-        # We need to replace this with our new temporary
-        temp_var = self.create_variable_node(node.token, temp_name, struct_type)
-        arg_exprs.append(temp_var)
+        struct_type = node.expr_type
+
+        if not self.constructor_var:
+            # Create a temporary variable for the object
+            temp_name = self.get_temp_name()
+            # For constructor calls, the first arg is a placeholder 'self'
+            # We need to replace this with our new temporary
+            temp_var = self.create_variable_node(node.token, temp_name, struct_type)
+            target_var = temp_var
+            # Create a variable declaration for the temp (initialized to default)
+            var_decl = self.create_var_decl_node(node.token, TT_VAR, temp_name, struct_type, None)
+            # For C code generation, set reference kind appropriately
+            # If it was already of a ref type, preserve it, otherwise set to REF_KIND_GENERIC
+            if preserved_ref_kind == REF_KIND_NONE:
+                temp_var.ref_kind = REF_KIND_GENERIC
+        else:
+            target_var = self.constructor_var
+            var_decl = None
+
+        # add self variable
+        arg_exprs.append(target_var)
 
         # Process the remaining arguments (skip the first 'self' placeholder)
         for arg in node.args[1:]:
@@ -406,27 +421,17 @@ class AstExpressionFlattener:
             arg_exprs.append(arg_expr)
             hoisted_stmts.extend(arg_hoisted)
 
-        # Create a variable declaration for the temp (initialized to default)
-        var_decl = self.create_var_decl_node(node.token, TT_VAR, temp_name, struct_type, None)
-
         # Create a constructor call
         struct_name = self.registry.get_struct_name(struct_type)
-        init_call = CallNode(node.token, "%s_init" % struct_name, arg_exprs, TYPE_VOID)
+        init_call = CallNode(node.token, "init", arg_exprs, TYPE_VOID, obj=target_var)
         init_stmt = ExprStmtNode(node.token, init_call)
 
-        # For C code generation, set reference kind appropriately
-        # If it was REF_KIND_HEAP (inside new), preserve it, otherwise set to REF_KIND_GENERIC
-        if preserved_ref_kind == REF_KIND_HEAP:
-            temp_var.ref_kind = REF_KIND_HEAP
-        else:
-            temp_var.ref_kind = REF_KIND_GENERIC
-
         # Order is important: declare temp, hoist setup, call constructor
-        hoisted_stmts.insert(0, var_decl)
+        if var_decl: hoisted_stmts.insert(0, var_decl)
         hoisted_stmts.append(init_stmt)
 
-        # Return the temp var as the expression
-        return temp_var, hoisted_stmts
+        # Return the target var as the expression
+        return target_var, hoisted_stmts
 
     def flatten_call(self, node):
         """Handle function calls and method calls"""
