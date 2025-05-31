@@ -176,6 +176,7 @@ class VarLifecycle:
         self.escapes = False  # True if assigned to struct member or passed as steal
         self.needs_storage = True # we don't need to emit an initializer expression if this is e.g. a direct result from func return
         self.static_data = None  # For initializers with static data (can apply to arrays or structs)
+        self.heap_alloc = False # Whether the variable is allocated on heap anyway
 
     def __repr__(self):
         return "Var(%s)" % ("escapes" if self.escapes else "local")
@@ -272,8 +273,8 @@ class ScopeManager:
             var_is_array = registry.is_array_type(var.type_id)
 
             if var_is_struct and var.needs_storage:
-                if var.escapes:
-                    # Heap allocation for escaping variables
+                if var.escapes or var.heap_alloc:
+                    # Heap allocation for escaping or heap-declared variables
                     struct_string = type_to_c(var.type_id, use_handles=False)
                     helper_header_output.write("\thandle %s = ha_obj_alloc(&ha, sizeof(%s)); \\\n" %
                                             (name, struct_string))
@@ -321,7 +322,8 @@ class ScopeManager:
             var_is_struct = registry.is_struct_type(var.type_id) and not is_byval_struct_type(var.type_id)
             var_is_array = registry.is_array_type(var.type_id)
 
-            if var_is_struct and var.escapes and var.needs_storage:
+            # auto-clean variables we put on the heap ourselves
+            if var_is_struct and var.escapes and var.needs_storage and not var.heap_alloc:
                 helper_header_output.write("\tha_obj_free(&ha, %s); \\\n" % name)
                 cleanup_needed = True
             elif var_is_array and var.needs_storage:
@@ -361,6 +363,12 @@ class ScopeManager:
         var = self.find_variable(name)
         if var:
             var.escapes = True
+
+    def mark_variable_heap_alloc(self, name):
+        """Mark a variable as requiring a heap allocation because user said so"""
+        var = self.find_variable(name)
+        if var:
+            var.heap_alloc = True
 
     def mark_variable_no_storage(self, name):
         """Mark a variable not needing storage"""
@@ -663,13 +671,8 @@ class CCodeGenerator:
                 # In other words, we're just assigning handles
                 if deref_needed == 0:
                     self.scope_manager.mark_variable_no_storage(node.var_name)
-                # small hack - to get heap alloc for REF_KIND_HEAP, mark as
-                # escaping. else we'd need to keep track of the ref_kind in
-                # scope manager too - which would be advantageous in the case
-                # there's a heap variable which isn't escaping, we can emit
-                # an info for the user that heap alloc is overkill
                 if node.ref_kind == REF_KIND_HEAP:
-                    self.scope_manager.mark_variable_escaping(node.var_name)
+                    self.scope_manager.mark_variable_heap_alloc(node.var_name)
 
         if init_expr:
             if is_handle_struct:
