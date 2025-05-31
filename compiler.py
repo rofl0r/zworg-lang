@@ -356,6 +356,48 @@ class ArrayResizeNode(ASTNode):
     def __repr__(self):
         return "ArrayResize(%s, %s)" % (repr(self.array_expr), repr(self.size_expr))
 
+# shared utility function
+def create_default_value_node(token, type_id):
+    """Create an AST node with the default/zero value for given type"""
+    if registry.is_array_type(type_id):
+        # For arrays with fixed size, create array of zeros
+        element_type = registry.get_array_element_type(type_id)
+        size = registry.get_array_size(type_id)
+
+        if size is not None:
+            # Create array with default-initialized elements
+            elements = []
+            for _ in range(size):
+                elements.append(create_default_value_node(token, element_type))
+            return GenericInitializerNode(token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+        else:
+            # Dynamic arrays default to nil
+            return NilNode(token)
+
+    elif registry.is_struct_type(type_id):
+        # Get all fields including inherited ones
+        fields = registry.get_struct_fields(type_id)
+
+        # Create default initializer for each field
+        elements = []
+        for _, field_type in fields:
+            elements.append(create_default_value_node(token, field_type))
+
+        # Create struct initializer with default values
+        init_node = GenericInitializerNode(token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
+        init_node.expr_type = type_id  # Ensure expression type is set
+        return init_node
+
+    else:
+        # Primitives get appropriate zero values
+        if type_id == TYPE_STRING:
+            return StringNode(token, "")
+        elif is_float_type(type_id):
+            return NumberNode(token, 0.0, type_id)
+        else:
+            # For all integer types and unknown types
+            return NumberNode(token, 0, type_id)
+
 def is_literal_node(node):
     """Check if a node represents a literal value (for global var init)"""
     if node.node_type in [AST_NODE_NUMBER, AST_NODE_STRING, AST_NODE_NIL]:
@@ -405,44 +447,7 @@ class Parser:
 
     def create_default_value(self, type_id):
         """Create an AST node with the default/zero value for given type"""
-        if registry.is_array_type(type_id):
-            # For arrays with fixed size, create array of zeros
-            element_type = registry.get_array_element_type(type_id)
-            size = registry.get_array_size(type_id)
-
-            if size is not None:
-                # Create array with default-initialized elements
-                elements = []
-                for _ in range(size):
-                    elements.append(self.create_default_value(element_type))
-                return GenericInitializerNode(self.token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
-            else:
-                # Dynamic arrays default to nil
-                return NilNode(self.token)
-
-        elif registry.is_struct_type(type_id):
-            # Get all fields including inherited ones
-            fields = registry.get_struct_fields(type_id)
-
-            # Create default initializer for each field
-            elements = []
-            for _, field_type in fields:
-                elements.append(self.create_default_value(field_type))
-
-            # Create struct initializer with default values
-            init_node = GenericInitializerNode(self.token, elements, INITIALIZER_SUBTYPE_LINEAR, type_id)
-            init_node.expr_type = type_id  # Ensure expression type is set
-            return init_node
-
-        else:
-            # Primitives get appropriate zero values
-            if type_id == TYPE_STRING:
-                return StringNode(self.token, "")
-            elif is_float_type(type_id):
-                return NumberNode(self.token, 0.0, type_id)
-            else:
-                # For all integer types and unknown types
-                return NumberNode(self.token, 0, type_id)
+        return create_default_value_node(self.token, type_id)
 
     def get_common_type(self, type1, type2):
         """

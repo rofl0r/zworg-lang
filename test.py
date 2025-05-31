@@ -15,6 +15,89 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "struct array self handle and constructors A",
+           "code": """
+                struct Point do x: int; y: int; end
+                def Point.sum() : int do
+                    return self.x + self.y;
+                end
+                def main() do
+                    var stack_points :Point[3]
+                    stack_points[1].x = 3
+                    stack_points[1].y = 4
+                    var stack_sum := stack_points[1].sum()  // Should be 7 (3+4)
+                end
+           """,
+           "expected_env": {"stack_sum": 7}
+        },
+        {
+           "name": "struct array self handle and constructors B",
+           "code": """
+                struct Point do x: int; y: int; end
+                def Point.init(x_val: int, y_val: int) do
+                    self.x = x_val
+                    self.y = y_val
+                end
+                def Point.sum() : int do
+                    return self.x + self.y;
+                end
+                def main() do
+                    var stack_points :Point[]= {Point(1,2), Point(3,4), Point(5,6)}
+                    var stack_sum := stack_points[1].sum()  // Should be 7 (3+4)
+                end
+           """,
+           "expected_env": {"stack_sum": 7}
+        },
+        {
+           "name": "struct array self handle and constructors C",
+           "code": """
+                struct Point do x: int; y: int; end
+                def Point.init(x_val: int, y_val: int) do
+                    self.x = x_val
+                    self.y = y_val
+                end
+                def Point.sum() : int do
+                    return self.x + self.y;
+                end
+                def main() do
+                    var stack_points :Point[3]
+                    stack_points[0] = Point(1,2)
+                    stack_points[1] = Point(3,4)
+                    stack_points[2] = Point(5,6)
+                    var stack_sum := stack_points[1].sum()  // Should be 7 (3+4)
+                end
+           """,
+           "expected_env": {"stack_sum": 7}
+        },
+        {
+           "name": "struct array self handle with nested initializer A",
+           "code": """
+                struct Point do x: int; y: int; end
+                def Point.sum() : int do
+                    return self.x + self.y;
+                end
+                def main() do
+                    var stack_points :Point[]= {{1,2}, {3,4}, {5,6}}
+                    var stack_sum := stack_points[1].sum()  // Should be 7 (3+4)
+                end
+           """,
+           "expected_env": {"stack_sum": 7}
+        },
+        {
+           "name": "struct array self handle with nested initializer B",
+           "code": """
+                struct Point do x: int; y: int; end
+                def Point.sum() : int do
+                    return self.x + self.y;
+                end
+                def main() do
+                    var stack_points :Point[3]= {{1,2}, {3,4}, {5,6}}
+                    var stack_sum := stack_points[1].sum()  // Should be 7 (3+4)
+                end
+           """,
+           "expected_env": {"stack_sum": 7}
+        },
+        {
             "name": "unary not with typedef primitive",
             "code": """
                 typedef foo: int

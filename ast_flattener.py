@@ -2,7 +2,7 @@
 # Transforms complex expressions into simpler ones with temporaries
 
 from shared import *
-from compiler import VariableNode, BinaryOpNode, UnaryOpNode, IfNode, WhileNode, BreakNode, ContinueNode, ExprStmtNode, VarDeclNode, CallNode
+from compiler import VariableNode, BinaryOpNode, UnaryOpNode, IfNode, WhileNode, BreakNode, ContinueNode, ExprStmtNode, VarDeclNode, CallNode, ArrayAccessNode, NumberNode, GenericInitializerNode, create_default_value_node
 import copy
 
 class AstExpressionFlattener:
@@ -151,6 +151,60 @@ class AstExpressionFlattener:
 
     def flatten_var_decl(self, stmt):
         """Transform a variable declaration"""
+        # Special handling for array initializer with constructor calls
+        if (stmt.expr and
+            stmt.expr.node_type == AST_NODE_GENERIC_INITIALIZER and
+            self.registry.is_array_type(stmt.var_type) and
+            any(self.is_constructor_node(e) for e in stmt.expr.elements)):
+
+            # Process initializer elements, keeping track of which ones are constructors
+            array_size = len(stmt.expr.elements)
+            element_type_id = self.registry.get_array_element_type(stmt.var_type)
+
+            # Create new initializer elements, preserving non-constructor elements
+            default_elements = []
+            constructor_indices = []
+
+            for idx, elem in enumerate(stmt.expr.elements):
+                if self.is_constructor_node(elem):
+                    # Replace constructor with default value
+                    default_elements.append(create_default_value_node(stmt.token, element_type_id))
+                    constructor_indices.append(idx)
+                else:
+                    # Process non-constructor element normally
+                    elem_expr, _ = self.flatten_expr(elem)
+                    default_elements.append(elem_expr)
+
+            # Create the initializer with the modified elements
+            default_init = GenericInitializerNode(stmt.token, default_elements,
+                               INITIALIZER_SUBTYPE_LINEAR, stmt.var_type)
+
+            # Create the array declaration with mixed initializers
+            array_decl = self.create_var_decl_node(stmt.token, stmt.decl_type,
+                                                  stmt.var_name, stmt.var_type, default_init)
+
+            # Create assignments only for constructor elements
+            assignments = []
+            for idx in constructor_indices:
+                elem = stmt.expr.elements[idx]
+                # Create array access for the target element
+                array_var = self.create_variable_node(stmt.token, stmt.var_name, stmt.var_type)
+                idx_node = NumberNode(stmt.token, idx, TYPE_INT)
+                array_access = ArrayAccessNode(stmt.token, array_var, idx_node, element_type_id)
+
+                # Create assignment of constructor result to array element
+                constructor_expr, constructor_hoisted = self.flatten_expr(elem)
+                assign_op = BinaryOpNode(stmt.token, "=", array_access, constructor_expr, element_type_id)
+                assign_stmt = ExprStmtNode(stmt.token, assign_op)
+
+                # Add the assignment after any hoisted statements
+                if constructor_hoisted:
+                    assignments.extend(constructor_hoisted)
+                assignments.append(assign_stmt)
+
+            # Return the array declaration followed by the assignments
+            return [array_decl] + assignments
+
         new_stmt = self.copy_with_ref_kind(stmt)
 
         if not stmt.expr:
