@@ -3179,6 +3179,8 @@ def test(use_interpreter=True):
     print("\n========== Test Results ==========")
     print("Total tests: %d" % len(test_cases))
     print("Failed test IDs: %s" % (", ".join(str(num) for num in failed_tests) if failed_tests else "None"))
+    if failed_tests:
+        print("Number of failed tests: %d (%.02f%%)"%(len(failed_tests), len(failed_tests)/(len(test_cases)/100.0)))
     print("All tests passed: %s" % ("No" if failed_tests else "Yes"))
     # Print duplicate tests
     duplicates = {h: tests for h, tests in test_hashes.items() if len(tests) > 1}
