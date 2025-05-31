@@ -3076,18 +3076,21 @@ def test(use_interpreter=True):
                         print("AST dump: %s" % result['ast'])
                     if result.get('c_code'):
                         print("C code: %s" % result['c_code'])
+                    if os.getenv("DEBUG"):
+                        import time
+                        time.sleep(10000)
 
             else:
                 printc("red", "Failed! Error: %s" % result['error'])
                 printc("red", "Input: %s" % add_line_numbers(test_case["code"]))
-                if os.getenv("DEBUG"):
-                    import time
-                    time.sleep(10000)
                 failed_tests.append(test_num)
                 if result.get('ast'):
                     print("AST dump: %s" % result['ast'])
                 if result.get('c_code'):
                     print("C code: %s" % result['c_code'])
+                if os.getenv("DEBUG"):
+                    import time
+                    time.sleep(10000)
 
     # Print statistics at the end
     print("\n========== Test Results ==========")
