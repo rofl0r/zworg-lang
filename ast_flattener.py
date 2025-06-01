@@ -231,7 +231,24 @@ class AstExpressionFlattener:
         Helper function to flatten a condition expression.
         Returns the flattened condition and any hoisted statements.
         """
-        condition, hoisted_stmts = self.flatten_expr(condition_node)
+        hoisted_stmts = []
+
+        # First check if we need to hoist an initializer assignment
+        if (condition_node.node_type == AST_NODE_BINARY_OP and
+            condition_node.operator == '=' and
+            condition_node.right.node_type == AST_NODE_GENERIC_INITIALIZER):
+
+            # Hoist the assignment out of the condition
+            assign_stmt = ExprStmtNode(condition_node.token, condition_node)
+            hoisted_stmts.append(assign_stmt)
+
+            # Replace condition with just the variable reference
+            condition = condition_node.left
+        else:
+            # Standard condition flattening
+            condition, expr_stmts = self.flatten_expr(condition_node)
+            hoisted_stmts.extend(expr_stmts)
+
         return condition, hoisted_stmts
 
     def flatten_if(self, stmt):
