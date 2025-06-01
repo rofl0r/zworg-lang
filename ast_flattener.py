@@ -141,7 +141,7 @@ class AstExpressionFlattener:
         # Create new statement with transformed expression
         new_stmt = copy.copy(stmt)
         new_stmt.expr = expr
-        
+
         return new_stmt, hoisted_stmts
 
     def flatten_var_decl(self, stmt):
@@ -441,18 +441,18 @@ class AstExpressionFlattener:
             # Process arguments
             arg_exprs = []
             hoisted_stmts = []
-            
+
             for arg in node.args:
                 arg_expr, arg_hoisted = self.flatten_expr(arg)
                 arg_exprs.append(arg_expr)
                 hoisted_stmts.extend(arg_hoisted)
-            
+
             # Create a new call node with the processed arguments
             new_call = copy.copy(node)
             new_call.args = arg_exprs
-            
+
             return new_call, hoisted_stmts
-            
+
         # Method call
         else:
             # Process the object expression
@@ -497,47 +497,47 @@ class AstExpressionFlattener:
         """Handle binary operations"""
         left_expr, left_hoisted = self.flatten_expr(node.left)
         right_expr, right_hoisted = self.flatten_expr(node.right)
-        
+
         # If both operands are simple, no need for a temporary
         if not left_hoisted and not right_hoisted:
             new_op = copy.copy(node)
             new_op.left = left_expr
             new_op.right = right_expr
             return new_op, []
-        
+
         # Otherwise, we need to hoist the operands
         # Order matters: left side evaluated first
         hoisted_stmts = left_hoisted + right_hoisted
-        
+
         new_op = copy.copy(node)
         new_op.left = left_expr
         new_op.right = right_expr
-        
+
         return new_op, hoisted_stmts
-    
+
     def flatten_unary_op(self, node):
         """Handle unary operations"""
         expr, hoisted_stmts = self.flatten_expr(node.operand)
-        
+
         new_op = copy.copy(node)
         new_op.operand = expr
-        
+
         return new_op, hoisted_stmts
-    
+
     def flatten_compare(self, node):
         """Handle comparison operations"""
         left_expr, left_hoisted = self.flatten_expr(node.left)
         right_expr, right_hoisted = self.flatten_expr(node.right)
-        
+
         # Combine hoisted statements in correct order
         hoisted_stmts = left_hoisted + right_hoisted
-        
+
         new_op = copy.copy(node)
         new_op.left = left_expr
         new_op.right = right_expr
-        
+
         return new_op, hoisted_stmts
-    
+
     def flatten_logical(self, node):
         """Handle logical operations"""
         # For logical operators, we need to handle short-circuit evaluation correctly
@@ -545,91 +545,91 @@ class AstExpressionFlattener:
         # we can just handle the hoisted statements in order
         left_expr, left_hoisted = self.flatten_expr(node.left)
         right_expr, right_hoisted = self.flatten_expr(node.right)
-        
+
         # Combine hoisted statements in correct order
         hoisted_stmts = left_hoisted + right_hoisted
-        
+
         new_op = copy.copy(node)
         new_op.left = left_expr
         new_op.right = right_expr
-        
+
         return new_op, hoisted_stmts
-    
+
     def flatten_bitop(self, node):
         """Handle bitwise operations"""
         left_expr, left_hoisted = self.flatten_expr(node.left)
         right_expr, right_hoisted = self.flatten_expr(node.right)
-        
+
         # Combine hoisted statements in correct order
         hoisted_stmts = left_hoisted + right_hoisted
-        
+
         new_op = copy.copy(node)
         new_op.left = left_expr
         new_op.right = right_expr
-        
+
         return new_op, hoisted_stmts
-    
+
     def flatten_member_access(self, node):
         """Handle member access"""
         obj_expr, obj_hoisted = self.flatten_expr(node.obj)
-        
+
         new_access = copy.copy(node)
         new_access.obj = obj_expr
-        
+
         return new_access, obj_hoisted
-    
+
     def flatten_array_access(self, node):
         """Handle array access"""
         array_expr, array_hoisted = self.flatten_expr(node.array)
         index_expr, index_hoisted = self.flatten_expr(node.index)
-        
+
         # Combine hoisted statements in correct order
         hoisted_stmts = array_hoisted + index_hoisted
-        
+
         new_access = copy.copy(node)
         new_access.array = array_expr
         new_access.index = index_expr
-        
+
         return new_access, hoisted_stmts
-    
+
     def flatten_new(self, node):
         """Handle new expressions"""
         # We need to flatten the struct_init part
         struct_init, hoisted_stmts = self.flatten_expr(node.struct_init)
-        
+
         new_node = copy.copy(node)
         new_node.struct_init = struct_init
-        
+
         return new_node, hoisted_stmts
-    
+
     def flatten_generic_initializer(self, node):
         """Handle generic initializers (arrays, structs)"""
         # Process all elements in the initializer
         new_elements = []
         hoisted_stmts = []
-        
+
         for elem in node.elements:
             elem_expr, elem_hoisted = self.flatten_expr(elem)
             new_elements.append(elem_expr)
             hoisted_stmts.extend(elem_hoisted)
-        
+
         new_init = copy.copy(node)
         new_init.elements = new_elements
-        
+
         return new_init, hoisted_stmts
-    
+
     def flatten_array_resize(self, node):
         """Handle array resize operations"""
         array_expr, array_hoisted = self.flatten_expr(node.array_expr)
         size_expr, size_hoisted = self.flatten_expr(node.size_expr)
-        
+
         # Combine hoisted statements in correct order
         hoisted_stmts = array_hoisted + size_hoisted
-        
+
         new_resize = copy.copy(node)
         new_resize.array_expr = array_expr
         new_resize.size_expr = size_expr
-        
+
         return new_resize, hoisted_stmts
 
     def is_constructor_node(self, node):
