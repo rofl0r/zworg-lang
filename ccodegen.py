@@ -1108,8 +1108,8 @@ class CCodeGenerator:
                         init_expr = self.generate_expression(node.right)
 
                         # Use properly typed compound literal with memcpy for the assignment
-                        return "(memcpy(ha_obj_get_ptr(&ha, %s), &(%s)%s, sizeof(%s)), %s)" % (
-                            left, struct_type, init_expr, struct_type, left)
+                        return "(memcpy(ha_obj_get_ptr(&ha, %s), &%s, sizeof(%s)), %s)" % (
+                            left, init_expr, struct_type, left)
 
             if deref_needed == -1 or deref_needed == 2:
                 left = self.dereference(node.left.expr_type, left)
