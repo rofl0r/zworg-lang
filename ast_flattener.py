@@ -97,20 +97,21 @@ class AstExpressionFlattener:
         result = []
 
         for stmt in statements:
-            flattened = self.flatten_statement(stmt)
+            node, hoisted_stmts = self.flatten_statement(stmt)
 
-            # Some statement transformations might return multiple statements
-            if isinstance(flattened, list):
-                result.extend(flattened)
-            else:
-                result.append(flattened)
+            # Add hoisted statements first
+            if hoisted_stmts:
+                result.extend(hoisted_stmts)
+
+            # Then add the main statement
+            result.append(node)
 
         return result
 
     def flatten_statement(self, stmt):
         """Transform a single statement, flattening expressions"""
         if stmt is None:
-            return None
+            return None, []
 
         # Dispatch based on statement type
         if stmt.node_type == AST_NODE_EXPR_STMT:
@@ -126,29 +127,22 @@ class AstExpressionFlattener:
         elif stmt.node_type == AST_NODE_PRINT:
             return self.flatten_print(stmt)
         elif stmt.node_type == AST_NODE_BREAK or stmt.node_type == AST_NODE_CONTINUE:
-            return copy.copy(stmt)  # No expressions to flatten
+            return copy.copy(stmt), []  # No expressions to flatten
         elif stmt.node_type == AST_NODE_DEL:
             return self.flatten_del(stmt)
         else:
             # For any other statement types
-            return copy.copy(stmt)
+            return copy.copy(stmt), []
 
     def flatten_expr_stmt(self, stmt):
         """Transform an expression statement"""
         expr, hoisted_stmts = self.flatten_expr(stmt.expr)
 
-        if not hoisted_stmts:
-            # If no hoisted statements, just update the expression
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
-            return new_stmt
-        else:
-            # If we have hoisted statements, append the transformed statement
-            result = list(hoisted_stmts)  # Copy the list
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
-            result.append(new_stmt)
-            return result
+        # Create new statement with transformed expression
+        new_stmt = copy.copy(stmt)
+        new_stmt.expr = expr
+        
+        return new_stmt, hoisted_stmts
 
     def flatten_var_decl(self, stmt):
         """Transform a variable declaration"""
@@ -205,26 +199,18 @@ class AstExpressionFlattener:
             self.constructor_var = old_cv
 
             # Return the array declaration followed by the assignments
-            return [array_decl] + assignments
+            return array_decl, assignments
 
         new_stmt = self.copy_with_ref_kind(stmt)
 
         if not stmt.expr:
             # No initializer, nothing to flatten
-            return new_stmt
+            return new_stmt, []
 
         expr, hoisted_stmts = self.flatten_expr(stmt.expr)
+        new_stmt.expr = expr
 
-        if not hoisted_stmts:
-            # No hoisted statements, just update the expression
-            new_stmt.expr = expr
-            return new_stmt
-        else:
-            # Hoist statements before the declaration
-            result = list(hoisted_stmts)  # Copy the list
-            new_stmt.expr = expr
-            result.append(new_stmt)
-            return result
+        return new_stmt, hoisted_stmts
 
     def flatten_condition(self, condition_node):
         """
@@ -270,11 +256,7 @@ class AstExpressionFlattener:
         new_if.then_body = then_body
         new_if.else_body = else_body
 
-        # If we have hoisted statements, they go before the if
-        if hoisted_stmts:
-            return hoisted_stmts + [new_if]
-        else:
-            return new_if
+        return new_if, hoisted_stmts
 
     def flatten_while(self, stmt):
         """Transform a while statement"""
@@ -302,25 +284,31 @@ class AstExpressionFlattener:
                 check_condition = CompareNode(condition.token, "==", condition, zero)
 
             # Create the condition check with break
-            condition_check = self.flatten_if(IfNode(stmt.token,
-                                    check_condition,
-                                    [BreakNode(stmt.token)],
-                                    None))
+            break_node = BreakNode(stmt.token)
+            raw_if = IfNode(stmt.token, check_condition, [break_node], None)
 
-            # The body becomes: condition setup, condition check, original body
-            new_body = hoisted_stmts + [condition_check] + body
+            condition_check, if_hoisted = self.flatten_if(raw_if)
 
-            # Create an infinite loop
-            return WhileNode(stmt.token, NumberNode(stmt.token, 1, TYPE_INT), new_body)
+            # Create an infinite loop with transformed body
+            combined_hoisted = list(hoisted_stmts)
+            if if_hoisted:
+                combined_hoisted.extend(if_hoisted)
+
+            true_condition = NumberNode(stmt.token, 1, TYPE_INT)
+            combined_body = [condition_check] + body
+
+            # Return a new WhileNode with an infinite loop condition
+            infinite_loop = WhileNode(stmt.token, true_condition, combined_body)
+            return infinite_loop, combined_hoisted
         else:
             # Simple condition, no special handling needed
-            return new_while
+            return new_while, []
 
     def flatten_return(self, stmt):
         """Transform a return statement"""
         if not stmt.expr:
             # No expression, nothing to flatten
-            return copy.copy(stmt)
+            return copy.copy(stmt), []
 
         expr, hoisted_stmts = self.flatten_expr(stmt.expr)
 
@@ -334,48 +322,25 @@ class AstExpressionFlattener:
             new_stmt.ref_kind == REF_KIND_NONE):
             new_stmt.ref_kind = REF_KIND_GENERIC
 
-        if not hoisted_stmts:
-            # No hoisted statements, just update the expression
-            return new_stmt
-        else:
-            # Hoist statements before the return
-            result = list(hoisted_stmts)  # Copy the list
-            result.append(new_stmt)
-            return result
+        return new_stmt, hoisted_stmts
 
     def flatten_print(self, stmt):
         """Transform a print statement"""
         expr, hoisted_stmts = self.flatten_expr(stmt.expr)
 
-        if not hoisted_stmts:
-            # No hoisted statements, just update the expression
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
-            return new_stmt
-        else:
-            # Hoist statements before the print
-            result = list(hoisted_stmts)  # Copy the list
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
-            result.append(new_stmt)
-            return result
+        new_stmt = copy.copy(stmt)
+        new_stmt.expr = expr
+
+        return new_stmt, hoisted_stmts
 
     def flatten_del(self, stmt):
         """Transform a delete statement"""
         expr, hoisted_stmts = self.flatten_expr(stmt.expr)
 
-        if not hoisted_stmts:
-            # No hoisted statements, just update the expression
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
-            return new_stmt
-        else:
-            # Hoist statements before the del
-            result = list(hoisted_stmts)  # Copy the list
-            new_stmt = copy.copy(stmt)
-            new_stmt.expr = expr
-            result.append(new_stmt)
-            return result
+        new_stmt = copy.copy(stmt)
+        new_stmt.expr = expr
+
+        return new_stmt, hoisted_stmts
 
     def flatten_expr(self, node):
         """
