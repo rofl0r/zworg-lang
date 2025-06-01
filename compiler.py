@@ -2032,7 +2032,8 @@ class Parser:
                 # Check if this variable was declared in the current function's scope
                 # (not a parameter or global)
                 is_param = any(p[0] == var_name for p in current_func_obj.ast_node.params)
-                if not (is_param or self.env.is_global(var_name)):
+                on_heap = self.get_variable_ref_kind(var_name) == REF_KIND_HEAP
+                if not (is_param or self.env.is_global(var_name) or on_heap):
                     self.error("Cannot return a reference to a local variable")
             # Check if function returns by reference
             elif current_func_obj.is_ref_return and expr.ref_kind == REF_KIND_NONE:
