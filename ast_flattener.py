@@ -394,8 +394,13 @@ class AstExpressionFlattener:
         hoisted_stmts = []
 
         struct_type = node.expr_type
+        var_decl = None
 
-        if not self.constructor_var:
+        # if the obj is already a known var/arrayacc node, we don't need to add a
+        # a temporary, this is most likely a direct var.init() call.
+        if node.obj and (node.obj.node_type != AST_NODE_VARIABLE or node.obj.name != "__dunno__"):
+            target_var = node.obj
+        elif not self.constructor_var:
             # Create a temporary variable for the object
             temp_name = self.get_temp_name()
             # For constructor calls, the first arg is a placeholder 'self'
@@ -410,7 +415,6 @@ class AstExpressionFlattener:
                 temp_var.ref_kind = REF_KIND_GENERIC
         else:
             target_var = self.constructor_var
-            var_decl = None
 
         # add self variable
         arg_exprs.append(target_var)
@@ -630,13 +634,12 @@ class AstExpressionFlattener:
         new_resize.size_expr = size_expr
         
         return new_resize, hoisted_stmts
-    
+
     def is_constructor_node(self, node):
         """Determine if a node is a constructor call"""
         return (node.node_type == AST_NODE_CALL and
-                node.obj and node.obj.node_type == AST_NODE_VARIABLE and
-                node.obj.name == "__dunno__" and node.name == "init")
-    
+                node.obj and node.name == "init")
+
     def get_temp_name(self):
         """Generate a unique temporary variable name"""
         temp_name = "__temp_%d" % self.temp_counter

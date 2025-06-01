@@ -15,6 +15,25 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "struct array heap mass constructor",
+           "code": """
+                struct Point do x: int; y: int; end
+                def Point.init(x_val: int, y_val: int) do
+                    self.x = x_val
+                    self.y = y_val
+                end
+                def Point.sum() : int do
+                    return self.x + self.y;
+                end
+                def main() do
+                    var heap_init_points := new Point[2](0, 0)
+                    heap_init_points[0].init(10, 20)
+                    var init_sum := heap_init_points[0].sum()  // Should be 30 (10+20)
+                end
+           """,
+           "expected_env": {"init_sum": 30}
+        },
+        {
            "name": "struct array self handle and constructors A",
            "code": """
                 struct Point do x: int; y: int; end
