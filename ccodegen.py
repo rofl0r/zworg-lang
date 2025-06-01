@@ -704,7 +704,9 @@ class CCodeGenerator:
         # But only for primitive types and strings, not structs
         if not is_handle_struct and not is_array and (self.current_function == 'main' or is_global):
             if not is_byval_struct_type(node.var_type):
-                self.add_test_printf(node.var_name, node.var_type)
+                # only add variables available in the main function scope
+                if is_global or self.scope_manager.indent_level() == 1:
+                    self.add_test_printf(node.var_name, node.var_type)
 
     def generate_function_prototype_string(self, node):
         """Generate C function prototype string without ending ;"""
