@@ -226,10 +226,18 @@ class AstExpressionFlattener:
             result.append(new_stmt)
             return result
 
+    def flatten_condition(self, condition_node):
+        """
+        Helper function to flatten a condition expression.
+        Returns the flattened condition and any hoisted statements.
+        """
+        condition, hoisted_stmts = self.flatten_expr(condition_node)
+        return condition, hoisted_stmts
+
     def flatten_if(self, stmt):
         """Transform an if statement"""
         # Transform the condition
-        condition, hoisted_stmts = self.flatten_expr(stmt.condition)
+        condition, hoisted_stmts = self.flatten_condition(stmt.condition)
 
         # Transform the then body
         then_body = self.flatten_statements(stmt.then_body)
@@ -254,7 +262,7 @@ class AstExpressionFlattener:
     def flatten_while(self, stmt):
         """Transform a while statement"""
         # Transform the condition
-        condition, hoisted_stmts = self.flatten_expr(stmt.condition)
+        condition, hoisted_stmts = self.flatten_condition(stmt.condition)
 
         # Transform the loop body
         body = self.flatten_statements(stmt.body)
