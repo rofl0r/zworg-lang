@@ -886,6 +886,10 @@ class CCodeGenerator:
         """Generate C code for an if statement"""
         condition = self.generate_expression(node.condition)
 
+        # Special case for handle variables used as conditions
+        if node.condition.node_type == AST_NODE_VARIABLE and is_handle(node.condition.expr_type, node.condition.ref_kind):
+            condition = "(handle_cmp(%s, handle_nil))" % condition
+
         # Write if condition
         self.output.write(self.indent() + 'if (%s) {\n' % condition)
         self.indent_level += 1
@@ -920,6 +924,10 @@ class CCodeGenerator:
     def generate_while_statement(self, node):
         """Generate C code for a while loop"""
         condition = self.generate_expression(node.condition)
+
+        # Special case for handle variables used as conditions
+        if node.condition.node_type == AST_NODE_VARIABLE and is_handle(node.condition.expr_type, node.condition.ref_kind):
+            condition = "(handle_cmp(%s, handle_nil))" % condition
 
         # Write while header
         self.output.write(self.indent() + 'while (%s) {\n' % condition)
