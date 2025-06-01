@@ -1146,7 +1146,21 @@ class CCodeGenerator:
                     elif arg.name.startswith("__temp_"): pass
                     else:
                         self.scope_manager.mark_variable_escaping(arg.name)
-            return '%s(%s)' % (func_name, ', '.join(args))
+
+            call_expr = '%s(%s)' % (func_name, ', '.join(args))
+            # Special case for initializers - check if we're in a container context
+            current_context = self.current_initializer_context()
+            if current_context and node.ref_kind != REF_KIND_NONE:
+                container_type, index = current_context
+
+                # Get the appropriate ref_kind for fields in this container
+                field_ref_kind = self.get_container_field_ref_kind(container_type)
+
+                # Check if we need to dereference based on ref_kinds
+                if self.needs_dereference_with_ref_kind(field_ref_kind, node.ref_kind) > 0:
+                    return self.dereference(node.expr_type, call_expr)
+
+            return call_expr
 
         elif node.node_type == AST_NODE_COMPARE:
             left = self.generate_expression(node.left)
