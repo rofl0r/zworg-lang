@@ -2,7 +2,7 @@
 # Transforms complex expressions into simpler ones with temporaries
 
 from shared import *
-from compiler import VariableNode, BinaryOpNode, UnaryOpNode, IfNode, WhileNode, BreakNode, ContinueNode, ExprStmtNode, VarDeclNode, CallNode, ArrayAccessNode, NumberNode, GenericInitializerNode, create_default_value_node
+from compiler import VariableNode, BinaryOpNode, UnaryOpNode, IfNode, WhileNode, BreakNode, ContinueNode, ExprStmtNode, VarDeclNode, CallNode, ArrayAccessNode, NumberNode, GenericInitializerNode, CompareNode, NilNode, create_default_value_node
 import copy
 
 class AstExpressionFlattener:
@@ -294,11 +294,18 @@ class AstExpressionFlattener:
             # For complex conditions, we need to use a different approach:
             # Create an infinite loop with the condition check inside
 
+            if condition.ref_kind != REF_KIND_NONE:
+                # For handle types (arrays, structs), compare with nil
+                check_condition = CompareNode(condition.token, "==", condition, NilNode(stmt.token))
+            else:
+                zero = NumberNode(condition.token, 0, condition.expr_type)
+                check_condition = CompareNode(condition.token, "==", condition, zero)
+
             # Create the condition check with break
-            condition_check = IfNode(stmt.token,
-                                    UnaryOpNode(stmt.token, "!", condition, TYPE_INT),
+            condition_check = self.flatten_if(IfNode(stmt.token,
+                                    check_condition,
                                     [BreakNode(stmt.token)],
-                                    None)
+                                    None))
 
             # The body becomes: condition setup, condition check, original body
             new_body = hoisted_stmts + [condition_check] + body
