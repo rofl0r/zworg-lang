@@ -1083,6 +1083,31 @@ class CCodeGenerator:
                 if node.right.node_type == AST_NODE_VARIABLE and node.left.node_type == AST_NODE_MEMBER_ACCESS:
                     var_name = node.right.name
                     self.scope_manager.mark_variable_escaping(var_name)
+                elif node.right.node_type == AST_NODE_GENERIC_INITIALIZER:
+                    # For arrays, use compound literal and memcpy
+                    if registry.is_array_type(node.left.expr_type):
+                        # Get array info
+                        elem_type_id = registry.get_array_element_type(node.left.expr_type)
+                        elem_type = type_to_c(elem_type_id, use_handles=False)
+                        array_size = registry.get_array_size(node.left.expr_type)
+
+                        # Generate initializer directly
+                        init_expr = self.generate_expression(node.right)
+
+                        # Use compound literal with memcpy for the assignment
+                        return "(memcpy(ha_array_get_ptr(&ha, %s), (%s[%d])%s, sizeof(%s) * %d), %s)" % (
+                            left, elem_type, array_size, init_expr, elem_type, array_size, left)
+
+                    # For struct types, use compound literal and memcpy
+                    elif registry.is_struct_type(node.left.expr_type) and not is_byval_struct_type(node.left.expr_type):
+                        struct_type = type_to_c(node.left.expr_type, use_handles=False)
+
+                        # Generate initializer directly
+                        init_expr = self.generate_expression(node.right)
+
+                        # Use properly typed compound literal with memcpy for the assignment
+                        return "(memcpy(ha_obj_get_ptr(&ha, %s), &(%s)%s, sizeof(%s)), %s)" % (
+                            left, struct_type, init_expr, struct_type, left)
 
             if deref_needed == -1 or deref_needed == 2:
                 left = self.dereference(node.left.expr_type, left)
