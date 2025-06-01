@@ -8,6 +8,7 @@ try:
     from StringIO import StringIO  # Python 2
 except ImportError:
     from io import StringIO  # Python 3
+import os
 
 # import registry singleton
 registry = get_registry()
@@ -573,6 +574,7 @@ class CCodeGenerator:
         # hack, hack: turn the func_obj into a pseudo-node with ref_kind attribute
         # so it can be used "as-if" a node in needs_dereference checks
         func_obj.ref_kind = REF_KIND_GENERIC if func_obj.is_ref_return else REF_KIND_NONE
+        if os.getenv("DEBUG"): print(flat_func)
         # return rewritten FuncDecl
         return flat_func
 
