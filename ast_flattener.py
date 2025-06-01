@@ -295,11 +295,11 @@ class AstExpressionFlattener:
                 combined_hoisted.extend(if_hoisted)
 
             true_condition = NumberNode(stmt.token, 1, TYPE_INT)
-            combined_body = [condition_check] + body
+            combined_body = combined_hoisted + [condition_check] + body
 
             # Return a new WhileNode with an infinite loop condition
             infinite_loop = WhileNode(stmt.token, true_condition, combined_body)
-            return infinite_loop, combined_hoisted
+            return infinite_loop, []
         else:
             # Simple condition, no special handling needed
             return new_while, []
