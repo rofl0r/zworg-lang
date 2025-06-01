@@ -243,7 +243,7 @@ class AstExpressionFlattener:
             hoisted_stmts.append(assign_stmt)
 
             # Replace condition with just the variable reference
-            condition = condition_node.left
+            condition = self.copy_with_ref_kind(condition_node.left)
         else:
             # Standard condition flattening
             condition, expr_stmts = self.flatten_expr(condition_node)
