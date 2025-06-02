@@ -15,6 +15,226 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "fixed-size struct array assign with initializer",
+            "code": """
+                struct Item do id: int; value: float; end
+                def main() do
+                    var items: Item[4]
+                    items[0] = {1, 10.5}
+                    items[1] = {2, 20.5}
+                    var sum := items[0].value + items[1].value  // 31.0
+                    items[2] = {3, 30.5}
+                    var new_sum := items[0].value + items[1].value + items[2].value  // 61.5
+                end
+            """,
+            "expected_env": {"sum": 31.0, "new_sum": 61.5}
+        },
+        {
+            "name": "array resize with initializer",
+            "code": """
+                struct Item do id: int; value: float; end
+                def main() do
+                    var items: Item[] = nil
+                    items = new(items, 2)
+                    // Check if resize works with initializers afterward
+                    items[0] = {1, 10.5}
+                    items[1] = {2, 20.5}
+                    var sum := items[0].value + items[1].value  // 31.0
+                    // Resize and check if data is still valid
+                    items = new(items, 4)
+                    items[2] = {3, 30.5}
+                    var new_sum := items[0].value + items[1].value + items[2].value  // 61.5
+                end
+            """,
+            "expected_env": {"sum": 31.0, "new_sum": 61.5}
+        },
+        {
+            "name": "initializers in deeply nested conditionals",
+            "code": """
+                struct Point do x: int; y: int; end
+                def main() do
+                    var levels := 0
+                    var result := 0
+                    var p1: Point
+                    var p2: Point
+                    if p1 = {10, 20} do
+                        levels += 1
+                        if p1.x > 5 do
+                            levels += 1
+                            if p2 = {p1.x * 2, p1.y * 2} do
+                                levels += 1
+                                result = p2.x + p2.y  // 20 + 40 = 60
+                            end
+                        end
+                    end
+                end
+            """,
+            "expected_env": {"levels": 3, "result": 60}
+        },
+        {
+            "name": "complex nested struct initializer",
+            "code": """
+                struct Vec3 do x: float; y: float; z: float; end
+                struct Material do color: int; roughness: float; end
+                struct Object3D do position: Vec3; material: Material; active: int; end
+                def main() do
+                    var objects: Object3D[2]
+                    objects = {
+                        {
+                            {1.0, 2.0, 3.0},
+                            {0xff0000, 0.5},
+                            1
+                        },
+                        {
+                            {4.0, 5.0, 6.0},
+                            {0x00ff00, 0.8},
+                            0
+                        }
+                    }
+                    var first_pos_sum := objects[0].position.x + objects[0].position.y + objects[0].position.z  // 6.0
+                    var second_roughness := objects[1].material.roughness  // 0.8
+                    var active_count := objects[0].active + objects[1].active  // 1
+                end
+            """,
+            "expected_env": {"first_pos_sum": 6.0, "second_roughness": 0.8, "active_count": 1}
+        },
+        {
+            "name": "byref return value in initializer",
+            "code": """
+                struct Point do x: int; y: int; end
+                def create_point(x_val: int, y_val: int) : byref Point do
+                    var p:= new Point()
+                    p = {x_val, y_val}
+                    return p
+                end
+                def main() do
+                    var points: Point[2]
+                    // Use function with byref return in initializer
+                    points = {create_point(5, 10), create_point(15, 20)}
+                    var sum1 := points[0].x + points[0].y  // 15
+                    var sum2 := points[1].x + points[1].y  // 35
+                    var total := sum1 + sum2  // 50
+                end
+            """,
+            "expected_env": {"sum1": 15, "sum2": 35, "total": 50}
+        },
+        {
+            "name": "function results in initializer expression statement",
+            "code": """
+                def get_x() : int do return 42; end
+                def get_y() : int do return 84; end
+                struct Point do x: int; y: int; end
+                def main() do
+                    var p: Point
+                    var product:ulong = 0
+                    // Use function calls in initializer
+                    if p = {
+                        get_x(),
+                        get_y()
+                    } do
+                        product = p.x * p.y  // 42 * 84 = 3528
+                    end
+                end
+            """,
+            "expected_env": {"product": 3528}
+        },
+        {
+            "name": "initializers with expressions and variables",
+            "code": """
+                struct Point do x: int; y: int; end
+                def main() do
+                    var base_x := 10
+                    var base_y := 20
+                    var scale := 2
+                    var result := 0
+                    var p: Point
+                    // Initializer with expressions
+                    if p = {
+                        base_x * scale,
+                        base_y * scale
+                    } do
+                        result = p.x + p.y  // 20 + 40 = 60
+                    end
+                end
+            """,
+            "expected_env": {"result": 60}
+        },
+        {
+            "name": "array of structs initializer in expression",
+            "code": """
+                struct Point do x: int; y: int; end
+                def Point.sum() : int do
+                    return self.x + self.y
+                end
+                def main() do
+                    var points: Point[2]
+                    var total := 0
+                    // Initialize array of structs
+                    if points = {{1, 2}, {3, 4}} do
+                        var p0_sum := points[0].sum()  // 3
+                        var p1_sum := points[1].sum()  // 7
+                        total = p0_sum + p1_sum   // 10
+                    end
+                end
+            """,
+            "expected_env": {"total": 10}
+        },
+        {
+            "name": "nested struct initializers in condition",
+            "code": """
+                struct Point do x: int; y: int; end
+                struct Rectangle do
+                    top_left: Point
+                    bottom_right: Point
+                end
+                def main() do
+                    var rect: Rectangle
+                    var area:= 0
+                    if rect = {
+                        {0, 0},
+                        {10,20}
+                    } do
+                        // Calculate width, height and area
+                        var width := rect.bottom_right.x - rect.top_left.x
+                        var height := rect.bottom_right.y - rect.top_left.y
+                        area = width * height
+                    end
+                end
+            """,
+            "expected_env": {"area": 200}
+        },
+        {
+            "name": "struct initializers in expressions",
+            "code": """
+                struct Point do x: int; y: int; end
+                def main() do
+                    var p1: Point
+                    var valid := 0
+                    if p1 = {5, 10} do
+                        valid = 1
+                    end
+                    var sum := p1.x + p1.y  // 15
+                end
+            """,
+            "expected_env": {"valid": 1, "sum": 15}
+        },
+        {
+            "name": "initializers in while conditions",
+            "code": """
+                def main() do
+                    var counter := 0
+                    var total := 0
+                    var values: int[3] = {1, 1, 1}
+                    while values = {counter + 1, counter + 2, counter + 3} do
+                        total += values[0] + values[1] + values[2]
+                        counter += 1
+                        if counter >= 3 do break; end
+                    end
+                end
+            """,
+            "expected_env": {"counter": 3, "total": 27}
+        },
+        {
            "name": "struct array heap mass constructor",
            "code": """
                 struct Point do x: int; y: int; end
