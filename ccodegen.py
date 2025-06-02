@@ -735,8 +735,7 @@ class CCodeGenerator:
             # Handle byref params
             # Only add * for primitive types, not for handles
             # Since handles are already reference types
-            is_struct = registry.is_struct_type(param_type)
-            if is_byref and not is_struct:
+            if is_byref and not is_handle(param_type, REF_KIND_GENERIC):
                 c_type += '*'
             params.append('%s %s' % (c_type, param_name))
 
