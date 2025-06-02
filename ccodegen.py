@@ -114,32 +114,34 @@ def is_handle(type_id, ref_kind):
     return ref_kind != REF_KIND_NONE
 
 def type_to_c(type_id, use_handles=True):
-    """Convert type_id to a C type string"""
+    """Convert type_id to a C type string.
+       returns tuple of typename, "[arraysize]" or ""
+    """
     if registry.is_primitive_type(type_id):
         # For primitive types, use the type name directly
         type_name = registry.var_type_to_string(type_id)
-        return type_name
+        return type_name, ""
 
     elif registry.is_array_type(type_id):
         # For arrays, return handle when use_handles is True
         if use_handles:
-            return "handle"
+            return "handle", ""
         # Otherwise, return the actual array type for static storage
         elem_type_id = registry.get_array_element_type(type_id)
-        elem_type = type_to_c(elem_type_id, use_handles=False)
+        elem_type, _ = type_to_c(elem_type_id, use_handles=False)
         size = registry.get_array_size(type_id)
         if size != 0:
-            return "%s[%d]" % (elem_type, size)
-        return "handle" # Dynamic arrays
+            return elem_type, "[%d]"%size
+        return "handle", "" # Dynamic arrays
 
     elif registry.is_struct_type(type_id):
         if is_byval_struct_type(type_id):
             use_handles = False
         if use_handles:
-            return "handle"
-        return "struct " + registry.get_struct_name(type_id)
+            return "handle", ""
+        return "struct " + registry.get_struct_name(type_id), ""
 
-    return "void"  # Default fallback
+    return "void", ""  # Default fallback
 
 def make_struct_decl(struct_id):
     """
@@ -151,18 +153,8 @@ def make_struct_decl(struct_id):
     result = "struct %s {\n" % struct_name
 
     for field_name, field_type in fields:
-        if registry.is_array_type(field_type):
-            element_type = registry.get_array_element_type(field_type)
-            array_size = registry.get_array_size(field_type)
-            element_c_type = type_to_c(element_type, use_handles=False)
-
-            if array_size == 0:
-                result += "\thandle %s;\n" % field_name
-            else:
-                result += "\t%s %s[%d];\n" % (element_c_type, field_name, array_size)
-        else:
-            field_c_type = type_to_c(field_type, use_handles=False)
-            result += "\t%s %s;\n" % (field_c_type, field_name)
+        field_c_type, field_arr_dims  = type_to_c(field_type, use_handles=False)
+        result += "\t%s %s%s;\n" % (field_c_type, field_name, field_arr_dims)
 
     result += "};\n\n"
     return result
@@ -274,21 +266,22 @@ class ScopeManager:
             var_is_array = registry.is_array_type(var.type_id)
 
             if var_is_struct and var.needs_storage:
+                c_type, _ = type_to_c(var.type_id, use_handles=False)
+
                 if var.escapes or var.heap_alloc:
                     # Heap allocation for escaping or heap-declared variables
-                    struct_string = type_to_c(var.type_id, use_handles=False)
                     helper_header_output.write("\thandle %s = ha_obj_alloc(&ha, sizeof(%s)); \\\n" %
-                                            (name, struct_string))
+                                            (name, c_type))
                 else:
                     # Stack allocation for non-escaping variables
                     storage_name = make_reserved_identifier("%s_storage" % name)
-                    helper_header_output.write("\t%s %s = {0}; \\\n" % (type_to_c(var.type_id, use_handles=False), storage_name))
+                    helper_header_output.write("\t%s %s = {0}; \\\n" % (c_type, storage_name))
                     helper_header_output.write("\thandle %s = ha_stack_alloc(&ha, sizeof(%s), &%s); \\\n" %
                                             (name, storage_name, storage_name))
             elif var_is_array and var.needs_storage:
                 # Get array element type and size
                 elem_type_id = registry.get_array_element_type(var.type_id)
-                elem_type = type_to_c(elem_type_id, use_handles=False)
+                elem_type_c, _ = type_to_c(elem_type_id, use_handles=False)
                 array_size = registry.get_array_size(var.type_id)
 
                 # Fixed size arrays always have static data and size
@@ -299,17 +292,15 @@ class ScopeManager:
                 if not var.heap_alloc:
                     storage_name = make_reserved_identifier("%s_storage" % name)
                     # Handle array type declaration correctly in C syntax (int name[5], not int[5] name)
-                    elem_type_id = registry.get_array_element_type(var.type_id)
-                    elem_type_c = type_to_c(elem_type_id, use_handles=False)
                     helper_header_output.write("\t%s %s[%d] = %s; \\\n" %
                                             (elem_type_c, storage_name, array_size, var.static_data))
 
                     # Allocate array with the static data
                     helper_header_output.write("\thandle %s = ha_array_alloc(&ha, sizeof(%s) * %d, &%s); \\\n" %
-                                            (name, elem_type, array_size, storage_name))
+                                            (name, elem_type_c, array_size, storage_name))
                 else:
                     helper_header_output.write("\thandle %s = ha_array_alloc(&ha, sizeof(%s) * %d, (void*)0); \\\n" %
-                                            (name, elem_type, array_size))
+                                            (name, elem_type_c, array_size))
 
 
             elif var_is_struct or var_is_array:
@@ -446,8 +437,8 @@ class CCodeGenerator:
         # we should never get a tuple type byref
         assert(not is_byval_struct_type(type_id))
         if registry.is_struct_type(type_id):
-            struct_string = type_to_c(type_id, use_handles=False)
-            return '*((%s*)ha_obj_get_ptr(&ha, %s))' % (struct_string, expr)
+            c_type, _ = type_to_c(type_id, use_handles=False)
+            return '*((%s*)ha_obj_get_ptr(&ha, %s))' % (c_type, expr)
         return "*(%s)"%expr
 
     def push_initializer_context(self, container_type):
@@ -600,8 +591,8 @@ class CCodeGenerator:
                     # mark as processed
                     self.scope_manager.mark_tuple_processed(field_type)
 
-            c_type = type_to_c(field_type, use_handles=False)
-            result += '    %s %s;\n' % (c_type, field_name)
+            c_type, c_dims = type_to_c(field_type, use_handles=False)
+            result += '    %s %s%s;\n' % (c_type, field_name, c_dims)
 
         result += '};\n\n'
         tup_str = ''
@@ -618,7 +609,7 @@ class CCodeGenerator:
 
         # Get the element type for the array
         elem_type_id = registry.get_array_element_type(node.array_expr.expr_type)
-        element_type = type_to_c(elem_type_id, use_handles=False)
+        element_type, _ = type_to_c(elem_type_id, use_handles=False)
 
         # Calculate total size by multiplying element size with the requested count
         return "ha_array_realloc(&ha, %s, sizeof(%s) * %s)" % (array_expr, element_type, size_expr)
@@ -631,14 +622,14 @@ class CCodeGenerator:
         # Get the element type for the array
         elem_type_id = registry.get_array_element_type(node.array.expr_type)
         # since an array access is always by-value, never use handles
-        elem_type = type_to_c(elem_type_id, use_handles=False)
+        elem_type, _ = type_to_c(elem_type_id, use_handles=False)
 
         # Generate array access with bounds checking
         return "ZW_ARRAY_ACCESS(%s, %s, %s)" % (elem_type, array_expr, index_expr)
 
     def generate_var_decl(self, node, is_global=False):
         """Generate C code for a variable declaration (both local and global)"""
-        var_type = type_to_c(node.var_type)
+        var_type, _ = type_to_c(node.var_type)
 
         # potentially need to inject tuple declaration
         if registry.is_tuple_type(node.var_type):
@@ -719,7 +710,7 @@ class CCodeGenerator:
             self.scope_manager.declare_tuple_type(node.return_type, tuple_decl(node.return_type))
 
         # Generate return type
-        ret_type = type_to_c(node.return_type, use_handles=registry.is_struct_type(node.return_type) and func_obj.is_ref_return)
+        ret_type, _ = type_to_c(node.return_type, use_handles=registry.is_struct_type(node.return_type) and func_obj.is_ref_return)
 
         # Generate parameter list
         params = []
@@ -730,7 +721,7 @@ class CCodeGenerator:
             if registry.is_tuple_type(param_type):
                 self.scope_manager.declare_tuple_type(param_type, tuple_decl(param_type))
 
-            c_type = type_to_c(param_type)
+            c_type, _ = type_to_c(param_type)
 
             # Handle byref params
             # Only add * for primitive types, not for handles
@@ -761,8 +752,8 @@ class CCodeGenerator:
             return
 
         # Handle special case for handle-based structs
-        var_type = type_to_c(node.var_type)  # "handle"
-        struct_type = type_to_c(node.var_type, use_handles=False)  # actual struct/array type
+        var_type = "handle"
+        struct_type, _ = type_to_c(node.var_type, use_handles=False)  # actual struct/array type
 
         # Add const qualifier if needed
         const_qualifier = 'const ' if node.decl_type != TT_VAR else ''
@@ -779,7 +770,7 @@ class CCodeGenerator:
                     self.global_initializers.append('%s = %s;' % (node.var_name, expr_code))
                     return
                 elem_type_id = registry.get_array_element_type(node.var_type)
-                elem_type = type_to_c(elem_type_id, use_handles=False)
+                elem_type, _ = type_to_c(elem_type_id, use_handles=False)
                 self.output.write('%s%s %s[%d] = %s;\n' % (const_qualifier, elem_type, static_name, array_size, expr_code))
             else:
                 self.output.write(const_qualifier + struct_type + ' ' + static_name + ' = ' + expr_code + ';\n')
@@ -958,7 +949,7 @@ class CCodeGenerator:
         # Get type information for casting
         type_cast = ""
         if registry.is_struct_type(node.expr_type):
-            struct_string = type_to_c(node.expr_type, use_handles=False)
+            struct_string, _ = type_to_c(node.expr_type, use_handles=False)
             type_cast = "(%s) " % struct_string
 
         # Start the initializer
@@ -1089,7 +1080,7 @@ class CCodeGenerator:
                     if registry.is_array_type(node.left.expr_type):
                         # Get array info
                         elem_type_id = registry.get_array_element_type(node.left.expr_type)
-                        elem_type = type_to_c(elem_type_id, use_handles=False)
+                        elem_type, _ = type_to_c(elem_type_id, use_handles=False)
                         array_size = registry.get_array_size(node.left.expr_type)
 
                         # Generate initializer directly
@@ -1101,7 +1092,7 @@ class CCodeGenerator:
 
                     # For struct types, use compound literal and memcpy
                     elif registry.is_struct_type(node.left.expr_type) and not is_byval_struct_type(node.left.expr_type):
-                        struct_type = type_to_c(node.left.expr_type, use_handles=False)
+                        struct_type, _ = type_to_c(node.left.expr_type, use_handles=False)
 
                         # Generate initializer directly
                         init_expr = self.generate_expression(node.right)
@@ -1113,7 +1104,7 @@ class CCodeGenerator:
                             index_expr = self.generate_expression(node.left.index)
 
                             # Get the element type for the array
-                            elem_type = type_to_c(node.left.expr_type, use_handles=False)
+                            elem_type, _ = type_to_c(node.left.expr_type, use_handles=False)
 
                             # Use ZW_ARRAY_ELEMENT_PTR to get pointer to the array element
                             return "(memcpy(ZW_ARRAY_ELEMENT_PTR(%s, %s, %s), &(%s)%s, sizeof(%s)), %s)" % (
@@ -1146,8 +1137,9 @@ class CCodeGenerator:
                     array_expr = self.generate_expression(arg.array)
                     index_expr = self.generate_expression(arg.index)
                     # Use compound literal to create a direct handle to the array element
+                    c_type, _ = type_to_c(elem_type_id, use_handles=False)
                     handle_expr = "ha_array_elem_handle(&ha, &(struct array_elem_handle_data){%s, %s * sizeof(%s)})" % (
-                        array_expr, index_expr, type_to_c(elem_type_id, use_handles=False))
+                        array_expr, index_expr, c_type)
                     args.append(handle_expr)
                     continue
                 args.append(self.generate_expression(arg))
@@ -1207,7 +1199,7 @@ class CCodeGenerator:
             # also, array accesses are always by-value too.
             if node.obj.node_type == AST_NODE_MEMBER_ACCESS or node.obj.node_type == AST_NODE_ARRAY_ACCESS or is_byval_struct_type(node.obj.expr_type):
                 return "%s.%s"%(expr, node.member_name)
-            struct_string = type_to_c(node.obj.expr_type, use_handles=False)
+            struct_string, _ = type_to_c(node.obj.expr_type, use_handles=False)
             return '((%s*)(ha_obj_get_ptr(&ha, %s)))->%s' % (struct_string, expr, node.member_name)
 
         elif node.node_type == AST_NODE_GENERIC_INITIALIZER:
