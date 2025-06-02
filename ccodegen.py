@@ -1107,6 +1107,19 @@ class CCodeGenerator:
                         # Generate initializer directly
                         init_expr = self.generate_expression(node.right)
 
+                        # Check if we're assigning to an array element
+                        if node.left.node_type == AST_NODE_ARRAY_ACCESS:
+                            # Array element assignment needs direct element pointer
+                            array_expr = self.generate_expression(node.left.array)
+                            index_expr = self.generate_expression(node.left.index)
+
+                            # Get the element type for the array
+                            elem_type = type_to_c(node.left.expr_type, use_handles=False)
+
+                            # Use ZW_ARRAY_ELEMENT_PTR to get pointer to the array element
+                            return "(memcpy(ZW_ARRAY_ELEMENT_PTR(%s, %s, %s), &(%s)%s, sizeof(%s)), %s)" % (
+                                elem_type, array_expr, index_expr, struct_type, init_expr, struct_type, left)
+
                         # Use properly typed compound literal with memcpy for the assignment
                         return "(memcpy(ha_obj_get_ptr(&ha, %s), &%s, sizeof(%s)), %s)" % (
                             left, init_expr, struct_type, left)
