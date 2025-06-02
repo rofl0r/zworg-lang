@@ -364,7 +364,7 @@ def create_default_value_node(token, type_id):
         element_type = registry.get_array_element_type(type_id)
         size = registry.get_array_size(type_id)
 
-        if size is not None:
+        if size:
             # Create array with default-initialized elements
             elements = []
             for _ in range(size):
@@ -632,8 +632,8 @@ class Parser:
         if from_ref_kind != REF_KIND_NONE and to_ref_kind != REF_KIND_NONE:
             # Allow dynamic array assignment compatibility if element types match
             if registry.is_array_type(from_type) and registry.is_array_type(to_type):
-                # At least one of them must be dynamic (size=None)
-                if registry.get_array_size(from_type) is None or registry.get_array_size(to_type) is None:
+                # At least one of them must be dynamic (size=0)
+                if registry.get_array_size(from_type) == 0 or registry.get_array_size(to_type) == 0:
                     # Both must have the same element type
                     if registry.get_array_element_type(from_type) == registry.get_array_element_type(to_type):
                         return True
@@ -757,7 +757,7 @@ class Parser:
 
             # Special case: dynamic arrays always need heap reference kind
             # We don't allow any other type of reference to be stored in fields
-            if registry.is_array_type(field_type) and registry.get_array_size(field_type) is None:
+            if registry.is_array_type(field_type) and registry.get_array_size(field_type) == 0:
                 field_ref_kind = REF_KIND_HEAP
 
             return MemberAccessNode(self.token, obj_node, member_name, field_type, field_ref_kind)
@@ -1015,7 +1015,7 @@ class Parser:
         self.advance()  # Skip '['
 
         # Parse dimension if provided
-        size = None  # Default to dynamic size
+        size = 0  # Default to dynamic size
         if self.token.type == TT_INT_LITERAL:
             size = self.token.value
             if size <= 0:
@@ -1240,7 +1240,7 @@ class Parser:
         # Handle array dimension inference for arrays with inferred size
         if (subtype == INITIALIZER_SUBTYPE_LINEAR and
                 registry.is_array_type(target_type) and
-                registry.get_array_size(target_type) is None):
+                registry.get_array_size(target_type) == 0):
             # Get element type and inferred size
             element_type = registry.get_array_element_type(target_type)
             inferred_size = len(elements)
@@ -1281,7 +1281,7 @@ class Parser:
             array_size = registry.get_array_size(target_type)
 
             # Validate element count for fixed-size arrays
-            if array_size is not None and len(elements) > array_size:
+            if array_size != 0 and len(elements) > array_size:
                 self.error("Array initializer has %d elements, but array has size %d" % 
                           (len(elements), array_size))
 
@@ -1400,7 +1400,7 @@ class Parser:
                 array_expr = self.expression(0)
 
                 # Check that it's a dynamic array
-                if not registry.is_array_type(array_expr.expr_type) or registry.get_array_size(array_expr.expr_type) is not None:
+                if not registry.is_array_type(array_expr.expr_type) or registry.get_array_size(array_expr.expr_type) != 0:
                     self.error("First argument to new() must be a dynamic array")
 
                 # Ensure dynamic arrays have heap reference kind, but allow nil values
@@ -1422,7 +1422,7 @@ class Parser:
                 element_type = registry.get_array_element_type(type_id)
                 array_size = registry.get_array_size(type_id)
 
-                if array_size is None:
+                if array_size == 0:
                     self.error("Array size must be specified for new operator")
 
                 # Create array elements
@@ -1780,7 +1780,7 @@ class Parser:
             expr = self.create_default_value(var_type)
 
             # Dynamic arrays must be heap allocated
-            ref_kind = REF_KIND_HEAP if (registry.is_array_type(var_type) and registry.get_array_size(var_type) is None) else REF_KIND_NONE
+            ref_kind = REF_KIND_HEAP if (registry.is_array_type(var_type) and registry.get_array_size(var_type) == 0) else REF_KIND_NONE
 
             if self.env.get(var_name, all_scopes=False):
                 self.already_declared_error(var_name)
@@ -1819,7 +1819,7 @@ class Parser:
         else:
             # For size-inferred arrays, update the variable's type with the inferred size
             if (registry.is_array_type(var_type) and
-                registry.get_array_size(var_type) is None and
+                registry.get_array_size(var_type) == 0 and
                 registry.is_array_type(expr.expr_type)):
                 # Get element types
                 var_elem_type = registry.get_array_element_type(var_type)
@@ -1856,7 +1856,7 @@ class Parser:
         # preserve the heap ref kind of a dynamic array when we get a less specific
         # ref_kind from the expression (e.g. from nil). TODO: optimally, we'd
         # preserve the more specific type for any variable type.
-        if ref_kind == REF_KIND_GENERIC and registry.is_array_type(var_type) and registry.get_array_size(var_type) is None:
+        if ref_kind == REF_KIND_GENERIC and registry.is_array_type(var_type) and registry.get_array_size(var_type) == 0:
             ref_kind = REF_KIND_HEAP
 
         # Declare the variable in current scope

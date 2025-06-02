@@ -128,7 +128,7 @@ def type_to_c(type_id, use_handles=True):
         elem_type_id = registry.get_array_element_type(type_id)
         elem_type = type_to_c(elem_type_id, use_handles=False)
         size = registry.get_array_size(type_id)
-        if size is not None:
+        if size != 0:
             return "%s[%d]" % (elem_type, size)
         return "handle" # Dynamic arrays
 
@@ -156,7 +156,7 @@ def make_struct_decl(struct_id):
             array_size = registry.get_array_size(field_type)
             element_c_type = type_to_c(element_type, use_handles=False)
 
-            if array_size is None:
+            if array_size == 0:
                 result += "\thandle %s;\n" % field_name
             else:
                 result += "\t%s %s[%d];\n" % (element_c_type, field_name, array_size)
@@ -293,7 +293,7 @@ class ScopeManager:
 
                 # Fixed size arrays always have static data and size
                 assert(var.static_data is not None)
-                assert(array_size is not None)
+                assert(array_size != 0)
 
                 # If not heap var, create stack storage with initializer
                 if not var.heap_alloc:
@@ -691,7 +691,7 @@ class CCodeGenerator:
                 else:
                     # Direct handle assignment for expressions that return handles
                     self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, expr_code))
-            elif is_array and registry.get_array_size(node.var_type) is not None:
+            elif is_array and registry.get_array_size(node.var_type) != 0:
                 self.scope_manager.set_static_data(node.var_name, init_expr)
             elif is_array: # array already declared via macro
                 self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, init_expr))
@@ -775,7 +775,7 @@ class CCodeGenerator:
             expr_code = self.generate_expression(node.expr)
             if is_array:
                 array_size = registry.get_array_size(node.var_type)
-                if array_size is None:
+                if array_size == 0:
                     self.global_initializers.append('%s = %s;' % (node.var_name, expr_code))
                     return
                 elem_type_id = registry.get_array_element_type(node.var_type)
@@ -974,7 +974,7 @@ class CCodeGenerator:
 
             # If this is a fixed-size array, output zeros for missing elements
             array_size = registry.get_array_size(node.expr_type)
-            if array_size is not None and array_size > len(node.elements):
+            if array_size != 0 and array_size > len(node.elements):
                 if len(node.elements) > 0:
                     result += ", "
 

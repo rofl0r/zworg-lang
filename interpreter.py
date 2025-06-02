@@ -144,7 +144,7 @@ class Interpreter(object):
             return self.make_direct_value(0.0, type_id)
         elif registry.is_struct_type(type_id):
             # Special case: dynamic arrays should default to nil
-            if registry.is_array_type(type_id) and registry.get_array_size(type_id) is None:
+            if registry.is_array_type(type_id) and registry.get_array_size(type_id) == 0:
                 return self.make_direct_value(None, type_id)  # Dynamic arrays default to nil
             # Create a properly initialized struct instance instead of nil
             struct_name = registry.get_struct_name(type_id)
@@ -1083,7 +1083,7 @@ class Interpreter(object):
 
                 # If this is a fixed-size array, pre-initialize missing elements
                 array_size = registry.get_array_size(node.expr_type)
-                if array_size is not None and array_size > len(node.elements):
+                if array_size != 0 and array_size > len(node.elements):
                     element_type = registry.get_array_element_type(node.expr_type)
                     # Initialize remaining elements with default values
                     for i in range(len(node.elements), array_size):

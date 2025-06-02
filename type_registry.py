@@ -37,10 +37,10 @@ class StructDescriptor(TypeDescriptor):
 
 class ArrayDescriptor(TypeDescriptor):
     """Descriptor for array types"""
-    def __init__(self, element_type_id, size=None, name=None):
+    def __init__(self, element_type_id, size=0, name=None):
         TypeDescriptor.__init__(self, TypeRegistry.TYPE_KIND_ARRAY, name)
         self.element_type_id = element_type_id
-        self.size = size  # None = dynamic size, int = fixed size
+        self.size = size  # 0 = dynamic size, else fixed size
 
 class Function:
     def __init__(self, name, return_type, params, parent_struct_id=-1, ast_node=None, is_ref_return=False):
@@ -113,7 +113,7 @@ class TypeRegistry:
         return descriptor is not None and descriptor.kind == self.TYPE_KIND_ENUM
 
     # Array type methods
-    def register_array_type(self, element_type_id, size=None):
+    def register_array_type(self, element_type_id, size=0):
         """Register an array type with element type and optional size"""
         # Check cache for existing identical array type
         cache_key = (element_type_id, size)
@@ -126,7 +126,7 @@ class TypeRegistry:
 
         # Create debug name
         element_type_name = self.var_type_to_string(element_type_id)
-        size_str = str(size) if size is not None else ""
+        size_str = str(size)
         array_name = "_array_%s_%s" % (element_type_name, size_str)
 
         # Create descriptor
@@ -152,7 +152,7 @@ class TypeRegistry:
         return -1
 
     def get_array_size(self, array_type_id):
-        """Get size for an array (None if dynamic)"""
+        """Get size for an array (0 if dynamic)"""
         descriptor = self._type_descriptors.get(array_type_id)
         if descriptor and descriptor.kind == self.TYPE_KIND_ARRAY:
             return descriptor.size
