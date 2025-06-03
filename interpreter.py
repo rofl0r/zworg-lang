@@ -428,6 +428,12 @@ class Interpreter(object):
                 if var_obj.tag in (TAG_STACK_REF, TAG_HEAP_REF):
                     return self.assign_through_reference(var_obj, value_var)
 
+            # If we are assigning from a reference to a by-value variable,
+            # we need to dereference and make a deep copy
+            if value_var.tag != TAG_DIRECT_VALUE:
+                # Perform dereferencing and deep copy for by-value semantics
+                value_var = self.deep_copy(value_var)
+
             # Check if type promotion is needed and allowed
             if node.expr_type != node.right.expr_type:
                 if not can_promote(node.right.expr_type, node.expr_type):

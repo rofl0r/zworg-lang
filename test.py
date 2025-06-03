@@ -15,10 +15,28 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
-            "name": "array byref parameter to value copy",
+            "name": "array byref parameter to value copy A",
             "code": """
                 def modifyArrayByVal(byref arr_ref: int[3]) do
                     var arr : int[3] = arr_ref
+                    arr[0] = 99  // Should not affect original
+                    arr[1] = 88
+                end
+                def main() do
+                    var nums: int[3] = {1, 2, 3}
+                    modifyArrayByVal(nums)
+                    var n_0 := nums[0]  // Should still be 1
+                    var n_1 := nums[1]  // Should still be 2
+                end
+            """,
+            "expected_env": {"n_0": 1, "n_1": 2}
+        },
+        {
+            "name": "array byref parameter to value copy B",
+            "code": """
+                def modifyArrayByVal(byref arr_ref: int[3]) do
+                    var arr : int[3]
+                    arr = arr_ref
                     arr[0] = 99  // Should not affect original
                     arr[1] = 88
                 end
