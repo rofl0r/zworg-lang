@@ -1848,7 +1848,7 @@ class Parser:
             self.already_declared_error(var_name)
 
         # If initializing from new or nil, preserve ref_kind...
-        if expr.node_type == AST_NODE_NEW or expr.node_type == AST_NODE_NIL:
+        if is_type_inference or expr.node_type == AST_NODE_NEW or expr.node_type == AST_NODE_NIL:
             ref_kind = expr.ref_kind
         else:
             ref_kind = REF_KIND_NONE
