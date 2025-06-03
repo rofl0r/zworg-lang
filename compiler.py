@@ -912,7 +912,7 @@ class Parser:
 
         # inject "return self" at end of constructor
         if struct_id != -1 and name == "init":
-            self_var = VariableNode(self.token, "self", struct_id, REF_KIND_NONE)
+            self_var = VariableNode(self.token, "self", struct_id, REF_KIND_GENERIC)
             body.append(ReturnNode(self.token, self_var, REF_KIND_NONE))
 
         # Restore previous context
