@@ -620,9 +620,6 @@ class Parser:
 
     def can_promote_with_ref(self, from_type, from_ref_kind, to_type, to_ref_kind):
         """Check if types are compatible considering reference kinds"""
-        # References can't be promoted to non-references
-        if from_ref_kind != REF_KIND_NONE and to_ref_kind == REF_KIND_NONE:
-            return False
 
         # Special case for nil - can be assigned to any reference type
         if from_type == TYPE_NIL and to_ref_kind != REF_KIND_NONE:
