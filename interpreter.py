@@ -601,6 +601,10 @@ class Interpreter(object):
         """Evaluate a variable declaration node"""
         value_var = self.evaluate(node.expr)
 
+        if node.ref_kind == REF_KIND_NONE and value_var.tag != TAG_DIRECT_VALUE:
+            # Dereference and make a deep copy to maintain proper value semantics
+            value_var = self.deep_copy(value_var)
+
         # Check reference kind consistency
         if value_var.tag != TAG_DIRECT_VALUE and node.ref_kind != REF_KIND_NONE:
             # Reference compatibility is fine - references can be assigned to reference variables
