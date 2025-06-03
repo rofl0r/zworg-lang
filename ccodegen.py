@@ -292,8 +292,12 @@ class ScopeManager:
                 if not var.heap_alloc:
                     storage_name = make_reserved_identifier("%s_storage" % name)
                     # Handle array type declaration correctly in C syntax (int name[5], not int[5] name)
-                    helper_header_output.write("\t%s %s[%d] = %s; \\\n" %
-                                            (elem_type_c, storage_name, array_size, var.static_data))
+                    if var.static_data.startswith(';'):
+                        sd_expr = var.static_data;
+                    else:
+                        sd_expr = "= %s"%var.static_data;
+                    helper_header_output.write("\t%s %s[%d] %s; \\\n" %
+                                            (elem_type_c, storage_name, array_size, sd_expr))
 
                     # Allocate array with the static data
                     helper_header_output.write("\thandle %s = ha_array_alloc(&ha, sizeof(%s) * %d, &%s); \\\n" %
@@ -401,8 +405,15 @@ class CCodeGenerator:
         Check dereferencing needs based on explicit reference kinds
         Same return values as needs_dereference.
         """
+        # Basic dereferencing rules
         left_needs = lhs_ref_kind != REF_KIND_NONE and rhs_ref_kind == REF_KIND_NONE
         right_needs = lhs_ref_kind == REF_KIND_NONE and rhs_ref_kind != REF_KIND_NONE
+        # Reference kind hierarchy rules
+        # REF_KIND_STACK is lesser than REF_KIND_GENERIC and REF_KIND_HEAP
+        if not left_needs:
+            left_needs = (lhs_ref_kind == REF_KIND_GENERIC or lhs_ref_kind == REF_KIND_HEAP) and rhs_ref_kind == REF_KIND_STACK
+        if not right_needs:
+            right_needs = (rhs_ref_kind == REF_KIND_GENERIC or rhs_ref_kind == REF_KIND_HEAP) and lhs_ref_kind == REF_KIND_STACK
 
         if left_needs and right_needs:
             return 2  # Both sides need dereferencing
@@ -683,7 +694,18 @@ class CCodeGenerator:
                     # Direct handle assignment for expressions that return handles
                     self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, expr_code))
             elif is_array and registry.get_array_size(node.var_type) != 0:
-                self.scope_manager.set_static_data(node.var_name, init_expr)
+                if deref_needed <= 0:
+                    self.scope_manager.set_static_data(node.var_name, init_expr)
+                else:
+                    elem_type_id = registry.get_array_element_type(node.var_type)
+                    elem_type, _ = type_to_c(elem_type_id, use_handles=False)
+                    array_size = registry.get_array_size(node.var_type)
+                    storage_name = make_reserved_identifier("%s_storage" % node.var_name)
+
+                    # Create the memcpy statement with a semicolon prefix
+                    memcpy_stmt = "; memcpy(%s, ha_array_get_ptr(&ha, %s), sizeof(%s) * %d);" % (
+                        storage_name, init_expr, elem_type, array_size)
+                    self.scope_manager.set_static_data(node.var_name, memcpy_stmt)
             elif is_array: # array already declared via macro
                 self.output.write(self.indent() + '%s = %s;\n' % (node.var_name, init_expr))
             else:

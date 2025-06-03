@@ -23,7 +23,7 @@ class AstExpressionFlattener:
         """Reset temporary variable counter when processing a new function"""
         self.temp_counter = 0
 
-    def inject_ref_kind(self, node, make_copy=True):
+    def inject_ref_kind(self, node, make_copy=True, function_context=False):
         """
         Inject appropriate reference kind for arrays and non-byval struct instances.
         Returns modified node or original if no change needed.
@@ -39,26 +39,27 @@ class AstExpressionFlattener:
                 (self.registry.is_struct_type(type_id) and
                  not self.registry.is_tuple_type(type_id) and
                  not self.registry.is_enum_type(type_id))):
-                node.ref_kind = REF_KIND_GENERIC
+                node.ref_kind = REF_KIND_STACK
+                if function_context: node.ref_kind = REF_KIND_GENERIC
 
         return node
 
-    def create_variable_node(self, token, name, type_id):
+    def create_variable_node(self, token, name, type_id, function_context=False):
         """Create a variable node with appropriate ref_kind for struct instances"""
         var_node = VariableNode(token, name, type_id)
-        return self.inject_ref_kind(var_node, make_copy=False)
+        return self.inject_ref_kind(var_node, make_copy=False, function_context=function_context)
 
-    def create_var_decl_node(self, token, decl_type, name, type_id, expr=None):
+    def create_var_decl_node(self, token, decl_type, name, type_id, expr=None, function_context=False):
         """Create a variable declaration node with appropriate ref_kind for struct instances"""
         var_decl = VarDeclNode(token, decl_type, name, type_id, expr)
-        return self.inject_ref_kind(var_decl, make_copy=False)
+        return self.inject_ref_kind(var_decl, make_copy=False, function_context=function_context)
 
-    def copy_with_ref_kind(self, node):
+    def copy_with_ref_kind(self, node, function_context=False):
         """
         Make a copy of a node and inject struct ref_kind if needed.
         This function always makes a copy.
         """
-        return self.inject_ref_kind(node, make_copy=True)
+        return self.inject_ref_kind(node, make_copy=True, function_context=function_context)
 
     def flatten_function(self, func_node):
         """Entry point: Transform a function by flattening expressions in its body"""
@@ -72,6 +73,29 @@ class AstExpressionFlattener:
         assert(func_id != -1)
         func_obj = self.registry.get_func_from_id(func_id)
 
+        # Handle array by-value parameters
+        array_copy_statements = []
+        for i, (param_name, param_type, is_byref) in enumerate(func_obj.params):
+        # Check if parameter is passed by value and is an array
+            if self.registry.is_array_type(param_type) and not is_byref:
+                if self.registry.get_array_size(param_type) == 0: continue  # Skip dynamic arrays - they're always by-ref
+                # Rename original parameter
+                ref_param_name = param_name + "_ref"
+
+                # Update parameter name in both the AST node and the registry's function object
+                func_node.params[i] = (ref_param_name, param_type)
+                func_obj.params[i] = (ref_param_name, param_type, True)
+
+                # Create a variable reference to the parameter
+                ref_var = self.create_variable_node(func_node.token, ref_param_name, param_type, function_context=True)
+
+                # Create a variable declaration with the original name, initialized with the parameter
+                # explicitly with function_context=False to force dereferencing
+                var_decl = self.create_var_decl_node(func_node.token, TT_VAR, param_name, param_type, ref_var, function_context=False)
+
+                # Add declaration to beginning of function
+                array_copy_statements.append(var_decl)
+
         # If this is a constructor, make sure it's marked as returning by reference for C codegen
         # regardless of the semantics in the language
         if func_node.parent_struct_id != -1 and func_node.name == "init":
@@ -82,7 +106,7 @@ class AstExpressionFlattener:
 
         # Create a copy of the function with a transformed body
         new_func = copy.copy(func_node)
-        new_func.body = self.flatten_statements(func_node.body)
+        new_func.body = array_copy_statements + self.flatten_statements(func_node.body)
 
         # update registry with new AST
         func_obj.ast_node = new_func
@@ -319,7 +343,7 @@ class AstExpressionFlattener:
         if (self.current_function and
             self.current_function.parent_struct_id != -1 and
             self.current_function.name == "init" and
-            new_stmt.ref_kind == REF_KIND_NONE):
+            (new_stmt.ref_kind == REF_KIND_NONE or new_stmt.ref_kind == REF_KIND_STACK)):
             new_stmt.ref_kind = REF_KIND_GENERIC
 
         return new_stmt, hoisted_stmts
@@ -407,9 +431,9 @@ class AstExpressionFlattener:
             # Create a variable declaration for the temp (initialized to default)
             var_decl = self.create_var_decl_node(node.token, TT_VAR, temp_name, struct_type, None)
             # For C code generation, set reference kind appropriately
-            # If it was already of a ref type, preserve it, otherwise set to REF_KIND_GENERIC
-            if preserved_ref_kind == REF_KIND_NONE:
-                temp_var.ref_kind = REF_KIND_GENERIC
+            # If it was already of heap type, preserve it
+            if preserved_ref_kind == REF_KIND_HEAP:
+                temp_var.ref_kind = REF_KIND_HEAP
         else:
             target_var = self.constructor_var
 

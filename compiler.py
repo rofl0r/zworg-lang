@@ -1850,13 +1850,14 @@ class Parser:
         if self.env.get(var_name, all_scopes=False):
             self.already_declared_error(var_name)
 
-        # If initializing with a reference (from new), keep the reference kind
-        ref_kind = expr.ref_kind
+        # If initializing from new or nil, preserve ref_kind...
+        if expr.node_type == AST_NODE_NEW or expr.node_type == AST_NODE_NIL:
+            ref_kind = expr.ref_kind
+        else:
+            ref_kind = REF_KIND_NONE
 
-        # preserve the heap ref kind of a dynamic array when we get a less specific
-        # ref_kind from the expression (e.g. from nil). TODO: optimally, we'd
-        # preserve the more specific type for any variable type.
-        if ref_kind == REF_KIND_GENERIC and registry.is_array_type(var_type) and registry.get_array_size(var_type) == 0:
+        # Special case for dynamic arrays which always need heap allocation
+        if registry.is_array_type(var_type) and registry.get_array_size(var_type) == 0:
             ref_kind = REF_KIND_HEAP
 
         # Declare the variable in current scope
