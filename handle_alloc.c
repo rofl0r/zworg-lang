@@ -260,6 +260,11 @@ void *ha_array_get_ptr(struct handle_allocator *self, handle h) {
 	return meta->ptr;
 }
 
+static void ha_array_copy(struct handle_allocator *ha, handle dest, handle src) {
+	struct array_meta *src_meta = allocator_get_ptr(ha->allocators, src.idx);
+	memcpy(ha_array_get_ptr(ha, dest), ha_array_get_ptr(ha, src), src_meta->len);
+}
+
 handle ha_stack_alloc(struct handle_allocator *self, size_t size, void*existing) {
 	intptr_t offset = (intptr_t)self->stackbase - (intptr_t)existing;
 	handle h = {.idx = offset, .allocator_id = 0xffff, .generation = 1};

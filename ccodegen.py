@@ -1136,6 +1136,10 @@ class CCodeGenerator:
                         return "(memcpy(ha_obj_get_ptr(&ha, %s), &%s, sizeof(%s)), %s)" % (
                             left, init_expr, struct_type, left)
 
+                elif registry.is_array_type(node.right.expr_type) and deref_needed > 0:
+                    assert(registry.is_array_type(node.left.expr_type))
+                    return "(ha_array_copy(&ha, %s, %s), %s)" % (left, right, left)
+
             if deref_needed == -1 or deref_needed == 2:
                 left = self.dereference(node.left.expr_type, left)
             if deref_needed > 0:
