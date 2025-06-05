@@ -2,7 +2,7 @@
 from shared import *
 from ast_rewriter import AstTypeRewriter, AST_NODE_ALL
 
-PRIMITIVE_TYPES = [
+BUILTIN_TYPES = [
     TYPE_UNKNOWN, TYPE_VOID, TYPE_NIL, TYPE_STRING,
     TYPE_I8, TYPE_U8, TYPE_I16, TYPE_U16, TYPE_I32, TYPE_U32,
     TYPE_I64, TYPE_U64, TYPE_INT, TYPE_UINT, TYPE_LONG, TYPE_ULONG,
@@ -86,7 +86,7 @@ class TypeRegistry:
 
     def _initialize_primitive_types(self):
         """Register all primitive types with descriptors"""
-        for type_id in PRIMITIVE_TYPES:
+        for type_id in BUILTIN_TYPES:
             name = TYPE_TO_STRING_MAP[type_id]
             self._type_descriptors[type_id] = PrimitiveDescriptor(type_id, name)
             self._type_name_to_id[name] = type_id
@@ -96,7 +96,7 @@ class TypeRegistry:
             self._type_descriptors[i] = TypeDescriptor(TypeRegistry.TYPE_KIND_PRIMITIVE, "T%d"%(i-TYPE_GENERIC_BASE))
 
     def is_primitive_type(self, type_id):
-        return type_id in PRIMITIVE_TYPES
+        return type_id != TYPE_STRING and type_id in BUILTIN_TYPES
 
     def get_tuple_prefix(self):
 	return "__zw_tuple_"
