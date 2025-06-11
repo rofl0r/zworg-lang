@@ -24,24 +24,7 @@ class AstExpressionFlattener:
         self.temp_counter = 0
 
     def inject_ref_kind(self, node, make_copy=True, function_context=False):
-        """
-        Inject appropriate reference kind for arrays and non-byval struct instances.
-        Returns modified node or original if no change needed.
-        """
-        if node.node_type == AST_NODE_VAR_DECL:
-            type_id = node.var_type
-        else:
-            type_id = node.expr_type
-
         if make_copy: node = copy.copy(node)
-        if node.ref_kind == REF_KIND_NONE and (
-                self.registry.is_array_type(type_id) or
-                (self.registry.is_struct_type(type_id) and
-                 not self.registry.is_tuple_type(type_id) and
-                 not self.registry.is_enum_type(type_id))):
-                node.ref_kind = REF_KIND_STACK
-                if function_context: node.ref_kind = REF_KIND_GENERIC
-
         return node
 
     def create_variable_node(self, token, name, type_id, function_context=False):
@@ -223,7 +206,11 @@ class AstExpressionFlattener:
             self.constructor_var = old_cv
 
             # Return the array declaration followed by the assignments
-            return array_decl, assignments
+            # We need to have the array_decl followed by the assignments,
+            # but usually the hoisted statements are added first.
+            # therefore we return a Nop node in place of the VarDecl.
+            nop = ExprStmtNode(stmt.token, NumberNode(stmt.token, 0, TYPE_INT))
+            return nop, [array_decl] + assignments
 
         new_stmt = self.copy_with_ref_kind(stmt)
 
@@ -251,9 +238,11 @@ class AstExpressionFlattener:
             # Hoist the assignment out of the condition
             assign_stmt = ExprStmtNode(condition_node.token, condition_node)
             hoisted_stmts.append(assign_stmt)
-
-            # Replace condition with just the variable reference
-            condition = self.copy_with_ref_kind(condition_node.left)
+            if condition_node.ref_kind == REF_KIND_NONE:
+                condition = NumberNode(condition_node.token, 1, TYPE_INT)
+            else:
+                # Replace condition with just the variable reference
+                condition = self.copy_with_ref_kind(condition_node.left)
         else:
             # Standard condition flattening
             condition, expr_stmts = self.flatten_expr(condition_node)
@@ -431,9 +420,14 @@ class AstExpressionFlattener:
             # Create a variable declaration for the temp (initialized to default)
             var_decl = self.create_var_decl_node(node.token, TT_VAR, temp_name, struct_type, None)
             # For C code generation, set reference kind appropriately
-            # If it was already of heap type, preserve it
+            # If it was already of heap type, <strike>preserve it</strike>
+            # replace it with stack ref_kind because the temp is only needed
+            # for the duration of a single statement, and would create a leak.
             if preserved_ref_kind == REF_KIND_HEAP:
+#                temp_var.ref_kind = REF_KIND_STACK
+#                var_decl.ref_kind = REF_KIND_STACK
                 temp_var.ref_kind = REF_KIND_HEAP
+                var_decl.ref_kind = REF_KIND_HEAP
         else:
             target_var = self.constructor_var
 
@@ -453,6 +447,7 @@ class AstExpressionFlattener:
 
         # Order is important: declare temp, hoist setup, call constructor
         if var_decl: hoisted_stmts.insert(0, var_decl)
+
         hoisted_stmts.append(init_stmt)
 
         # Return the target var as the expression
@@ -663,6 +658,6 @@ class AstExpressionFlattener:
 
     def get_temp_name(self):
         """Generate a unique temporary variable name"""
-        temp_name = "__temp_%d" % self.temp_counter
+        temp_name = "zw__temp_%d" % self.temp_counter
         self.temp_counter += 1
         return temp_name

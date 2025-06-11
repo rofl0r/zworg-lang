@@ -940,7 +940,8 @@ class Parser:
             self.error("Function parameters require explicit type annotation")
         self.advance() # Skip colon
         param_type = self.parse_type_reference(struct_id)
-
+        # implicitly mark dynamic array parameters as byref
+        if registry.is_array_type(param_type) and registry.get_array_size(param_type) == 0: is_byref = True
         return (name, param_type, is_byref)
 
     def parse_type_reference(self, struct_id=-1):

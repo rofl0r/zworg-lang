@@ -15,6 +15,34 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+            "name": "struct with dynarray",
+            "code": """
+                struct DynContainer do
+                    data: int[]
+                    len: int
+                end
+                def DynContainer.add(x: int) do
+                    if self.data == nil do
+                        self.data = new(self.data, 1)
+                    end else do
+                        self.data = new(self.data, self.len+1)
+                    end
+                    self.data[self.len] = x
+                    self.len += 1
+                end
+                def main() do
+                    // Test with integers
+                    var dcs := DynContainer()
+                    var dch := new DynContainer()
+                    dcs.add(42)
+                    dch.add(99)
+                    var s := dcs.data[0]
+                    var h := dch.data[0]
+                end
+            """,
+            "expected_env": {"s": 42, "h": 99}
+        },
+        {
             "name": "array byref parameter to value copy A",
             "code": """
                 def modifyArrayByVal(byref arr_ref: int[3]) do

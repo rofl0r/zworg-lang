@@ -104,6 +104,9 @@ class TypeRegistry:
     def get_enum_prefix(self):
 	return "__zw_enum_"
 
+    def get_array_prefix(self):
+	return "__zw_array_"
+
     def is_tuple_type(self, type_id):
         descriptor = self._type_descriptors.get(type_id)
         return descriptor is not None and descriptor.kind == self.TYPE_KIND_TUPLE
@@ -127,7 +130,7 @@ class TypeRegistry:
         # Create debug name
         element_type_name = self.var_type_to_string(element_type_id)
         size_str = str(size)
-        array_name = "_array_%s_%s" % (element_type_name, size_str)
+        array_name = "%s_%s_%s" % (self.get_array_prefix(), element_type_name, size_str)
 
         # Create descriptor
         descriptor = ArrayDescriptor(element_type_id, size, array_name)

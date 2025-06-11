@@ -107,7 +107,7 @@ find_allocator_for_size(struct handle_allocator *self, uint32_t size) {
 
 handle ha_obj_alloc(struct handle_allocator *self, uint32_t size) {
 	if(find_allocator_for_size(self, size) == (size_t)-1) {
-		assert(self->count <= 0xfffd); /* currently only 64k possible sizeclasses, 0xffff is reserved for stack and 0xfffe for temporary array elem handles */
+		assert(self->count <= 0xfffc); /* currently only 64k possible sizeclasses, 0xffff is reserved for stack, 0xfffe for temporary array elem handles, 0xfffd for raw pointer handles */
 		void *new = realloc(self->allocators, (self->count+1)*sizeof(struct allocator));
 		if(!new) return handle_nil;
 		self->allocators = new;
@@ -149,6 +149,10 @@ struct array_elem_handle_data {
 	size_t array_idx;
 };
 
+struct raw_ptr_data {
+	void *ptr;
+};
+
 void *ha_array_get_ptr(struct handle_allocator *self, handle h);
 void *ha_stack_get_ptr(struct handle_allocator *self, handle h);
 void *ha_obj_get_ptr(struct handle_allocator *self, handle h) {
@@ -157,9 +161,13 @@ void *ha_obj_get_ptr(struct handle_allocator *self, handle h) {
 	if(h.allocator_id == 0xfffe) {
 		h.allocator_id = 0xffff;
 		struct array_elem_handle_data *d = ha_stack_get_ptr(self, h);
-		assert(d->array_handle.allocator_id == 0);
-		char* ad = ha_array_get_ptr(self, d->array_handle);
+		char* ad = ha_obj_get_ptr(self, d->array_handle);
 		return ad + d->array_idx;
+	}
+	if(h.allocator_id == 0xfffd) {
+		h.allocator_id = 0xffff;
+		struct raw_ptr_data *d = ha_stack_get_ptr(self, h);
+		return d->ptr;
 	}
 	assert(h.allocator_id < self->count);
 #ifndef DEBUG_ALLOCATOR
@@ -282,6 +290,12 @@ void *ha_stack_get_ptr(struct handle_allocator *self, handle h) {
 handle ha_array_elem_handle(struct handle_allocator *self, struct array_elem_handle_data *handle_data) {
 	handle h = ha_stack_alloc(self, sizeof(*handle_data), handle_data);
 	h.allocator_id = 0xfffe;
+	return h;
+}
+
+handle ha_raw_handle(struct handle_allocator *self, struct raw_ptr_data* handle_data) {
+	handle h = ha_stack_alloc(self, sizeof(*handle_data), handle_data);
+	h.allocator_id = 0xfffd;
 	return h;
 }
 
