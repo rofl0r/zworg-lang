@@ -41,13 +41,15 @@ static struct handle_allocator ha;
 /* Array helper functions and macros */
 #ifdef ZWORG_BOUNDS_CHECK
 static inline void* zw_array_element_ptr_internal(handle arr, size_t idx, size_t elem_size) {
-    struct array_meta *meta = allocator_get_ptr(ha.allocators, arr.idx);
-    if (idx * elem_size >= meta->len) {
-        fprintf(stderr, "Array bounds check failed: index %zu out of bounds %zu\\n",
-                idx, meta->len / elem_size);
-        abort();
+    if(arr.allocator_id == 0) {
+        struct array_meta *meta = allocator_get_ptr(ha.allocators, arr.idx);
+        if (idx * elem_size >= meta->len) {
+            fprintf(stderr, "Array bounds check failed: index %zu out of bounds %zu\\n",
+                    idx, meta->len / elem_size);
+            abort();
+        }
     }
-    return &((char*)ha_array_get_ptr(&ha, arr))[idx * elem_size];
+    return &((char*)ha_obj_get_ptr(&ha, arr))[idx * elem_size];
 }
 
 #define ZW_ARRAY_ACCESS(elem_type, arr_handle, index) \
@@ -57,7 +59,7 @@ static inline void* zw_array_element_ptr_internal(handle arr, size_t idx, size_t
     ((elem_type*)zw_array_element_ptr_internal(arr_handle, index, sizeof(elem_type)))
 #else
 #define ZW_ARRAY_ACCESS(elem_type, arr_handle, index) \
-    (((elem_type*)ha_array_get_ptr(&ha, (arr_handle)))[(index)])
+    (((elem_type*)ha_obj_get_ptr(&ha, (arr_handle)))[(index)])
 
 #define ZW_ARRAY_ELEMENT_PTR(elem_type, arr_handle, index) \
     (&((elem_type*)ha_array_get_ptr(&ha, (arr_handle)))[(index)])
