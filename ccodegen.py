@@ -966,8 +966,13 @@ class CCodeGenerator:
 
         # Check if this is a method call
         if node.node_type == AST_NODE_CALL:
-            if node.obj:
-                struct_name = registry.get_struct_name(node.obj.expr_type)
+            struct_id = -1
+            if node.obj: struct_id = node.obj.expr_type
+            func_id = registry.lookup_function(func_name, struct_id, check_parents = node.obj is not None)
+            func_obj = registry.get_func_from_id(func_id)
+            # get the struct that implements the method
+            struct_id = func_obj.parent_struct_id
+            if struct_id != -1: struct_name = registry.get_struct_name(struct_id)
         elif node.node_type == AST_NODE_FUNCTION_DECL:
                 if node.parent_struct_id != -1:
                     struct_name = registry.get_struct_name(node.parent_struct_id)
