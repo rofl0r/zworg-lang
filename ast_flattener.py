@@ -71,6 +71,7 @@ class AstExpressionFlattener:
 
                 # Create a variable reference to the parameter
                 ref_var = self.create_variable_node(func_node.token, ref_param_name, param_type, function_context=True)
+                ref_var.ref_kind = REF_KIND_GENERIC
 
                 # Create a variable declaration with the original name, initialized with the parameter
                 # explicitly with function_context=False to force dereferencing
