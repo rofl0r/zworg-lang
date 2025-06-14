@@ -512,7 +512,7 @@ class CCodeGenerator:
         # Generate struct members
         for field_name, field_type in fields:
             # deal with tuple structs we may find inside another struct
-            if registry.is_tuple_type(field_type):
+            if needs_tuple_decl(field_type):
                 if not self.scope_manager.is_tuple_processed(field_type):
                     tuples_needed.append(field_type)
                     # mark as processed
