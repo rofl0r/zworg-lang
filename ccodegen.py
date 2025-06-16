@@ -822,6 +822,8 @@ class CCodeGenerator:
                 expr_code = self.generate_expression(node.expr)
                 if registry.is_struct_type(node.expr.expr_type) and deref_needed != 0:
                     self.output.write('return %s;\n' % self.dereference(node.expr.expr_type, expr_code))
+                elif registry.is_primitive_type(node.expr.expr_type) and self.current_func_obj.ref_kind != REF_KIND_NONE and node.expr.ref_kind == REF_KIND_NONE:
+                    self.output.write('return &(%s);\n' % expr_code)
                 else:
                     self.output.write('return %s;\n' % expr_code)
                     if node.expr.node_type == AST_NODE_VARIABLE and self.current_func_obj.is_ref_return:
