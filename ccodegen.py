@@ -709,6 +709,8 @@ class CCodeGenerator:
 
         # Generate return type
         ret_type = type_to_c(node.return_type, use_handles=registry.is_struct_type(node.return_type) and func_obj.is_ref_return)
+        if func_obj.is_ref_return and registry.is_primitive_type(node.return_type):
+            ret_type += '*'
 
         # Generate parameter list
         params = []
@@ -1133,6 +1135,8 @@ class CCodeGenerator:
                     continue
                 if arg_varnode and is_byref and arg.ref_kind == REF_KIND_NONE and is_handle(param_type, REF_KIND_GENERIC):
                     args.append(make_reserved_identifier("%s_handle" % arg.name))
+                elif arg_varnode and is_byref and arg.ref_kind == REF_KIND_NONE and registry.is_primitive_type(arg_varnode.expr_type):
+                    args.append('&(%s)'%self.generate_expression(arg))
                 elif arg_varnode and not is_byref and arg.ref_kind != REF_KIND_NONE and is_handle(param_type, REF_KIND_GENERIC):
                     args.append(self.dereference(param_type, self.generate_expression(arg)))
                 else:
