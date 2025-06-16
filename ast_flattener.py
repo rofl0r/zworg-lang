@@ -17,6 +17,7 @@ class AstExpressionFlattener:
         self.registry = registry
         self.current_function = None
         self.constructor_var = None
+        self.ref_param = False
         self._reset_temps()
 
     def _reset_temps(self):
@@ -456,13 +457,20 @@ class AstExpressionFlattener:
 
     def flatten_call(self, node):
         """Handle function calls and method calls"""
+        old_ref_param = self.ref_param
+        new_node = None
+
+        func_id = self.registry.lookup_function(node.name, node.obj.expr_type if node.obj else -1)
+        func_obj = self.registry.get_func_from_id(func_id)
+
         # Function call
         if not node.obj:
             # Process arguments
             arg_exprs = []
             hoisted_stmts = []
 
-            for arg in node.args:
+            for i, arg in enumerate(node.args):
+                _, _, self.ref_param = func_obj.params[i]
                 arg_expr, arg_hoisted = self.flatten_expr(arg)
                 arg_exprs.append(arg_expr)
                 hoisted_stmts.extend(arg_hoisted)
@@ -470,8 +478,7 @@ class AstExpressionFlattener:
             # Create a new call node with the processed arguments
             new_call = copy.copy(node)
             new_call.args = arg_exprs
-
-            return new_call, hoisted_stmts
+            new_node = new_call
 
         # Method call
         else:
@@ -482,7 +489,8 @@ class AstExpressionFlattener:
             arg_exprs = []
             arg_hoisted = []
 
-            for arg in node.args:
+            for i, arg in enumerate(node.args):
+                _, _, self.ref_param = func_obj.params[i]
                 arg_expr, hoisted = self.flatten_expr(arg)
                 arg_exprs.append(arg_expr)
                 arg_hoisted.extend(hoisted)
@@ -503,15 +511,16 @@ class AstExpressionFlattener:
                 # Create assignment to temporary
                 var_decl = self.create_var_decl_node(node.token, TT_VAR, temp_name, node.expr_type, new_call)
                 hoisted_stmts.append(var_decl)
-
-                return temp_var, hoisted_stmts
+                new_node = temp_var
             else:
                 # No result needed, just call the method
                 new_call = copy.copy(node)
                 new_call.obj = obj_expr
                 new_call.args = arg_exprs
+                new_node = new_call
 
-                return new_call, hoisted_stmts
+        self.ref_param = old_ref_param
+        return new_node, hoisted_stmts
 
     def flatten_binary_op(self, node):
         """Handle binary operations"""
@@ -592,9 +601,28 @@ class AstExpressionFlattener:
     def flatten_member_access(self, node):
         """Handle member access"""
         obj_expr, obj_hoisted = self.flatten_expr(node.obj)
-
         new_access = copy.copy(node)
         new_access.obj = obj_expr
+
+        # create a byref temp when we access a byval container as ref param
+        if self.ref_param and node.ref_kind == REF_KIND_NONE and (self.registry.is_struct_type(node.expr_type) or self.registry.is_array_type(node.expr_type)):
+            # hack: we inject a ref for the access even though it's byval
+            # so we get the right semantics of "doesn't need storage nor deref"
+            # in the codegen, and we detect that there as a special case to
+            # create a handle that points to the storage of the struct/array
+            new_access.ref_kind = REF_KIND_STACK
+
+            temp_name = self.get_temp_name()
+            temp_var = self.create_variable_node(node.token, temp_name, new_access.expr_type)
+            temp_var.ref_kind = REF_KIND_STACK
+
+            # Create assignment to temporary
+            var_decl = self.create_var_decl_node(node.token, TT_VAR, temp_name, new_access.expr_type, new_access)
+            var_decl.ref_kind = REF_KIND_STACK
+            obj_hoisted.append(var_decl)
+
+            # return the temp in place of the member access
+            new_access = temp_var
 
         return new_access, obj_hoisted
 

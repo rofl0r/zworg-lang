@@ -625,7 +625,12 @@ class CCodeGenerator:
                 skip_copy = False
 
                 if not needs_storage:
-                    self.output.write(self.indent() + 'handle %s = %s;\n'%(node.var_name, init_expr))
+                    # temp var for member access, we need to create a handle for the existing storage
+                    if node.expr.node_type == AST_NODE_MEMBER_ACCESS and node.expr.ref_kind == REF_KIND_STACK:
+                        self.output.write(self.indent() + 'struct raw_ptr_data %s_raw = {&(%s)};\n'%(node.var_name, init_expr))
+                        self.output.write(self.indent() + 'handle %s = ha_raw_handle(&ha, &%s_raw);\n'%(node.var_name, node.var_name))
+                    else:
+                        self.output.write(self.indent() + 'handle %s = %s;\n'%(node.var_name, init_expr))
                     skip_copy = True
                 elif is_struct:
                     self.output.write(self.indent() + 'handle %s = ha_obj_alloc(&ha, sizeof(%s));\n'%(node.var_name, var_type))
