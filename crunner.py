@@ -29,7 +29,6 @@ def run_with_fd_redirect(executable, fd_num):
     # Run the subprocess with the write_fd duplicated to fd_num
     proc = subprocess.Popen(
         executable,
-        stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         close_fds=False,  # Don't close all fds
         preexec_fn=lambda: os.dup2(write_fd, fd_num)  # Map our write_fd to fd_num in child

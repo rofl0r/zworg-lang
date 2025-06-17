@@ -840,6 +840,9 @@ class CCodeGenerator:
         elif node.node_type == AST_NODE_CONTINUE:
             self.output.write(self.indent() + 'continue;\n')
 
+        elif node.node_type == AST_NODE_PRINT:
+            self.output.write(self.indent() + "puts(%s);\n"%(self.generate_expression(node.expr)))
+
     def generate_if_statement(self, node):
         """Generate C code for an if statement"""
         condition = self.generate_expression(node.condition)
