@@ -690,10 +690,9 @@ class CCodeGenerator:
 
         # Add test printf for main function or global variables
         # But only for primitive types and strings, not structs
-        if not is_struct and not is_array and (self.current_function == 'main' or is_global):
-            if needs_handle and not registry.is_primitive_type: pass
+        if not is_struct and not is_array and not needs_handle and (self.current_function == 'main' or is_global):
             # only add variables available in the main function scope
-            elif is_global or self.scope_manager.indent_level() == 1:
+            if is_global or self.scope_manager.indent_level() == 1:
                 deref = ''
                 if registry.is_primitive_type and node.ref_kind != REF_KIND_NONE: deref='*'
                 self.add_test_printf(deref+node.var_name, node.var_type)
