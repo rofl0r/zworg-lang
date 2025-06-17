@@ -15,6 +15,28 @@ test_cases = [
         # Regular test cases (expected to succeed)
         # Each has "code" and "expected_env"
         {
+           "name": "chained method calls with discarded by-value return",
+           "code": """
+                struct ComplexObject do
+                    enabled: int
+                end
+                def ComplexObject.init() do
+                    self.enabled = 1
+                end
+                def ComplexObject.toggle(): ComplexObject do
+                    self.enabled = bitnot self.enabled & 1
+                    return self
+                end
+                def main() do
+                    var obj := ComplexObject()
+                    obj.toggle()                 // set to 0
+                    var chain_res := obj.toggle().toggle().enabled
+                    var double_toggled := obj.enabled
+                end
+           """,
+           "expected_env": {"double_toggled": 1, "chain_res": 0}
+        },
+        {
             "name": "struct with dynarray",
             "code": """
                 struct DynContainer do
