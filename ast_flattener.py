@@ -336,6 +336,18 @@ class AstExpressionFlattener:
             self.current_function.name == "init" and
             (new_stmt.ref_kind == REF_KIND_NONE or new_stmt.ref_kind == REF_KIND_STACK)):
             new_stmt.ref_kind = REF_KIND_GENERIC
+        elif expr.node_type == AST_NODE_NEW:
+            # create a vardecl for new nodes, so we dont have to clutter ccodegen's return handler
+            temp_name = self.get_temp_name()
+            temp_var = self.create_variable_node(stmt.token, temp_name, expr.expr_type)
+            temp_var.ref_kind = REF_KIND_HEAP
+
+            # Create assignment to temporary
+            var_decl = self.create_var_decl_node(stmt.token, TT_VAR, temp_name, expr.expr_type, expr)
+            var_decl.ref_kind = REF_KIND_HEAP
+            hoisted_stmts.append(var_decl)
+
+            new_stmt.expr = temp_var
 
         return new_stmt, hoisted_stmts
 
