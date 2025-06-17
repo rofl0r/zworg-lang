@@ -979,7 +979,7 @@ class Interpreter(object):
             result = ret.value if ret.value else self.make_direct_value(None, TYPE_VOID)
 
             # Check if this is a reference-returning function
-            if node.ref_kind & REF_KIND_GENERIC:
+            if node.ref_kind != REF_KIND_NONE:
                 # Ensure reference is valid - should already be checked in visit_return
                 # constructor is special in that it returns byref or byval depending on whether wrapped in a NewNode
                 if result.tag == TAG_DIRECT_VALUE and not is_constructor_call:
@@ -990,6 +990,9 @@ class Interpreter(object):
             elif result.tag != TAG_DIRECT_VALUE:
                 # For non-ref function with reference result, dereference
                 result = self.dereference(result)
+            # For method calls that return by value,  ensure we have a proper deep copy
+            elif func_obj.return_type != TYPE_VOID and not func_obj.is_ref_return:
+                result = self.deep_copy(result)
 
         # Clean up scope
         self.environment.leave_scope()
