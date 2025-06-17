@@ -3413,6 +3413,8 @@ def test(use_interpreter=True, desired_test=-1):
     # Dictionary to track test hashes: hash -> [test index]
     test_hashes = {}
 
+    debug = os.getenv("DEBUG") or desired_test != -1
+
     # Run all test cases
     for i, test_case in enumerate(test_cases):
         # Calculate test hash and track duplicates
@@ -3428,11 +3430,12 @@ def test(use_interpreter=True, desired_test=-1):
         interpreter.reset()
 
         print("\nTest %d (%s):" % ((test_num), test_case["name"]))
-        # don't print the test by default as it's getting too verbose
-        # print("Input: %s" % test_case["code"])
+        if debug:
+            print("Input: %s" % test_case["code"])
 
         result = interpreter.run(test_case["code"])
         if result.get('ast'):
+            if debug: print result['ast']
             devnull = "%s"%(result['ast'])  # stringify ast in any case for code coverage
 
         # Check if this test is expected to fail
@@ -3487,7 +3490,7 @@ def test(use_interpreter=True, desired_test=-1):
                         print("AST dump: %s" % result['ast'])
                     if result.get('c_code'):
                         print("C code: %s" % result['c_code'])
-                    if os.getenv("DEBUG"):
+                    if debug:
                         import time
                         time.sleep(10000)
 
@@ -3499,7 +3502,7 @@ def test(use_interpreter=True, desired_test=-1):
                     print("AST dump: %s" % result['ast'])
                 if result.get('c_code'):
                     print("C code: %s" % result['c_code'])
-                if os.getenv("DEBUG"):
+                if debug:
                     import time
                     time.sleep(10000)
 
