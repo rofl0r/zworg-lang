@@ -657,6 +657,8 @@ class CCodeGenerator:
                 l_deref = '*' if deref_needed == -1 or deref_needed == 2 else ''
                 r_deref = '*' if deref_needed > 0 else ''
                 self.output.write(self.indent() + '%s%s = %s%s;\n'%(l_deref, node.var_name, r_deref, init_expr))
+            elif registry.is_primitive_type(node.var_type) and node.ref_kind == REF_KIND_GENERIC or node.ref_kind == REF_KIND_STACK:
+                self.output.write(self.indent() + '%s *%s = %s;\n'%(var_type, node.var_name, init_expr))
             else:
                 self.output.write(self.indent() + '%s %s = %s;\n' % (var_type, node.var_name, init_expr))
         elif needs_handle:  # zw__temp_
