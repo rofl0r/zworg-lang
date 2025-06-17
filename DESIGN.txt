@@ -174,6 +174,63 @@ Composite Types:
 - References to local variables cannot be returned (enforced at compile-time)
 - References to struct fields are not supported
 
+## 2.5 Generic Types
+
+### 2.5.1 Generic Type Syntax
+Generic types provide a way to create reusable container structures that can
+work with different types:
+
+- Generic type parameters are specified after a struct name within angle
+  brackets
+- Only structs can have generic type parameters
+- Type parameters are used as placeholders for actual types that will be
+  provided later
+
+EXAMPLE:
+struct List<T> do
+    data: T[]      // Array to hold elements of type T
+    len: int       // Current number of elements
+end
+
+struct Map<K,V> do
+    keys: K[]      // Array of keys with type K
+    values: V[]    // Array of values with type V
+    len: int
+end
+
+### 2.5.2 Generic Methods
+Methods for generic structs can access the generic type parameters:
+
+EXAMPLE:
+def List<T>.add(value: T) do
+    // Method implementation using type T
+end
+
+def List<T>.get(index: int): T do
+    return self.data[index];
+end
+
+def Map<K,V>.set(key: K, value: V) do
+    // Method implementation using types K and V
+end
+
+### 2.5.3 Instantiation and Usage
+Generic types are instantiated by providing concrete types for the type
+parameters:
+
+EXAMPLE:
+var numbers := new List<int>()
+var names := List<string>()
+var map := new Map<string, int>()
+
+// Methods use the concrete types
+numbers.add(42)       // value parameter is int
+names.add("Hello")    // value parameter is string
+map.set("key", 100)   // key is string, value is int
+
+Generic types can be nested:
+var nested := new Map<string, List<int>>()
+
 ## 3. Declarations
 
 ### 3.1 Variable Declarations
