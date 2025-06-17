@@ -495,13 +495,18 @@ class AstExpressionFlattener:
         # Method call
         else:
             # Process the object expression
+            # set ref_param, as the expr is used as hidden self arg byref
+            self.ref_param = True
             obj_expr, obj_hoisted = self.flatten_expr(node.obj)
 
             # Process arguments
             arg_exprs = []
             arg_hoisted = []
 
-            for i, arg in enumerate(node.args):
+            # add already flattened self param
+            arg_exprs.append(obj_expr)
+            for i in range(1, len(node.args)):
+                arg = node.args[i]
                 _, _, self.ref_param = func_obj.params[i]
                 arg_expr, hoisted = self.flatten_expr(arg)
                 arg_exprs.append(arg_expr)
