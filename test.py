@@ -3405,7 +3405,7 @@ def values_equal(expected, actual):
     # For other types, use standard equality comparison
     return expected == actual
 
-def test(use_interpreter=True):
+def test(use_interpreter=True, desired_test=-1):
     # Use either Interpreter or CRunner based on parameter
     interpreter = Interpreter() if use_interpreter else CRunner()
 
@@ -3421,9 +3421,12 @@ def test(use_interpreter=True):
             test_hashes[test_hash] = []
         test_hashes[test_hash].append(i)
 
+        test_num = i + 1
+
+        if desired_test != -1 and desired_test != test_num: continue
+
         interpreter.reset()
 
-        test_num = i + 1
         print("\nTest %d (%s):" % ((test_num), test_case["name"]))
         # don't print the test by default as it's getting too verbose
         # print("Input: %s" % test_case["code"])
@@ -3551,7 +3554,18 @@ def printc(color, text, file=sys.stdout):
 
 if __name__ == "__main__":
     import sys
+    use_interp = True
+    sa = 1
+    test_no = -1
+    if len(sys.argv) > sa:
+        if sys.argv[sa] == 'c':
+            use_interp = False
+            sa = 2
+    if len(sys.argv) > sa:
+        if sys.argv[sa][0] in '0123456789':
+            test_no = int(sys.argv[sa])
+
     use_interp = len(sys.argv) <= 1 or sys.argv[1] != 'c'
-    test(use_interp)
+    test(use_interp, test_no)
     if not use_interp:
         print("\nUsing C backend for tests")
