@@ -3145,7 +3145,7 @@ test_cases = [
             "expected_error": "Type mismatch in initialization"
         },
         {
-            "name": "Code outside functions not allowed",
+            "name": "Code without main function not allowed",
             "code": "var x := 5;",
             "expected_error": "No 'main' function defined"
         },
