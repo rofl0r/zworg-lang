@@ -1848,8 +1848,8 @@ class Parser:
         if self.env.get(var_name, all_scopes=False):
             self.already_declared_error(var_name)
 
-        # If initializing from new or nil, preserve ref_kind...
-        if is_type_inference or expr.node_type == AST_NODE_NEW or expr.node_type == AST_NODE_NIL:
+        # If initializing from new, nil, or call, preserve ref_kind...
+        if is_type_inference or expr.node_type == AST_NODE_NEW or expr.node_type == AST_NODE_NIL or expr.node_type == AST_NODE_CALL:
             ref_kind = expr.ref_kind
         else:
             ref_kind = REF_KIND_NONE
