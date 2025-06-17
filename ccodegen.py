@@ -566,7 +566,7 @@ class CCodeGenerator:
             self.scope_manager.declare_tuple_type(node.var_type, tuple_decl(node.var_type))
 
         # in this context we want only by-ref struct types
-        needs_handle = is_handle(node.var_type, node.ref_kind) or (node.expr and node.expr.node_type == AST_NODE_NEW)
+        needs_handle = is_handle(node.var_type, node.ref_kind) or (node.expr and node.expr.node_type == AST_NODE_NEW and not registry.is_primitive_type(node.var_type))
         #is_handle_struct = registry.is_struct_type(node.var_type) and node.ref_kind != REF_KIND_NONE
 
         # Check if the variable is const (not TT_VAR)
@@ -641,12 +641,6 @@ class CCodeGenerator:
                     self.output.write(self.indent() + 'handle %s = ha_array_alloc(&ha, sizeof(%s)*%d, (void*)0);\n'%(node.var_name, elem_type_c, array_size))
                     self.output.write(self.indent() + "memcpy(ha_obj_get_ptr(&ha, %s), &(%s[%d])%s, sizeof(%s));\n" % (node.var_name, elem_type_c, array_size, init_expr, var_type))
                     skip_copy = True
-                elif registry.is_primitive_type(node.var_type) and node.ref_kind == REF_KIND_HEAP:
-                    self.output.write(self.indent() + '%s *%s = realloc((void*)0, sizeof(%s));\n'%(var_type, node.var_name, var_type))
-                    l_deref = '*' if deref_needed == -1 or deref_needed == 2 else ''
-                    r_deref = '*' if deref_needed > 0 else ''
-                    self.output.write(self.indent() + '%s%s = %s%s;\n'%(l_deref, node.var_name, r_deref, init_expr))
-                    skip_copy = True
                 else:
                     assert(0)
 #                if deref_needed == -1 or deref_needed == 2:
@@ -658,6 +652,11 @@ class CCodeGenerator:
                     else:
                         temp_code = "&" + init_expr
                     self.output.write(self.indent() + "memcpy(ha_obj_get_ptr(&ha, %s), %s, sizeof(%s));\n" % (node.var_name, temp_code, var_type))
+            elif registry.is_primitive_type(node.var_type) and node.ref_kind == REF_KIND_HEAP:
+                self.output.write(self.indent() + '%s *%s = realloc((void*)0, sizeof(%s));\n'%(var_type, node.var_name, var_type))
+                l_deref = '*' if deref_needed == -1 or deref_needed == 2 else ''
+                r_deref = '*' if deref_needed > 0 else ''
+                self.output.write(self.indent() + '%s%s = %s%s;\n'%(l_deref, node.var_name, r_deref, init_expr))
             else:
                 self.output.write(self.indent() + '%s %s = %s;\n' % (var_type, node.var_name, init_expr))
         elif needs_handle:  # zw__temp_
@@ -694,7 +693,7 @@ class CCodeGenerator:
             # only add variables available in the main function scope
             elif is_global or self.scope_manager.indent_level() == 1:
                 deref = ''
-                if needs_handle and registry.is_primitive_type: deref='*'
+                if registry.is_primitive_type and node.ref_kind != REF_KIND_NONE: deref='*'
                 self.add_test_printf(deref+node.var_name, node.var_type)
 
     def generate_function_prototype_string(self, node):
