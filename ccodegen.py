@@ -448,8 +448,13 @@ class CCodeGenerator:
         self.generate_specializations()
 
         # Generate function definitions
+        main_seen = False
         for func in functions:
             self.generate_function(func)
+            if func.name == "main": main_seen = True
+
+        if not main_seen:
+            raise CompilerException("No 'main' function defined")
 
         # Generate the real C main function at the end
         self.generate_c_main()
