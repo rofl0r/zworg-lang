@@ -776,9 +776,6 @@ class CCodeGenerator:
         # Reset scope manager for this function
         self.scope_manager.reset()
 
-        # Clear test printfs for this function
-        self.test_printfs = []
-
         # Get function body from registry
         func_id = registry.lookup_function(node.name, node.parent_struct_id)
         func_obj = registry.get_func_from_id(func_id)
