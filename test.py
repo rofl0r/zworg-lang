@@ -3435,7 +3435,7 @@ def test(use_interpreter=True, desired_test=-1):
 
         result = interpreter.run(test_case["code"])
         if result.get('ast'):
-            if debug: print result['ast']
+            if debug: print(result['ast'])
             devnull = "%s"%(result['ast'])  # stringify ast in any case for code coverage
 
         # Check if this test is expected to fail

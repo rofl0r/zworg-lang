@@ -99,13 +99,13 @@ class TypeRegistry:
         return type_id != TYPE_STRING and type_id in BUILTIN_TYPES
 
     def get_tuple_prefix(self):
-	return "__zw_tuple_"
+        return "__zw_tuple_"
 
     def get_enum_prefix(self):
-	return "__zw_enum_"
+        return "__zw_enum_"
 
     def get_array_prefix(self):
-	return "__zw_array_"
+        return "__zw_array_"
 
     def is_tuple_type(self, type_id):
         descriptor = self._type_descriptors.get(type_id)
